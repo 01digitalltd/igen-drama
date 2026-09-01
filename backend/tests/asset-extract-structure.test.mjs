@@ -52,6 +52,8 @@ test('extraction tools dedupe by normalized name so near-names reuse existing as
   assert.match(tools, /normalizeLocation\(s\.location\) === normLocation/)
   // read_existing_* 返回归一化字段供 Agent 判断复用
   assert.match(tools, /normalized_name: normalizeName/)
+  assert.match(tools, /save_dedup_characters: saveDedupCharacters/)
+  assert.match(tools, /persistDedupCharacters/)
   assert.match(tools, /normalized_location: normalizeLocation/)
 })
 

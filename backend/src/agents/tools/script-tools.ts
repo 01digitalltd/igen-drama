@@ -77,4 +77,8 @@ const saveScript = createTool({
   },
 })
 
-export const scriptTools = { readEpisodeScript, rewriteToScreenplay, saveScript }
+export const scriptTools = {
+  read_episode_script: readEpisodeScript,
+  rewrite_to_screenplay: rewriteToScreenplay,
+  save_script: saveScript,
+}

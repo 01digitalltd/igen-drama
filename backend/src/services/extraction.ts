@@ -5,10 +5,16 @@
  */
 import { mastra } from '../mastra/index.js'
 import { buildAgentRequestContext } from '../agents/context.js'
+import {
+  persistDedupCharacters,
+  persistDedupProps,
+  persistDedupScenes,
+} from '../agents/tools/extract-tools.js'
 import { db, schema } from '../db/index.js'
 import { eq } from '../db/query.js'
 import { contentLanguageInstruction } from '../utils/content-language.js'
 import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { z } from 'zod'
 
 export type ExtractTarget = 'characters' | 'scenes' | 'props'
 export const EXTRACT_TARGETS: ExtractTarget[] = ['characters', 'scenes', 'props']
@@ -74,6 +80,51 @@ function extractUserMessage(target: ExtractTarget, locale?: string) {
   ].join('\n\n')
 }
 
+function tryParseJson(text: string): unknown {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const raw = (fenced?.[1] || trimmed).trim()
+  try {
+    return JSON.parse(raw)
+  } catch {
+    const startObj = raw.indexOf('{')
+    const startArr = raw.indexOf('[')
+    const start = startObj === -1 ? startArr : startArr === -1 ? startObj : Math.min(startObj, startArr)
+    if (start < 0) return null
+    const endObj = raw.lastIndexOf('}')
+    const endArr = raw.lastIndexOf(']')
+    const end = Math.max(endObj, endArr)
+    if (end <= start) return null
+    try {
+      return JSON.parse(raw.slice(start, end + 1))
+    } catch {
+      return null
+    }
+  }
+}
+
+function itemsFromPayload(target: ExtractTarget, payload: unknown): any[] {
+  if (!payload) return []
+  if (Array.isArray(payload)) return payload
+  if (typeof payload !== 'object') return []
+  const record = payload as Record<string, unknown>
+  const nested = record[target]
+  if (Array.isArray(nested)) return nested
+  return []
+}
+
+async function persistExtracted(target: ExtractTarget, episodeId: number, dramaId: number, items: any[]) {
+  if (target === 'characters') return persistDedupCharacters(episodeId, dramaId, items)
+  if (target === 'scenes') return persistDedupScenes(episodeId, dramaId, items)
+  return persistDedupProps(episodeId, dramaId, items)
+}
+
+async function loadEpisodeScript(episodeId: number): Promise<string> {
+  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, episodeId))
+  return String(ep?.scriptContent || ep?.content || '').trim()
+}
+
 /** 启动异步提取任务（立即返回）；同集同类型已在运行时返回 false；可指定文本模型覆盖 */
 export function startExtraction(episodeId: number, dramaId: number, target: ExtractTarget, opts: { model?: string; configId?: number; locale?: string } = {}): boolean {
   const key = keyOf(episodeId, target)
@@ -93,13 +144,13 @@ export function startExtraction(episodeId: number, dramaId: number, target: Extr
       textConfigId: opts.configId || undefined,
       locale: opts.locale || undefined,
     })
+    const seenTools = new Set<string>()
     const generateOpts = {
       maxSteps: 20,
       requestContext,
       onStepFinish: (step: any) => {
-        const tools = (step?.toolCalls || [])
-          .map((t: any) => t?.toolName || t?.payload?.toolName)
-          .filter(Boolean)
+        const tools = collectToolNames({ toolCalls: step?.toolCalls, toolResults: step?.toolResults, steps: [] })
+        for (const name of tools) seenTools.add(name)
         logTaskProgress('Extract', `${target}-step`, {
           episodeId,
           tools: tools.length ? tools.join(',') : undefined,
@@ -107,28 +158,77 @@ export function startExtraction(episodeId: number, dramaId: number, target: Extr
         })
       },
     }
-    let result: any = await agent.generate(
+    const result: any = await agent.generate(
       [{ role: 'user', content: extractUserMessage(target, opts.locale) }],
       generateOpts,
     )
-    let toolNames = collectToolNames(result)
-    if (!calledSaveTool(target, toolNames)) {
-      const firstText = String(result?.text || '').slice(0, 4000)
-      logTaskProgress('Extract', `${target}-retry-save`, { episodeId, tools: toolNames.join(',') || undefined })
-      result = await agent.generate(
-        [{
-          role: 'user',
-          content: [
-            `上次没有调用 ${SAVE_TOOL_ALIASES[target][0]}。现在必须立刻调用该工具写入数据库，禁止只回复文字。`,
-            firstText ? `以下是你上次提取到的内容，请据此保存：\n${firstText}` : EXTRACT_MESSAGES[target],
-          ].join('\n\n'),
-        }],
-        generateOpts,
-      )
-      toolNames = [...new Set([...toolNames, ...collectToolNames(result)])]
+    for (const name of collectToolNames(result)) seenTools.add(name)
+
+    let linked = await countLinked(target, episodeId)
+    if (!calledSaveTool(target, [...seenTools]) && (target === 'props' || linked === 0)) {
+      let items = itemsFromPayload(target, result?.object)
+      if (!items.length) items = itemsFromPayload(target, tryParseJson(String(result?.text || '')))
+      if (!items.length) {
+        const script = await loadEpisodeScript(episodeId)
+        if (!script) throw new Error('Episode has no script content')
+        logTaskProgress('Extract', `${target}-structured-fallback`, { episodeId })
+        try {
+          const structured: any = await agent.generate(
+            [{
+              role: 'user',
+              content: `从下面的格式化剧本提取${target === 'characters' ? '角色' : target === 'scenes' ? '场景' : '关键道具'}，只返回 JSON。\n\n${script.slice(0, 12000)}`,
+            }],
+            {
+              requestContext,
+              maxSteps: 2,
+              structuredOutput: {
+                schema: target === 'characters'
+                  ? z.object({
+                      characters: z.array(z.object({
+                        name: z.string(),
+                        role: z.string().optional(),
+                        appearance: z.string().optional(),
+                        styling: z.string().optional(),
+                        description: z.string().optional(),
+                      })),
+                    })
+                  : target === 'scenes'
+                    ? z.object({
+                        scenes: z.array(z.object({
+                          location: z.string(),
+                          time: z.string().optional(),
+                          prompt: z.string().optional(),
+                          lighting: z.string().optional(),
+                          description: z.string().optional(),
+                        })),
+                      })
+                    : z.object({
+                        props: z.array(z.object({
+                          name: z.string(),
+                          type: z.string().optional(),
+                          description: z.string().optional(),
+                        })),
+                      }),
+                jsonPromptInjection: true,
+              },
+            },
+          )
+          items = itemsFromPayload(target, structured?.object)
+          if (!items.length) items = itemsFromPayload(target, tryParseJson(String(structured?.text || '')))
+        } catch (err: any) {
+          logTaskProgress('Extract', `${target}-structured-fallback-error`, { episodeId, error: err?.message })
+        }
+      }
+      if (items.length || target === 'props') {
+        await persistExtracted(target, episodeId, dramaId, items)
+        seenTools.add(SAVE_TOOL_ALIASES[target][0])
+        linked = await countLinked(target, episodeId)
+        logTaskProgress('Extract', `${target}-direct-save`, { episodeId, count: items.length, linked })
+      }
     }
-    const saved = calledSaveTool(target, toolNames)
-    const linked = await countLinked(target, episodeId)
+
+    const saved = calledSaveTool(target, [...seenTools])
+    linked = await countLinked(target, episodeId)
     if (target !== 'props' && linked === 0) {
       throw new Error(saved
         ? `提取完成但未写入任何${target === 'characters' ? '角色' : '场景'}，请确认剧本后重试`
@@ -137,7 +237,7 @@ export function startExtraction(episodeId: number, dramaId: number, target: Extr
     if (target === 'props' && !saved) {
       throw new Error('提取未调用保存工具，请重试')
     }
-    return { result, toolNames, linked }
+    return { result, toolNames: [...seenTools], linked }
   })()
     .then((summary) => {
       task.status = 'done'
