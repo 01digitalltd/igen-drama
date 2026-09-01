@@ -113,10 +113,14 @@ export async function getActiveConfigId(serviceType: ServiceType): Promise<numbe
   return rows[0]?.id ?? null
 }
 
-export async function getConfigById(id: number): Promise<AIConfig | null> {
+export async function getConfigById(id: number, opts?: { allowInactive?: boolean }): Promise<AIConfig | null> {
   const [row] = await db.select().from(schema.aiServiceConfigs)
     .where(eq(schema.aiServiceConfigs.id, id))
-  if (!row || !row.isActive) {
+  if (!row) {
+    logTaskWarn('AIConfig', 'config-by-id-missing', { configId: id })
+    return null
+  }
+  if (!row.isActive && !opts?.allowInactive) {
     logTaskWarn('AIConfig', 'config-by-id-missing', { configId: id })
     return null
   }

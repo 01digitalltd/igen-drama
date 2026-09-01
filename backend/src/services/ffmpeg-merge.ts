@@ -57,17 +57,73 @@ export async function mergeEpisodeVideos(episodeId: number, dramaId: number, sto
   })
   const mergeId = getInsertId(res)
   await emitMergeEvent(mergeId, episodeId)
-
-  doMerge(mergeId, episodeId, videos).catch(async err => {
-    logTaskError('MergeTask', 'episode-merge', { mergeId, episodeId, error: err.message })
-    console.error(`[Merge] Failed:`, err)
-    await db.update(schema.videoMerges)
-      .set({ status: 'failed', errorMsg: err.message })
-      .where(eq(schema.videoMerges.id, mergeId))
-    await emitMergeEvent(mergeId, episodeId)
-  })
-
+  startMerge(mergeId, episodeId, videos)
   return mergeId
+}
+
+const MERGE_RESUME_MAX_AGE_MS = 2 * 60 * 60 * 1000
+const activeMerges = new Set<number>()
+
+function startMerge(mergeId: number, episodeId: number, videos: string[]) {
+  if (activeMerges.has(mergeId)) return
+  activeMerges.add(mergeId)
+  doMerge(mergeId, episodeId, videos)
+    .catch(async (err: any) => {
+      logTaskError('MergeTask', 'episode-merge', { mergeId, episodeId, error: err.message })
+      console.error(`[Merge] Failed:`, err)
+      await db.update(schema.videoMerges)
+        .set({ status: 'failed', errorMsg: err.message })
+        .where(eq(schema.videoMerges.id, mergeId))
+      await emitMergeEvent(mergeId, episodeId)
+    })
+    .finally(() => {
+      activeMerges.delete(mergeId)
+    })
+}
+
+async function failMerge(mergeId: number, episodeId: number | null, message: string) {
+  logTaskError('MergeTask', 'failed', { mergeId, episodeId, error: message })
+  await db.update(schema.videoMerges)
+    .set({ status: 'failed', errorMsg: message })
+    .where(eq(schema.videoMerges.id, mergeId))
+  if (episodeId) await emitMergeEvent(mergeId, episodeId)
+}
+
+/** After a process crash, finish in-flight ffmpeg concatenations from stored clip lists. */
+export async function resumeInterruptedMerges(): Promise<{ resumed: number; failed: number }> {
+  const rows = await db.select().from(schema.videoMerges).where(eq(schema.videoMerges.status, 'processing'))
+  let resumed = 0
+  let failed = 0
+
+  for (const row of rows) {
+    if (activeMerges.has(row.id)) continue
+    const createdAtMs = Date.parse(row.createdAt || '') || 0
+    const age = createdAtMs ? Date.now() - createdAtMs : Number.POSITIVE_INFINITY
+    if (!Number.isFinite(age) || age > MERGE_RESUME_MAX_AGE_MS || !row.episodeId) {
+      await failMerge(row.id, row.episodeId, '服务重启后拼接已超时，请重试')
+      failed++
+      continue
+    }
+
+    let videos: string[] = []
+    try {
+      const parsed = JSON.parse(row.scenes || '[]')
+      videos = Array.isArray(parsed) ? parsed.filter((item: unknown) => typeof item === 'string' && item.trim()) : []
+    } catch {
+      videos = []
+    }
+    if (!videos.length) {
+      await failMerge(row.id, row.episodeId, '服务重启后找不到可拼接的镜头，请重试')
+      failed++
+      continue
+    }
+
+    logTaskStart('MergeTask', 'resume', { mergeId: row.id, episodeId: row.episodeId, clips: videos.length })
+    startMerge(row.id, row.episodeId, videos)
+    resumed++
+  }
+
+  return { resumed, failed }
 }
 
 async function emitMergeEvent(mergeId: number, episodeId: number) {

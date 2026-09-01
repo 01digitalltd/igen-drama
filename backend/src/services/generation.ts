@@ -4,7 +4,7 @@
  */
 import { db, getInsertId, schema } from '../db/index.js'
 import { eq } from '../db/query.js'
-import { getActiveConfig, getConfigById } from './ai.js'
+import { getActiveConfig, getActiveConfigId, getConfigById, isOfficialProvider } from './ai.js'
 import { now } from '../utils/response.js'
 import { downloadFile, generateImageThumb, readImageAsCompressedDataUrl, saveBase64Image } from '../utils/storage.js'
 import { isS3Enabled, toVendorFetchableUrl } from '../utils/s3-media.js'
@@ -24,6 +24,15 @@ const POLL_PROFILES: Record<TaskType, { attempts: number; intervalMs: number; ma
   image: { attempts: 120, intervalMs: 5000, maxDurationMs: 600_000 },
   video: { attempts: 300, intervalMs: 10_000, maxDurationMs: null },
 }
+
+/** Extra window after restart so a vendor job that already finished can still be fetched and saved. */
+const IMAGE_RESUME_GRACE_MS = 5 * 60 * 1000
+const IMAGE_RESUME_MAX_AGE_MS = (POLL_PROFILES.image.maxDurationMs ?? 600_000) + IMAGE_RESUME_GRACE_MS
+const VIDEO_RESUME_MAX_AGE_MS = 6 * 60 * 60 * 1000
+/** Retry the first vendor submit only if the crash happened quickly; otherwise fail to avoid duplicate jobs. */
+const SUBMIT_RETRY_MAX_AGE_MS = 3 * 60 * 1000
+
+const activeProcessors = new Set<number>()
 
 interface GenerateImageParams {
   storyboardId?: number
@@ -62,9 +71,12 @@ interface GenerateVideoParams {
 
 export async function generateImage(params: GenerateImageParams): Promise<number> {
   // 指定配置（集锁定）可能已停用/删除/厂商收敛，失效时回退到当前启用配置，避免生成被旧引用卡死
-  const config = params.configId
-    ? (await getConfigById(params.configId)) ?? await getActiveConfig('image')
-    : await getActiveConfig('image')
+  let config = params.configId ? await getConfigById(params.configId) : null
+  let configId = params.configId ?? null
+  if (!config) {
+    config = await getActiveConfig('image')
+    configId = await getActiveConfigId('image')
+  }
   if (!config) throw new Error('未配置图片模型，请先到「设置」页添加并启用 AI 服务')
 
   const id = await createTask('image', config, {
@@ -80,6 +92,7 @@ export async function generateImage(params: GenerateImageParams): Promise<number
     frameType: params.frameType,
     referenceImages: params.referenceImages,
     episodeId: params.episodeId,
+    configId: configId || undefined,
   })
 
   logTaskStart('ImageTask', 'enqueue', {
@@ -101,9 +114,12 @@ export async function generateImage(params: GenerateImageParams): Promise<number
 
 export async function generateVideo(params: GenerateVideoParams): Promise<number> {
   // 指定配置（集锁定）可能已停用/删除/厂商收敛，失效时回退到当前启用配置
-  const config = params.configId
-    ? (await getConfigById(params.configId)) ?? await getActiveConfig('video')
-    : await getActiveConfig('video')
+  let config = params.configId ? await getConfigById(params.configId) : null
+  let configId = params.configId ?? null
+  if (!config) {
+    config = await getActiveConfig('video')
+    configId = await getActiveConfigId('video')
+  }
   if (!config) throw new Error('未配置视频模型，请先到「设置」页添加并启用 AI 服务')
 
   const id = await createTask('video', config, {
@@ -125,6 +141,7 @@ export async function generateVideo(params: GenerateVideoParams): Promise<number
     // 保留高分辨率档位透传（MiniMax 768P/2K），火山等适配器内部自行归并
     resolution: ['480p', '720p', '1080p', '2K'].includes(params.resolution || '') ? params.resolution : '720p',
     episodeId: params.episodeId,
+    configId: configId || undefined,
   })
 
   logTaskStart('VideoTask', 'enqueue', {
@@ -170,11 +187,21 @@ async function createTask(
 
   const id = getInsertId(res)
   void emitTaskEvent(id)
-  processTask(id, config).catch(err => {
-    logTaskError(taskLabel(type), 'process', { id, error: err.message })
-    console.error(`${taskLabel(type)} ${id} failed:`, err)
-  })
+  startTaskProcessor(id, type, processTask(id, config))
   return id
+}
+
+function startTaskProcessor(id: number, type: TaskType, work: Promise<void>) {
+  if (activeProcessors.has(id)) return
+  activeProcessors.add(id)
+  work
+    .catch((err: any) => {
+      logTaskError(taskLabel(type), 'process', { id, error: err.message })
+      console.error(`${taskLabel(type)} ${id} failed:`, err)
+    })
+    .finally(() => {
+      activeProcessors.delete(id)
+    })
 }
 
 function parseTaskParams(raw: string | null | undefined): Record<string, any> {
@@ -283,7 +310,7 @@ async function processTask(id: number, config: AIConfig) {
       }
 
       await markPolling(id, taskId)
-      pollTask(record, config, taskId!)
+      await pollTask(record, config, taskId!)
       return
     }
 
@@ -297,7 +324,7 @@ async function processTask(id: number, config: AIConfig) {
     }
 
     await markPolling(id, taskId)
-    pollTask(record, config, taskId!)
+    await pollTask(record, config, taskId!)
   } catch (err: any) {
     await failTask(id, err.message)
   }
@@ -354,19 +381,36 @@ async function emitTaskEvent(id: number) {
 
 type SysTaskRecord = typeof schema.sysTask.$inferSelect
 
-async function pollTask(record: SysTaskRecord, config: AIConfig, taskId: string) {
+async function pollTask(
+  record: SysTaskRecord,
+  config: AIConfig,
+  taskId: string,
+  opts?: { immediate?: boolean },
+) {
   const type = record.type as TaskType
   const label = taskLabel(type)
   const profile = POLL_PROFILES[type]
   const adapter = type === 'image' ? getImageAdapter(config.provider) : getVideoAdapter(config.provider)
   const startedAt = Date.now()
+  const createdAtMs = Date.parse(record.createdAt || '') || startedAt
+  const hardDeadlineMs = type === 'image'
+    ? createdAtMs + IMAGE_RESUME_MAX_AGE_MS
+    : createdAtMs + VIDEO_RESUME_MAX_AGE_MS
 
   for (let i = 0; i < profile.attempts; i++) {
+    if (Date.now() >= hardDeadlineMs) {
+      await failTask(record.id, type === 'image'
+        ? 'Timeout: Polling exceeded 10 minutes'
+        : 'Timeout: video polling exceeded 6 hours')
+      return
+    }
     if (profile.maxDurationMs && Date.now() - startedAt >= profile.maxDurationMs) {
       await failTask(record.id, 'Timeout: Polling exceeded 10 minutes')
       return
     }
-    await new Promise(r => setTimeout(r, profile.intervalMs))
+    if (!(opts?.immediate && i === 0)) {
+      await new Promise(r => setTimeout(r, profile.intervalMs))
+    }
     try {
       const { url, method, headers } = adapter.buildPollRequest(config, taskId)
       logTaskProgress(label, 'poll-request', {
@@ -429,6 +473,101 @@ async function pollTask(record: SysTaskRecord, config: AIConfig, taskId: string)
     }
   }
   await failTask(record.id, 'Timeout: polling attempts exhausted')
+}
+
+async function resolveConfigForTask(record: SysTaskRecord): Promise<AIConfig | null> {
+  const params = parseTaskParams(record.params)
+  const type = record.type as TaskType
+  const configId = Number(params.configId || 0)
+  if (Number.isInteger(configId) && configId > 0) {
+    const byId = await getConfigById(configId, { allowInactive: true })
+    if (byId) return byId
+  }
+
+  const provider = String(record.provider || '').trim().toLowerCase()
+  if (provider) {
+    const rows = (await db.select().from(schema.aiServiceConfigs)
+      .where(eq(schema.aiServiceConfigs.serviceType, type))) as Array<{
+      id: number
+      provider?: string | null
+      isActive?: boolean | number | null
+      priority?: number | null
+    }>
+    const matched = rows
+      .filter((r) => String(r.provider || '').toLowerCase() === provider && isOfficialProvider(type, r.provider))
+      .sort((a, b) => Number(!!b.isActive) - Number(!!a.isActive) || (Number(b.priority) || 0) - (Number(a.priority) || 0))[0]
+    if (matched) {
+      const byProvider = await getConfigById(Number(matched.id), { allowInactive: true })
+      if (byProvider) return byProvider
+    }
+  }
+
+  return getActiveConfig(type)
+}
+
+async function scheduleResume(row: SysTaskRecord): Promise<'poll' | 'retry' | 'fail'> {
+  const type = row.type as TaskType
+  const id = Number(row.id)
+  const createdAtMs = Date.parse(row.createdAt || '') || 0
+  const age = createdAtMs ? Date.now() - createdAtMs : Number.POSITIVE_INFINITY
+  const maxAge = type === 'image' ? IMAGE_RESUME_MAX_AGE_MS : VIDEO_RESUME_MAX_AGE_MS
+
+  if (!Number.isFinite(age) || age > maxAge) {
+    await failTask(id, '服务重启后任务已超时，请重试')
+    return 'fail'
+  }
+
+  const config = await resolveConfigForTask(row)
+  if (!config) {
+    await failTask(id, '服务重启后找不到可用的 AI 配置，请重试')
+    return 'fail'
+  }
+
+  const vendorTaskId = String(row.taskId || '').trim()
+  if (vendorTaskId) {
+    logTaskStart(taskLabel(type), 'resume-poll', {
+      id,
+      taskId: vendorTaskId,
+      provider: config.provider,
+    })
+    startTaskProcessor(id, type, pollTask(row, config, vendorTaskId, { immediate: true }))
+    return 'poll'
+  }
+
+  if (age > SUBMIT_RETRY_MAX_AGE_MS) {
+    await failTask(id, '服务重启，生成任务在提交厂商前中断，请重试')
+    return 'fail'
+  }
+
+  logTaskStart(taskLabel(type), 'resume-retry', { id, provider: config.provider })
+  startTaskProcessor(id, type, processTask(id, config))
+  return 'retry'
+}
+
+/** After a process crash, keep polling vendor jobs and persist results. */
+export async function resumeInterruptedTasks(): Promise<{ resumed: number; retried: number; failed: number }> {
+  const rows = (await db.select().from(schema.sysTask).where(eq(schema.sysTask.status, 'processing'))) as SysTaskRecord[]
+
+  let resumed = 0
+  let retried = 0
+  let failed = 0
+
+  for (const row of rows) {
+    if (row.type !== 'image' && row.type !== 'video') continue
+    const id = Number(row.id)
+    if (activeProcessors.has(id)) continue
+    try {
+      const outcome = await scheduleResume(row)
+      if (outcome === 'poll') resumed++
+      else if (outcome === 'retry') retried++
+      else failed++
+    } catch (err: any) {
+      failed++
+      await failTask(id, err?.message || '服务重启后无法恢复生成任务')
+    }
+  }
+
+  return { resumed, retried, failed }
 }
 
 async function handleImageComplete(record: SysTaskRecord, imageUrl: string) {
