@@ -6,6 +6,7 @@ import { validAgentTypes } from '../agents/index.js'
 import { buildAgentRequestContext } from '../agents/context.js'
 import { mastra } from '../mastra/index.js'
 import { withContentLanguage } from '../utils/content-language.js'
+import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 
 export interface AgentJob {
   id: string
