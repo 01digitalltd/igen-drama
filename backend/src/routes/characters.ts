@@ -82,7 +82,7 @@ app.delete('/:id', async (c) => {
   return success(c)
 })
 
-// POST /characters/:id/generate-image
+// POST /characters/:id/generate-image — enqueue immediately; wait via SSE + task poll
 app.post('/:id/generate-image', async (c) => {
   const id = Number(c.req.param('id'))
   await loadOwnedCharacter(c, id)
@@ -95,8 +95,7 @@ app.post('/:id/generate-image', async (c) => {
   if (!ep) return badRequest(c, 'Episode not found')
 
   const stylePrompt = await getDramaStylePrompt(char.dramaId)
-  const finalPrompt = await ensureCharacterFinalPrompt(char, ep.id, false, { model: body.text_model, configId: body.text_config_id ?? undefined, locale: getRequestLocale(c, body.locale) })
-  const prompt = finalPrompt || characterImagePrompt(char, stylePrompt)
+  const prompt = char.finalPrompt || characterImagePrompt(char, stylePrompt)
   try {
     logTaskStart('CharacterImage', 'generate', { characterId: id, episodeId: ep.id, dramaId: char.dramaId })
     const genId = await generateImage({ characterId: id, dramaId: char.dramaId, episodeId: ep.id, prompt, model: body.model, size: CHARACTER_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })
@@ -137,20 +136,20 @@ app.post('/batch-generate-images', async (c) => {
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
   const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
   if (!ep) return badRequest(c, 'Episode not found')
-  const results: number[] = []
   const stylePrompt = await getDramaStylePrompt(ep.dramaId)
-  for (const cid of ids) {
+  const results = await Promise.all(ids.map(async (cid) => {
     const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, cid))
-    if (!char) continue
-    const finalPrompt = await ensureCharacterFinalPrompt(char, ep.id, false, { model: body.text_model, configId: body.text_config_id ?? undefined, locale: getRequestLocale(c, body.locale) })
-    const prompt = finalPrompt || characterImagePrompt(char, stylePrompt)
+    if (!char) return 0
+    const prompt = char.finalPrompt || characterImagePrompt(char, stylePrompt)
     try {
-      const genId = await generateImage({ characterId: cid, dramaId: char.dramaId, episodeId: ep.id, prompt, model: body.model, size: CHARACTER_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })
-      results.push(genId)
-    } catch {}
-  }
-  logTaskSuccess('CharacterImage', 'batch-generate', { episodeId: ep.id, requested: ids.length, started: results.length })
-  return success(c, { count: results.length, ids: results })
+      return await generateImage({ characterId: cid, dramaId: char.dramaId, episodeId: ep.id, prompt, model: body.model, size: CHARACTER_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })
+    } catch {
+      return 0
+    }
+  }))
+  const started = results.filter((id) => id > 0)
+  logTaskSuccess('CharacterImage', 'batch-generate', { episodeId: ep.id, requested: ids.length, started: started.length })
+  return success(c, { count: started.length, ids: started })
 })
 
 export default app

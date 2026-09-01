@@ -67,7 +67,7 @@ app.put('/:id', async (c) => {
   return success(c)
 })
 
-// POST /scenes/:id/generate-image
+// POST /scenes/:id/generate-image — enqueue immediately; wait via SSE + task poll
 app.post('/:id/generate-image', async (c) => {
   const id = Number(c.req.param('id'))
   const body = await c.req.json()
@@ -77,8 +77,7 @@ app.post('/:id/generate-image', async (c) => {
   if (!ep) return badRequest(c, 'Episode not found')
 
   const stylePrompt = await getDramaStylePrompt(scene.dramaId)
-  const finalPrompt = await ensureSceneFinalPrompt(scene, ep.id, false, { model: body.text_model, configId: body.text_config_id ?? undefined, locale: getRequestLocale(c, body.locale) })
-  const prompt = finalPrompt || [
+  const prompt = scene.finalPrompt || [
     stylePrompt || '',
     scene.location,
     scene.time || '',

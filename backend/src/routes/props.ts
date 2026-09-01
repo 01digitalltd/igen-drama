@@ -104,7 +104,7 @@ app.post('/:id/generate-prompt', async (c) => {
   return success(c, { final_prompt: finalPrompt })
 })
 
-// POST /props/:id/generate-image — 生成道具白底单品图
+// POST /props/:id/generate-image — enqueue immediately; wait via SSE + task poll
 app.post('/:id/generate-image', async (c) => {
   const id = Number(c.req.param('id'))
   const body = await c.req.json()
@@ -115,8 +115,7 @@ app.post('/:id/generate-image', async (c) => {
   if (!ep) return badRequest(c, 'Episode not found')
 
   const stylePrompt = await getDramaStylePrompt(prop.dramaId)
-  const finalPrompt = await ensurePropFinalPrompt(prop, ep.id, false, { model: body.text_model, configId: body.text_config_id ?? undefined, locale: getRequestLocale(c, body.locale) })
-  const prompt = finalPrompt || propImagePrompt(prop, stylePrompt)
+  const prompt = prop.finalPrompt || propImagePrompt(prop, stylePrompt)
   try {
     logTaskStart('PropImage', 'generate', { propId: id, episodeId: ep.id, dramaId: prop.dramaId })
     const genId = await generateImage({ propId: id, dramaId: prop.dramaId, episodeId: ep.id, prompt, model: body.model, size: PROP_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })

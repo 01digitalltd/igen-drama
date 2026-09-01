@@ -57,6 +57,7 @@ test('image generation prefers the stored final prompt with agent generation and
   const service = read('src/services/final-prompt.ts')
   const characters = read('src/routes/characters.ts')
   const scenes = read('src/routes/scenes.ts')
+  const props = read('src/routes/props.ts')
 
   assert.match(service, /export async function ensureCharacterFinalPrompt/)
   assert.match(service, /export async function ensureSceneFinalPrompt/)
@@ -70,8 +71,16 @@ test('image generation prefers the stored final prompt with agent generation and
   assert.match(service, /if \(scene\.finalPrompt && !force\) return scene\.finalPrompt/)
   assert.match(service, /force = false/)
 
+  // generate-image enqueues immediately; prompt agent is generate-prompt only
+  const imageRoute = characters.slice(characters.indexOf("generate-image"))
+  const imageEnd = imageRoute.indexOf("generate-prompt")
+  assert.match(imageRoute.slice(0, imageEnd), /char\.finalPrompt \|\| characterImagePrompt/)
+  assert.doesNotMatch(imageRoute.slice(0, imageEnd), /ensureCharacterFinalPrompt/)
+  assert.match(scenes, /scene\.finalPrompt \|\|/)
+  assert.match(props, /prop\.finalPrompt \|\| propImagePrompt/)
+
+  // generate-prompt still runs the prompt agent
   assert.match(characters, /ensureCharacterFinalPrompt\(char, ep\.id, /)
-  // 文本模型覆盖（text_model/text_config_id）透传到提示词 Agent
   assert.match(characters, /text_model/)
   assert.match(characters, /finalPrompt \|\| characterImagePrompt\(char, stylePrompt\)/)
   assert.match(scenes, /ensureSceneFinalPrompt\(scene, ep\.id, /)
