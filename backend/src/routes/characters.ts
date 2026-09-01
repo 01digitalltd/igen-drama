@@ -99,7 +99,7 @@ app.post('/:id/generate-image', async (c) => {
   const prompt = finalPrompt || characterImagePrompt(char, stylePrompt)
   try {
     logTaskStart('CharacterImage', 'generate', { characterId: id, episodeId: ep.id, dramaId: char.dramaId })
-    const genId = await generateImage({ characterId: id, dramaId: char.dramaId, prompt, model: body.model, size: CHARACTER_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })
+    const genId = await generateImage({ characterId: id, dramaId: char.dramaId, episodeId: ep.id, prompt, model: body.model, size: CHARACTER_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })
     logTaskSuccess('CharacterImage', 'generate', { characterId: id, generationId: genId })
     return success(c, { image_generation_id: genId })
   } catch (err: any) {
@@ -145,7 +145,7 @@ app.post('/batch-generate-images', async (c) => {
     const finalPrompt = await ensureCharacterFinalPrompt(char, ep.id, false, { model: body.text_model, configId: body.text_config_id ?? undefined, locale: getRequestLocale(c, body.locale) })
     const prompt = finalPrompt || characterImagePrompt(char, stylePrompt)
     try {
-      const genId = await generateImage({ characterId: cid, dramaId: char.dramaId, prompt, model: body.model, size: CHARACTER_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })
+      const genId = await generateImage({ characterId: cid, dramaId: char.dramaId, episodeId: ep.id, prompt, model: body.model, size: CHARACTER_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })
       results.push(genId)
     } catch {}
   }

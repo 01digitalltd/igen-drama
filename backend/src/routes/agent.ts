@@ -4,26 +4,14 @@
 import { Hono } from 'hono'
 import { validAgentTypes } from '../agents/index.js'
 import { success, badRequest, notFound } from '../utils/response.js'
-import { getAgentJob, startAgentJob } from '../services/agent-jobs.js'
+import { getAgentJob, startAgentJob, toPublicAgentJob } from '../services/agent-jobs.js'
 import { loadOwnedDrama, loadOwnedEpisode } from '../utils/ownership.js'
 import { getRequestLocale } from '../middleware/request-locale.js'
 
 const app = new Hono()
 
 function publicJob(job: ReturnType<typeof getAgentJob>) {
-  if (!job) return null
-  return {
-    job_id: job.id,
-    agent_type: job.agentType,
-    status: job.status,
-    started_at: job.started_at,
-    finished_at: job.finished_at || null,
-    error: job.error || null,
-    type: job.status === 'done' ? 'done' : job.status,
-    text: job.text || '',
-    toolCalls: job.toolCalls || [],
-    toolResults: job.toolResults || [],
-  }
+  return job ? toPublicAgentJob(job) : null
 }
 
 // POST /agent/:type/chat — 立即返回 job_id

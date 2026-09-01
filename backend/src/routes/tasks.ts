@@ -40,6 +40,7 @@ app.post('/', async (c) => {
     // 集锁定的生成配置优先于请求指定；视频分辨率同样锁定到集
     let configId: number | undefined = body.config_id
     let episodeResolution: string | undefined
+    let episodeId: number | undefined
     if (body.storyboard_id) {
       const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, Number(body.storyboard_id)))
       if (sb) {
@@ -47,6 +48,7 @@ app.post('/', async (c) => {
         const locked = type === 'image' ? ep?.imageConfigId : ep?.videoConfigId
         if (locked != null) configId = locked
         if (type === 'video' && ep?.resolution) episodeResolution = ep.resolution
+        episodeId = sb.episodeId
       }
     }
 
@@ -56,6 +58,7 @@ app.post('/', async (c) => {
       sceneId: body.scene_id,
       characterId: body.character_id,
       dramaId: body.drama_id,
+      episodeId,
     })
     logTaskPayload('TaskAPI', 'request body', body)
 
@@ -63,6 +66,7 @@ app.post('/', async (c) => {
       ? await generateImage({
         storyboardId: body.storyboard_id,
         dramaId: body.drama_id,
+        episodeId,
         sceneId: body.scene_id,
         characterId: body.character_id,
         prompt: body.prompt,
@@ -75,6 +79,7 @@ app.post('/', async (c) => {
       : await generateVideo({
         storyboardId: body.storyboard_id,
         dramaId: body.drama_id,
+        episodeId,
         prompt: body.prompt,
         model: body.model,
         referenceMode: 'reference',

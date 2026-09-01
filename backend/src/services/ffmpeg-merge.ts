@@ -11,6 +11,8 @@ import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger
 import { extractVideoPoster } from '../utils/video-poster.js'
 import { ffmpeg, checkFfmpegSuite } from '../utils/ffmpeg.js'
 import { ensureScratchDir, materializeLocalFile, persistLocalFile } from '../utils/storage.js'
+import { toSnakeCase } from '../utils/transform.js'
+import { publishEpisodeEvent } from './episode-events.js'
 
 /**
  * 拼接一集的镜头视频。
@@ -54,6 +56,7 @@ export async function mergeEpisodeVideos(episodeId: number, dramaId: number, sto
     createdAt: ts,
   })
   const mergeId = getInsertId(res)
+  await emitMergeEvent(mergeId, episodeId)
 
   doMerge(mergeId, episodeId, videos).catch(async err => {
     logTaskError('MergeTask', 'episode-merge', { mergeId, episodeId, error: err.message })
@@ -61,9 +64,16 @@ export async function mergeEpisodeVideos(episodeId: number, dramaId: number, sto
     await db.update(schema.videoMerges)
       .set({ status: 'failed', errorMsg: err.message })
       .where(eq(schema.videoMerges.id, mergeId))
+    await emitMergeEvent(mergeId, episodeId)
   })
 
   return mergeId
+}
+
+async function emitMergeEvent(mergeId: number, episodeId: number) {
+  const [row] = await db.select().from(schema.videoMerges).where(eq(schema.videoMerges.id, mergeId))
+  if (!row) return
+  publishEpisodeEvent(episodeId, { type: 'merge', payload: toSnakeCase(row) })
 }
 
 async function doMerge(mergeId: number, episodeId: number, videos: string[]) {
@@ -133,6 +143,7 @@ async function doMerge(mergeId: number, episodeId: number, videos: string[]) {
       duration,
       clips: videos.length,
     })
+    await emitMergeEvent(mergeId, episodeId)
   } finally {
     for (const item of materialized) item.cleanup()
   }

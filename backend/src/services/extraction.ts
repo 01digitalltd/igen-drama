@@ -18,6 +18,7 @@ import { db, schema } from '../db/index.js'
 import { eq } from '../db/query.js'
 import { contentLanguageInstruction } from '../utils/content-language.js'
 import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { publishEpisodeEvent } from './episode-events.js'
 import { z } from 'zod'
 
 export type ExtractTarget = 'characters' | 'scenes' | 'props'
@@ -230,6 +231,17 @@ function extractUserMessage(target: ExtractTarget, script: string, existingHint:
   ].filter(Boolean).join('\n\n')
 }
 
+/** 查询某集三类资产的提取任务状态（未启动过的类型为 null） */
+export function getExtractionStatus(episodeId: number): Record<ExtractTarget, ExtractTask | null> {
+  const result = {} as Record<ExtractTarget, ExtractTask | null>
+  for (const target of EXTRACT_TARGETS) result[target] = tasks.get(keyOf(episodeId, target)) || null
+  return result
+}
+
+function emitExtractStatus(episodeId: number) {
+  publishEpisodeEvent(episodeId, { type: 'extract', payload: getExtractionStatus(episodeId) })
+}
+
 /** 启动异步提取任务（立即返回）；同集同类型已在运行时返回 false；可指定文本模型覆盖 */
 export function startExtraction(episodeId: number, dramaId: number, target: ExtractTarget, opts: { model?: string; configId?: number; locale?: string } = {}): boolean {
   const key = keyOf(episodeId, target)
@@ -237,6 +249,7 @@ export function startExtraction(episodeId: number, dramaId: number, target: Extr
 
   const task: ExtractTask = { status: 'running', started_at: new Date().toISOString() }
   tasks.set(key, task)
+  emitExtractStatus(episodeId)
 
   logTaskStart('Extract', target, { episodeId, dramaId, model: opts.model || undefined, configId: opts.configId || undefined })
   ;(async () => {
@@ -289,6 +302,7 @@ export function startExtraction(episodeId: number, dramaId: number, target: Extr
     .then((summary) => {
       task.status = 'done'
       task.finished_at = new Date().toISOString()
+      emitExtractStatus(episodeId)
       logTaskSuccess('Extract', target, {
         episodeId,
         linked: summary.linked,
@@ -300,14 +314,8 @@ export function startExtraction(episodeId: number, dramaId: number, target: Extr
       task.status = 'error'
       task.finished_at = new Date().toISOString()
       task.error = err?.message || '提取失败'
+      emitExtractStatus(episodeId)
       logTaskError('Extract', target, { episodeId, error: err?.message })
     })
   return true
-}
-
-/** 查询某集三类资产的提取任务状态（未启动过的类型为 null） */
-export function getExtractionStatus(episodeId: number): Record<ExtractTarget, ExtractTask | null> {
-  const result = {} as Record<ExtractTarget, ExtractTask | null>
-  for (const target of EXTRACT_TARGETS) result[target] = tasks.get(keyOf(episodeId, target)) || null
-  return result
 }

@@ -1,10 +1,13 @@
 import { Hono } from 'hono'
+import { streamSSE } from 'hono/streaming'
 import { and, eq, isNull } from '../db/query.js'
 import { db, getInsertId, schema } from '../db/index.js'
 import { success, notFound, badRequest, now } from '../utils/response.js'
 import { toSnakeCaseArray, toSnakeCase } from '../utils/transform.js'
 import { getActiveConfigId } from '../services/ai.js'
 import { EXTRACT_TARGETS, getExtractionStatus, startExtraction, type ExtractTarget } from '../services/extraction.js'
+import { listAgentJobsForEpisode, toPublicAgentJob } from '../services/agent-jobs.js'
+import { subscribeEpisodeEvents } from '../services/episode-events.js'
 import { getVideoPromptBatchStatus, startVideoPromptBatch } from '../services/video-prompts.js'
 import { loadOwnedDrama, loadOwnedEpisode } from '../utils/ownership.js'
 import { getRequestLocale } from '../middleware/request-locale.js'
@@ -133,7 +136,7 @@ app.get('/:id/props', async (c) => {
   return success(c, toSnakeCaseArray(result))
 })
 
-// POST /episodes/:id/extract — 异步提取资产（target: characters | scenes | props），立即返回，前端轮询状态
+// POST /episodes/:id/extract — 异步提取资产（target: characters | scenes | props），立即返回；状态经 SSE /events 推送
 app.post('/:id/extract', async (c) => {
   const id = Number(c.req.param('id'))
   const ep = await loadOwnedEpisode(c, id)
@@ -148,11 +151,48 @@ app.post('/:id/extract', async (c) => {
   return success(c, { target, status: 'running', already_running: !started })
 })
 
-// GET /episodes/:id/extract-status — 查询三类资产提取任务状态
+// GET /episodes/:id/extract-status — 查询三类资产提取任务状态（SSE 断开时的兜底）
 app.get('/:id/extract-status', async (c) => {
   const id = Number(c.req.param('id'))
   await loadOwnedEpisode(c, id)
   return success(c, getExtractionStatus(id))
+})
+
+// GET /episodes/:id/events — push extract + agent job updates (SSE through the Next.js BFF)
+app.get('/:id/events', async (c) => {
+  const id = Number(c.req.param('id'))
+  await loadOwnedEpisode(c, id)
+  c.header('Cache-Control', 'no-cache, no-transform')
+  c.header('Connection', 'keep-alive')
+  c.header('X-Accel-Buffering', 'no')
+  return streamSSE(c, async (stream) => {
+    const write = async (event: string, payload: unknown) => {
+      if (stream.aborted || stream.closed) return
+      await stream.writeSSE({ event, data: JSON.stringify(payload) })
+    }
+    await write('extract', getExtractionStatus(id))
+    for (const job of listAgentJobsForEpisode(id)) {
+      await write('job', toPublicAgentJob(job))
+    }
+    const prompts = getVideoPromptBatchStatus(id)
+    if (prompts) await write('prompts', prompts)
+    const mergeRows = await db.select().from(schema.videoMerges).where(eq(schema.videoMerges.episodeId, id))
+    const latestMerge = mergeRows[mergeRows.length - 1]
+    if (latestMerge) await write('merge', toSnakeCase(latestMerge))
+    const unsub = subscribeEpisodeEvents(id, (event) => {
+      void write(event.type, event.payload)
+    })
+    const ping = setInterval(() => {
+      void write('ping', { t: Date.now() })
+    }, 15000)
+    await new Promise<void>((resolve) => {
+      const done = () => resolve()
+      stream.onAbort(done)
+      c.req.raw.signal.addEventListener('abort', done, { once: true })
+    })
+    clearInterval(ping)
+    unsub()
+  })
 })
 
 // POST /episodes/:id/generate-video-prompts — 异步批量为缺少视频提示词的分镜生成（立即返回，前端轮询状态）

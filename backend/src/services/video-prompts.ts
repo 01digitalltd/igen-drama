@@ -8,6 +8,7 @@ import { mastra } from '../mastra/index.js'
 import { buildAgentRequestContext } from '../agents/context.js'
 import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { withContentLanguage } from '../utils/content-language.js'
+import { publishEpisodeEvent } from './episode-events.js'
 
 export interface VideoPromptBatchStatus {
   status: 'running' | 'done' | 'error'
@@ -21,6 +22,10 @@ export interface VideoPromptBatchStatus {
 }
 
 const tasks = new Map<number, VideoPromptBatchStatus>()
+
+function emitPromptStatus(episodeId: number) {
+  publishEpisodeEvent(episodeId, { type: 'prompts', payload: getVideoPromptBatchStatus(episodeId) })
+}
 
 /** 启动批量生成（立即返回）；运行中返回 started:false,total:-1；无待生成分镜返回 started:false,total:0；
  *  传入 storyboardIds 时只处理所选分镜（即使已有提示词也重新生成），否则处理全部缺失提示词的分镜 */
@@ -56,6 +61,7 @@ export async function startVideoPromptBatch(
     started_at: new Date().toISOString(),
   }
   tasks.set(episodeId, task)
+  emitPromptStatus(episodeId)
 
   logTaskStart('VideoPrompt', 'batch', { episodeId, dramaId, total: pending.length, model: opts.model || undefined })
   ;(async () => {
@@ -84,9 +90,11 @@ export async function startVideoPromptBatch(
           task.failed++
           logTaskError('VideoPrompt', 'batch-shot', { storyboardId: sb.id, error: 'agent finished but video_prompt is empty' })
         }
+        emitPromptStatus(episodeId)
       } catch (err: any) {
         task.failed++
         logTaskError('VideoPrompt', 'batch-shot', { storyboardId: sb.id, error: err?.message })
+        emitPromptStatus(episodeId)
       }
     }
   })()
@@ -94,12 +102,14 @@ export async function startVideoPromptBatch(
       task.status = 'done'
       task.finished_at = new Date().toISOString()
       task.current_storyboard_id = undefined
+      emitPromptStatus(episodeId)
       logTaskSuccess('VideoPrompt', 'batch', { episodeId, total: task.total, completed: task.completed, failed: task.failed })
     })
     .catch((err: any) => {
       task.status = 'error'
       task.finished_at = new Date().toISOString()
       task.error = err?.message || '批量生成失败'
+      emitPromptStatus(episodeId)
       logTaskError('VideoPrompt', 'batch', { episodeId, error: err?.message })
     })
   return { started: true, total: pending.length }

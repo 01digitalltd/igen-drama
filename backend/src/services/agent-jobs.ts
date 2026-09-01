@@ -7,6 +7,7 @@ import { buildAgentRequestContext } from '../agents/context.js'
 import { mastra } from '../mastra/index.js'
 import { withContentLanguage } from '../utils/content-language.js'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { publishEpisodeEvent } from './episode-events.js'
 
 export interface AgentJob {
   id: string
@@ -47,6 +48,29 @@ export function getAgentJob(id: string): AgentJob | null {
   return jobs.get(id) || null
 }
 
+export function listAgentJobsForEpisode(episodeId: number): AgentJob[] {
+  return [...jobs.values()].filter((job) => job.episodeId === episodeId)
+}
+
+export function toPublicAgentJob(job: AgentJob) {
+  return {
+    job_id: job.id,
+    agent_type: job.agentType,
+    status: job.status,
+    started_at: job.started_at,
+    finished_at: job.finished_at || null,
+    error: job.error || null,
+    type: job.status === 'done' ? 'done' : job.status,
+    text: job.text || '',
+    toolCalls: job.toolCalls || [],
+    toolResults: job.toolResults || [],
+  }
+}
+
+function emitAgentJob(job: AgentJob) {
+  publishEpisodeEvent(job.episodeId, { type: 'job', payload: toPublicAgentJob(job) })
+}
+
 export function startAgentJob(params: {
   agentType: string
   message: string
@@ -78,6 +102,7 @@ export function startAgentJob(params: {
     started_at: new Date().toISOString(),
   }
   jobs.set(job.id, job)
+  emitAgentJob(job)
 
   logTaskStart('Agent', agentType, { dramaId, episodeId, jobId: job.id, message })
   logTaskPayload('Agent', `${agentType} input`, params)
@@ -110,6 +135,7 @@ export function startAgentJob(params: {
       job.text = result.text || ''
       job.status = 'done'
       job.finished_at = new Date().toISOString()
+      emitAgentJob(job)
       logTaskSuccess('Agent', agentType, { elapsedSeconds: elapsed, jobId: job.id })
       logTaskProgress('Agent', 'tool-summary', {
         agentType,
@@ -122,6 +148,7 @@ export function startAgentJob(params: {
       job.status = 'error'
       job.finished_at = new Date().toISOString()
       job.error = err?.message || 'Agent execution failed'
+      emitAgentJob(job)
       logTaskError('Agent', agentType, { elapsedSeconds: elapsed, jobId: job.id, error: job.error })
       console.error(err.stack || err)
     })

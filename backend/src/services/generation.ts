@@ -12,6 +12,8 @@ import { extractVideoPoster } from '../utils/video-poster.js'
 import { getImageAdapter, getVideoAdapter } from './adapters/registry'
 import type { AIConfig } from './adapters/types'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn, redactUrl } from '../utils/task-logger.js'
+import { toSnakeCase } from '../utils/transform.js'
+import { publishEpisodeEvent } from './episode-events.js'
 
 type TaskType = 'image' | 'video'
 
@@ -26,6 +28,7 @@ const POLL_PROFILES: Record<TaskType, { attempts: number; intervalMs: number; ma
 interface GenerateImageParams {
   storyboardId?: number
   dramaId?: number
+  episodeId?: number
   sceneId?: number
   characterId?: number
   propId?: number
@@ -40,6 +43,7 @@ interface GenerateImageParams {
 interface GenerateVideoParams {
   storyboardId?: number
   dramaId?: number
+  episodeId?: number
   prompt: string
   model?: string
   referenceMode?: string
@@ -75,6 +79,7 @@ export async function generateImage(params: GenerateImageParams): Promise<number
     size: params.size || '1920x1080',
     frameType: params.frameType,
     referenceImages: params.referenceImages,
+    episodeId: params.episodeId,
   })
 
   logTaskStart('ImageTask', 'enqueue', {
@@ -119,6 +124,7 @@ export async function generateVideo(params: GenerateVideoParams): Promise<number
     aspectRatio: params.aspectRatio || '16:9',
     // 保留高分辨率档位透传（MiniMax 768P/2K），火山等适配器内部自行归并
     resolution: ['480p', '720p', '1080p', '2K'].includes(params.resolution || '') ? params.resolution : '720p',
+    episodeId: params.episodeId,
   })
 
   logTaskStart('VideoTask', 'enqueue', {
@@ -163,6 +169,7 @@ async function createTask(
   })
 
   const id = getInsertId(res)
+  void emitTaskEvent(id)
   processTask(id, config).catch(err => {
     logTaskError(taskLabel(type), 'process', { id, error: err.message })
     console.error(`${taskLabel(type)} ${id} failed:`, err)
@@ -308,6 +315,41 @@ async function failTask(id: number, message: string) {
   await db.update(schema.sysTask)
     .set({ status: 'failed', errorMsg: message, updatedAt: now() })
     .where(eq(schema.sysTask.id, id))
+  await emitTaskEvent(id)
+}
+
+async function episodeIdsForTask(record: SysTaskRecord, params: Record<string, any>): Promise<number[]> {
+  const fromParams = Number(params.episodeId || params.episode_id || 0)
+  if (Number.isInteger(fromParams) && fromParams > 0) return [fromParams]
+  if (record.storyboardId) {
+    const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
+    if (sb?.episodeId) return [sb.episodeId]
+  }
+  const ids = new Set<number>()
+  if (record.characterId) {
+    const links = await db.select().from(schema.episodeCharacters).where(eq(schema.episodeCharacters.characterId, record.characterId))
+    for (const link of links) ids.add(link.episodeId)
+  }
+  if (record.sceneId) {
+    const links = await db.select().from(schema.episodeScenes).where(eq(schema.episodeScenes.sceneId, record.sceneId))
+    for (const link of links) ids.add(link.episodeId)
+  }
+  if (record.propId) {
+    const links = await db.select().from(schema.episodeProps).where(eq(schema.episodeProps.propId, record.propId))
+    for (const link of links) ids.add(link.episodeId)
+  }
+  return [...ids]
+}
+
+async function emitTaskEvent(id: number) {
+  const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+  if (!row) return
+  const episodeIds = await episodeIdsForTask(row, parseTaskParams(row.params))
+  if (!episodeIds.length) return
+  const payload = toSnakeCase(row)
+  for (const episodeId of episodeIds) {
+    publishEpisodeEvent(episodeId, { type: 'task', payload })
+  }
 }
 
 type SysTaskRecord = typeof schema.sysTask.$inferSelect
@@ -401,6 +443,7 @@ async function handleImageComplete(record: SysTaskRecord, imageUrl: string) {
   logTaskSuccess('ImageTask', 'downloaded', { id: record.id, provider: record.provider, localPath })
 
   await writeBackImageAssets(record, localPath)
+  await emitTaskEvent(record.id)
 }
 
 async function handleImageCompleteBase64(record: SysTaskRecord, base64Data: string, mimeType: string) {
@@ -414,6 +457,7 @@ async function handleImageCompleteBase64(record: SysTaskRecord, base64Data: stri
   logTaskSuccess('ImageTask', 'saved-base64', { id: record.id, provider: record.provider, mimeType, localPath })
 
   await writeBackImageAssets(record, localPath)
+  await emitTaskEvent(record.id)
 }
 
 // 图片完成后回写业务表：分镜(按 frameType)、角色、场景、道具
@@ -452,6 +496,7 @@ async function handleVideoComplete(record: SysTaskRecord, videoUrl: string, dura
       .set({ videoUrl: localPath, duration: duration || undefined, updatedAt: now() })
       .where(eq(schema.storyboards.id, record.storyboardId))
   }
+  await emitTaskEvent(record.id)
 }
 
 // ─── 参考素材归一化 ───────────────────────────────────────────────
