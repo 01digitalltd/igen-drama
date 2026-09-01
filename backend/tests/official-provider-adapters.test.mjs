@@ -173,10 +173,10 @@ test('new image and video models use their current API shapes', () => {
   assert.match(geminiImage, /\/v1beta'[\s\S]*'\/interactions'/)
   assert.match(geminiImage, /response_format/)
   assert.doesNotMatch(geminiImage, /Authorization': `Bearer/)
-  assert.match(volcVideo, /doubao-seedance-2-0-260128/)
-  // Seedance 2.0 多模态能力
-  assert.match(volcVideo, /SEEDANCE2_MODEL_PREFIX/)
-  assert.match(volcVideo, /startsWith\(SEEDANCE2_MODEL_PREFIX\)/)
+  assert.match(volcVideo, /doubao-seedance-2-0-fast-260128/)
+  // Seedance 2.0 多模态能力（含 BytePlus dreamina 国际站模型名）
+  assert.match(volcVideo, /function isSeedance20Model/)
+  assert.match(volcVideo, /dreamina-seedance-2/)
   assert.match(volcVideo, /reference_video/)
   assert.match(volcVideo, /reference_audio/)
   assert.match(volcVideo, /generate_audio:\s*record\.generateAudio/)

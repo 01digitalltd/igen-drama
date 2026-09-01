@@ -3,7 +3,8 @@
  * 端点: /api/v3/contents/generations/tasks (注意 /api/v3 前缀)
  * 响应: { id: "task-xxx" } -> 轮询获取状态
  *
- * 仅支持 Doubao Seedance 2.0+ 系列模型，生成模式只保留多模态参考:
+ * 仅支持 Seedance 2.0+ 系列（国内 doubao-seedance-2-0* / 国际站 dreamina-seedance-2*），
+ * 生成模式只保留多模态参考:
  * - reference   多模态参考（≤9 reference_image + ≤3 reference_video + ≤3 reference_audio + 可选文本）
  *   有参考音频时至少包含 1 个参考图片或视频
  */
@@ -17,9 +18,16 @@ import type {
 } from './types'
 import { joinProviderUrl } from './url'
 
-/** 仅支持 Seedance 2.0+ 系列（前缀匹配，兼容未来 2.0.x 变体） */
-const SEEDANCE2_MODEL_PREFIX = 'doubao-seedance-2-0'
+/** 国内 ARK：doubao-seedance-2-0*；BytePlus 国际站：dreamina-seedance-2*（与 mkt-ai 相同） */
 const DEFAULT_MODEL = 'doubao-seedance-2-0-fast-260128'
+
+function isSeedance20Model(model: string) {
+  const m = (model || '').toLowerCase()
+  if (m.startsWith('doubao-seedance-2-0')) return true
+  if (m.startsWith('dreamina-seedance-2')) return true
+  if (m.includes('seedance-2-fast') || m.includes('seedance-2-pro') || m.includes('seedance-2-lite')) return true
+  return m.includes('seedance-2') && !m.includes('seedance-1')
+}
 
 /** 多模态参考素材上限：图片 9、视频 3、音频 3 */
 const REF_LIMITS = { images: 9, videos: 3, audios: 3 } as const
@@ -39,8 +47,8 @@ export class VolcEngineVideoAdapter implements VideoProviderAdapter {
 
   buildGenerateRequest(config: AIConfig, record: VideoGenerationRecord): ProviderRequest {
     const model = record.model || config.model || DEFAULT_MODEL
-    if (!model.startsWith(SEEDANCE2_MODEL_PREFIX)) {
-      throw new Error(`仅支持 Seedance 2.0 系列模型（${SEEDANCE2_MODEL_PREFIX}-*），当前: ${model}`)
+    if (!isSeedance20Model(model)) {
+      throw new Error(`仅支持 Seedance 2.0 系列模型（doubao-seedance-2-0* / dreamina-seedance-2*），当前: ${model}`)
     }
 
     const prompt = (record.prompt || '').trim()

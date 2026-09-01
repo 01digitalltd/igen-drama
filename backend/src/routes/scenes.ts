@@ -1,11 +1,12 @@
 import { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
+import { and, eq } from '../db/query.js'
 import { db, getInsertId, schema } from '../db/index.js'
 import { success, created, badRequest, now } from '../utils/response.js'
 import { generateImage } from '../services/generation.js'
 import { getDramaStylePrompt } from '../services/style-preset.js'
 import { ensureSceneFinalPrompt } from '../services/final-prompt.js'
 import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { loadOwnedDrama, loadOwnedScene } from '../utils/ownership.js'
 
 const app = new Hono()
 
@@ -14,6 +15,7 @@ app.post('/', async (c) => {
   const body = await c.req.json()
   if (!body.drama_id) return badRequest(c, 'drama_id required')
   if (!body.location?.trim()) return badRequest(c, 'location required')
+  await loadOwnedDrama(c, Number(body.drama_id))
   const ts = now()
   const res = await db.insert(schema.scenes).values({
     dramaId: body.drama_id,
@@ -41,6 +43,7 @@ app.post('/', async (c) => {
 // PUT /scenes/:id
 app.put('/:id', async (c) => {
   const id = Number(c.req.param('id'))
+  await loadOwnedScene(c, id)
   const body = await c.req.json()
   const updates: Record<string, any> = { updatedAt: now() }
   if (body.location !== undefined) updates.location = body.location
@@ -67,8 +70,7 @@ app.put('/:id', async (c) => {
 app.post('/:id/generate-image', async (c) => {
   const id = Number(c.req.param('id'))
   const body = await c.req.json()
-  const [scene] = await db.select().from(schema.scenes).where(eq(schema.scenes.id, id))
-  if (!scene) return badRequest(c, 'Scene not found')
+  const scene = await loadOwnedScene(c, id)
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
   const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
   if (!ep) return badRequest(c, 'Episode not found')
@@ -99,8 +101,7 @@ app.post('/:id/generate-image', async (c) => {
 app.post('/:id/generate-prompt', async (c) => {
   const id = Number(c.req.param('id'))
   const body = await c.req.json()
-  const [scene] = await db.select().from(schema.scenes).where(eq(schema.scenes.id, id))
-  if (!scene) return badRequest(c, 'Scene not found')
+  const scene = await loadOwnedScene(c, id)
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
 
   const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
@@ -119,6 +120,7 @@ app.post('/:id/generate-prompt', async (c) => {
 // DELETE /scenes/:id — 软删除（保留历史生成记录）
 app.delete('/:id', async (c) => {
   const id = Number(c.req.param('id'))
+  await loadOwnedScene(c, id)
   await db.update(schema.scenes).set({ deletedAt: now(), updatedAt: now() }).where(eq(schema.scenes.id, id))
   return success(c)
 })

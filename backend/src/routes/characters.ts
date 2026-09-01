@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
+import { and, eq } from '../db/query.js'
 import { db, getInsertId, schema } from '../db/index.js'
 import { success, created, badRequest, now } from '../utils/response.js'
 import { toSnakeCase } from '../utils/transform.js'
@@ -7,6 +7,7 @@ import { generateImage } from '../services/generation.js'
 import { getDramaStylePrompt } from '../services/style-preset.js'
 import { ensureCharacterFinalPrompt } from '../services/final-prompt.js'
 import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { loadOwnedCharacter, loadOwnedDrama } from '../utils/ownership.js'
 
 const app = new Hono()
 const CHARACTER_IMAGE_SIZE = '1920x1080'
@@ -16,6 +17,7 @@ app.post('/', async (c) => {
   const body = await c.req.json()
   if (!body.drama_id) return badRequest(c, 'drama_id required')
   if (!body.name?.trim()) return badRequest(c, 'name required')
+  await loadOwnedDrama(c, Number(body.drama_id))
   const ts = now()
   const res = await db.insert(schema.characters).values({
     name: body.name.trim(),
@@ -56,6 +58,7 @@ function characterImagePrompt(char: typeof schema.characters.$inferSelect, style
 // PUT /characters/:id
 app.put('/:id', async (c) => {
   const id = Number(c.req.param('id'))
+  await loadOwnedCharacter(c, id)
   const body = await c.req.json()
   const updates: Record<string, any> = { updatedAt: now() }
   for (const key of ['name', 'role', 'description', 'appearance', 'styling', 'imageUrl', 'localPath']) {
@@ -73,6 +76,7 @@ app.put('/:id', async (c) => {
 // DELETE /characters/:id
 app.delete('/:id', async (c) => {
   const id = Number(c.req.param('id'))
+  await loadOwnedCharacter(c, id)
   await db.update(schema.characters).set({ deletedAt: now() }).where(eq(schema.characters.id, id))
   return success(c)
 })
@@ -80,6 +84,7 @@ app.delete('/:id', async (c) => {
 // POST /characters/:id/generate-image
 app.post('/:id/generate-image', async (c) => {
   const id = Number(c.req.param('id'))
+  await loadOwnedCharacter(c, id)
   const body = await c.req.json()
   const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, id))
   if (!char) return badRequest(c, 'Character not found')
@@ -105,6 +110,7 @@ app.post('/:id/generate-image', async (c) => {
 // POST /characters/:id/generate-prompt — 独立生成/重新生成三视图最终提示词（不生图）
 app.post('/:id/generate-prompt', async (c) => {
   const id = Number(c.req.param('id'))
+  await loadOwnedCharacter(c, id)
   const body = await c.req.json()
   const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, id))
   if (!char) return badRequest(c, 'Character not found')

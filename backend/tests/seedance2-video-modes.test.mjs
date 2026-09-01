@@ -8,9 +8,10 @@ const read = (path) => readFileSync(new URL(path, root), 'utf8')
 test('volcengine video adapter only supports Seedance 2.0 models and reference mode only', () => {
   const adapter = read('src/services/adapters/volcengine-video.ts')
 
-  // 模型白名单：仅 doubao-seedance-2-0-* 前缀
-  assert.match(adapter, /SEEDANCE2_MODEL_PREFIX = 'doubao-seedance-2-0'/)
-  assert.match(adapter, /startsWith\(SEEDANCE2_MODEL_PREFIX\)/)
+  // 模型白名单：国内 doubao-seedance-2-0* + BytePlus 国际站 dreamina-seedance-2*
+  assert.match(adapter, /function isSeedance20Model/)
+  assert.match(adapter, /startsWith\('doubao-seedance-2-0'\)/)
+  assert.match(adapter, /startsWith\('dreamina-seedance-2'\)/)
 
   // 只保留多模态参考：其他模式分支与历史映射已清理
   assert.doesNotMatch(adapter, /mode === 'text'/)
@@ -106,32 +107,17 @@ test('tasks route validates reference-mode requirements for video tasks', () => 
 
 test('image/video generation tasks are unified into a single sys_task table', () => {
   const schema = read('src/db/schema.ts')
-  const mysqlSchema = read('src/db/mysql-schema.ts')
   const envExample = read('.env.example')
 
-  // sys_task：type 区分 image/video，生成参数收进 params(JSON)
-  assert.match(schema, /export const sysTask = mysqlTable\('sys_task'/)
-  assert.match(schema, /type: varchar\('type', \{ length: 16 \}\)\.notNull\(\)/)
-  assert.match(schema, /params: text\('params'\)/)
-  assert.match(schema, /resultUrl: text\('result_url'\)/)
-  assert.match(schema, /localPath: text\('local_path'\)/)
+  assert.match(schema, /export const sysTask = defineTable<SysTaskRow>\('sys_task'/)
+  assert.match(schema, /export type SysTaskRow = \{[\s\S]*?type: string/)
+  assert.match(schema, /params: string \| null/)
+  assert.match(schema, /resultUrl: string \| null/)
+  assert.match(schema, /localPath: string \| null/)
 
-  // 旧的 image_generations / video_generations 表定义与回填已移除
   assert.doesNotMatch(schema, /imageGenerations/)
   assert.doesNotMatch(schema, /videoGenerations/)
-  assert.doesNotMatch(mysqlSchema, /CREATE TABLE IF NOT EXISTS image_generations/)
-  assert.doesNotMatch(mysqlSchema, /CREATE TABLE IF NOT EXISTS video_generations/)
-  assert.doesNotMatch(mysqlSchema, /column: 'reference_video_urls'/)
 
-  // DDL 与旧表清理（不迁移历史）
-  assert.match(mysqlSchema, /CREATE TABLE IF NOT EXISTS sys_task \(/)
-  assert.match(mysqlSchema, /type VARCHAR\(16\) NOT NULL/)
-  assert.match(mysqlSchema, /params TEXT/)
-  assert.match(mysqlSchema, /result_url TEXT/)
-  assert.match(mysqlSchema, /DROP TABLE IF EXISTS `image_generations`/)
-  assert.match(mysqlSchema, /DROP TABLE IF EXISTS `video_generations`/)
-
-  // 路由与服务只操作 sys_task（统一 /tasks 入口，type 过滤）
   const tasksRoute = read('src/routes/tasks.ts')
   const service = read('src/services/generation.ts')
   assert.match(tasksRoute, /schema\.sysTask/)

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
+import { and, eq } from '../db/query.js'
 import { db, getInsertId, schema } from '../db/index.js'
 import { success, created, badRequest, now } from '../utils/response.js'
 import { toSnakeCase } from '../utils/transform.js'
@@ -7,6 +7,7 @@ import { generateImage } from '../services/generation.js'
 import { getDramaStylePrompt } from '../services/style-preset.js'
 import { ensurePropFinalPrompt } from '../services/final-prompt.js'
 import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { loadOwnedDrama, loadOwnedProp } from '../utils/ownership.js'
 
 const app = new Hono()
 // 道具图：白底单品静物，方形画布
@@ -17,6 +18,7 @@ app.post('/', async (c) => {
   const body = await c.req.json()
   if (!body.drama_id) return badRequest(c, 'drama_id required')
   if (!body.name?.trim()) return badRequest(c, 'name required')
+  await loadOwnedDrama(c, Number(body.drama_id))
   const ts = now()
   const res = await db.insert(schema.props).values({
     name: body.name.trim(),
@@ -41,6 +43,7 @@ app.post('/', async (c) => {
 // DELETE /props/:id — 软删除
 app.delete('/:id', async (c) => {
   const id = Number(c.req.param('id'))
+  await loadOwnedProp(c, id)
   await db.update(schema.props).set({ deletedAt: now(), updatedAt: now() }).where(eq(schema.props.id, id))
   return success(c)
 })
@@ -48,6 +51,7 @@ app.delete('/:id', async (c) => {
 // PUT /props/:id — 更新道具（物品外貌/类型/最终提示词）
 app.put('/:id', async (c) => {
   const id = Number(c.req.param('id'))
+  await loadOwnedProp(c, id)
   const body = await c.req.json()
   const updates: Record<string, any> = { updatedAt: now() }
   if (body.name !== undefined) updates.name = body.name
@@ -83,8 +87,7 @@ function propImagePrompt(prop: typeof schema.props.$inferSelect, stylePrompt = '
 app.post('/:id/generate-prompt', async (c) => {
   const id = Number(c.req.param('id'))
   const body = await c.req.json()
-  const [prop] = await db.select().from(schema.props).where(eq(schema.props.id, id))
-  if (!prop) return badRequest(c, 'Prop not found')
+  const prop = await loadOwnedProp(c, id)
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
 
   const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
@@ -104,8 +107,7 @@ app.post('/:id/generate-prompt', async (c) => {
 app.post('/:id/generate-image', async (c) => {
   const id = Number(c.req.param('id'))
   const body = await c.req.json()
-  const [prop] = await db.select().from(schema.props).where(eq(schema.props.id, id))
-  if (!prop) return badRequest(c, 'Prop not found')
+  const prop = await loadOwnedProp(c, id)
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
 
   const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))

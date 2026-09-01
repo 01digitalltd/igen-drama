@@ -21,9 +21,11 @@ import merge from './routes/merge.js'
 import skills from './routes/skills.js'
 import props from './routes/props.js'
 import { requestLogger, errorHandler } from './middleware/logger.js'
+import { serviceAuth } from './middleware/service-auth.js'
 import { db, schema } from './db/index.js'
-import { eq } from 'drizzle-orm'
+import { eq } from './db/query.js'
 import { now } from './utils/response.js'
+import { seedAiConfigsFromEnv } from './services/config-seed.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '../..')
@@ -32,17 +34,18 @@ const app = new Hono()
 
 // Middleware
 app.use('*', cors({
-  origin: ['http://localhost:3013', 'http://localhost:5679'],
+  origin: (origin) => origin || '*',
   credentials: true,
 }))
 app.use('*', requestLogger)
 app.use('*', errorHandler)
 
-// Health check
+// Health check (no service key)
 app.get('/api/v1/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }))
 
 // API routes
 const api = new Hono()
+api.use('*', serviceAuth)
 api.route('/dramas', dramas)
 api.route('/episodes', episodes)
 api.route('/storyboards', storyboards)
@@ -73,6 +76,10 @@ app.use('/static/*', serveStatic({ root: path.join(projectRoot, 'data') }))
 const distPath = path.join(projectRoot, 'frontend', 'dist')
 app.use('*', serveStatic({ root: distPath }))
 app.get('*', serveStatic({ root: distPath, path: 'index.html' }))
+
+seedAiConfigsFromEnv().catch((err) => {
+  console.error('[config-seed] failed:', err?.message)
+})
 
 const port = Number(process.env.PORT || 5679)
 console.log(`🚀 Huobao Drama TS server on http://localhost:${port}`)

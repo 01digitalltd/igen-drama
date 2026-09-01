@@ -35,10 +35,9 @@ Huobao Drama 是一个基于 AI 的短剧自动化生产平台，实现从剧本
 
 ```
 frontend/   — Nuxt 3 + Vue 3 + TypeScript (纯 CSS，无 UI 框架)
-backend/    — Hono + Drizzle ORM + Mastra AI Agents + mysql2
+backend/    — Hono + MongoDB + Mastra AI Agents
 backend/workspace/skills/ — Agent 技能定义 (SKILL.md，支持界面在线编辑)
 data/       — 生成资源文件
-docker/     — init.sql 数据库初始化脚本(可选，启动时自动建表)
 ```
 
 > 🔥 **AI创作省钱攻略｜快乐马 & Seedance 合作专属折扣，优惠到底** 👉 [立即查看](https://aiad.dfycloud.com/)
@@ -100,7 +99,7 @@ docker/     — init.sql 数据库初始化脚本(可选，启动时自动建表
 |---|---|---|
 | **Node.js** | 20+ | 前后端运行环境 |
 | **npm** | 9+ | 包管理工具 |
-| **MySQL** | 8.0+ | 数据库（Docker 部署已内置，无需单独安装） |
+| **MongoDB** | Atlas / Cloud | 与 mkt-ai 共用 `MONGODB_AI_URI`（`reform-ai`，collection 前缀 `drama_`） |
 
 > **FFmpeg 无需安装**：项目通过 `ffmpeg-static` / `ffprobe-static` npm 包内置二进制，本地与 Docker 均开箱即用。
 
@@ -110,10 +109,8 @@ docker/     — init.sql 数据库初始化脚本(可选，启动时自动建表
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `DATABASE_URL` | — | 完整 MySQL 连接串（优先） |
-| `MYSQL_HOST` / `MYSQL_PORT` | `127.0.0.1` / `3306` | 未设 `DATABASE_URL` 时分项配置 |
-| `MYSQL_USER` / `MYSQL_PASSWORD` | `huobao` / `huobao` | 同上 |
-| `MYSQL_DATABASE` | `huobao_drama` | 同上 |
+| `MONGODB_AI_URI` | — | MongoDB 连接串（与 mkt-ai 相同，库名在 URI path，通常为 `reform-ai`） |
+| `DRAMA_MONGO_COLLECTION_PREFIX` | `drama_` | collection 前缀，避免与 mkt-ai 集合冲突 |
 | `PORT` | `5679` | 后端服务端口 |
 | `STORAGE_PATH` | `./data/static` | 生成文件存储目录 |
 
@@ -172,13 +169,11 @@ cd ../backend && npm start
 
 ### 🗄️ 数据库
 
-数据库表在首次启动时自动创建（幂等，每次启动自动重放初始化与迁移）。默认连接读取 `DATABASE_URL`，也可以通过 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE` 分项配置：
+使用现有 MongoDB Cloud（与 mkt-ai 同一群集、同一 `reform-ai` 库）。集合名称带 `drama_` 前缀（例如 `drama_dramas`、`drama_sys_task`）。启动时自动建索引并写入风格预设。
 
 ```bash
-DATABASE_URL=mysql://huobao:huobao@127.0.0.1:3306/huobao_drama npm start
+MONGODB_AI_URI='mongodb+srv://USER:PASS@HOST/reform-ai?retryWrites=true&w=majority' npm start
 ```
-
-如需在应用外预建表（如 DBA 审核场景），可使用 `docker/init.sql`；schema 变更后通过 `cd backend && npx tsx scripts/export-init-sql.ts` 重新生成。
 
 ### 🔑 首次使用：配置 AI 服务
 
@@ -198,11 +193,12 @@ DATABASE_URL=mysql://huobao:huobao@127.0.0.1:3306/huobao_drama npm start
 
 #### 方式一：Docker Compose（推荐）
 
-一条命令拉起应用 + MySQL 8.4，含健康检查与启动顺序编排（应用等待 MySQL 就绪后启动，建表自动完成）：
+一条命令拉起应用（MongoDB 使用环境变量 `MONGODB_AI_URI`，与 mkt-ai 同一 Cloud 群集）：
 
 ```bash
-# 构建并启动
+export MONGODB_AI_URI='mongodb+srv://USER:PASS@HOST/reform-ai?retryWrites=true&w=majority'
 docker compose up -d --build
+```
 
 # 查看日志
 docker compose logs -f
@@ -219,7 +215,6 @@ docker compose down
 |---|---|
 | `./data` | 生成的图片/视频等文件 |
 | `./backend/workspace` | Agent 技能文件（设置页可在线编辑） |
-| `mysql-data`(命名卷) | MySQL 数据 |
 
 > **提示**：compose 为源码构建方式，构建过程需从外网下载 `ffmpeg-static` / `sharp` 预编译二进制，网络受限环境请先配置 npm 镜像或代理；想跳过构建可直接使用方式二的 Docker Hub 预构建镜像。
 
@@ -231,13 +226,13 @@ docker compose down
 # 拉取镜像
 docker pull huobao/huobao-drama:3.0.0
 
-# 运行(MySQL 需另行准备,通过 DATABASE_URL 指向;命名卷自动从镜像初始化 skills 等内容)
+# 运行（MongoDB Cloud，与 mkt-ai 同一 URI）
 docker run -d \
   --name huobao-drama \
   -p 5679:5679 \
   -v huobao-data:/app/data \
   -v huobao-workspace:/app/backend/workspace \
-  -e DATABASE_URL=mysql://huobao:huobao@host.docker.internal:3306/huobao_drama \
+  -e MONGODB_AI_URI='mongodb+srv://USER:PASS@HOST/reform-ai?retryWrites=true&w=majority' \
   --restart unless-stopped \
   huobao/huobao-drama:3.0.0
 
@@ -258,7 +253,7 @@ docker build -t huobao-drama:latest .
 - ✅ Docker Hub 预构建多架构镜像（amd64 / arm64），免构建即拉即用
 - ✅ 开箱即用，内置 FFmpeg 二进制，无需系统安装
 - ✅ 前后端合并为单镜像、单端口
-- ✅ MySQL 健康检查 + 应用启动重试，首次部署零人工干预
+- ✅ 使用现有 MongoDB Cloud，无需另开 MySQL
 - ✅ `data/` 与 `workspace/` 目录 volume 挂载，数据与技能持久化
 
 #### 🔗 访问宿主机服务（Ollama / 本地模型）
@@ -341,7 +336,7 @@ server {
 
 - **运行时**: Node.js 20+
 - **Web 框架**: Hono
-- **ORM**: Drizzle ORM + mysql2
+- **数据层**: MongoDB (官方 driver，与 mkt-ai 共用 Atlas)
 - **AI Agent**: Mastra + AI SDK (OpenAI compatible)
 - **视频处理**: FFmpeg (fluent-ffmpeg)
 - **图片处理**: Sharp

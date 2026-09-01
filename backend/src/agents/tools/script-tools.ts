@@ -5,7 +5,7 @@
 import { createTool } from '@mastra/core/tools'
 import { z } from 'zod'
 import { db, schema } from '../../db/index.js'
-import { eq } from 'drizzle-orm'
+import { eq } from '../../db/query.js'
 import { now } from '../../utils/response.js'
 import { getEpisodeId } from '../context.js'
 

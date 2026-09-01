@@ -2,7 +2,7 @@
  * AI 服务抽象层 — 从数据库配置中获取 provider 和 API key
  */
 import { db, schema } from '../db/index.js'
-import { eq } from 'drizzle-orm'
+import { eq } from '../db/query.js'
 import { logTaskProgress, logTaskWarn } from '../utils/task-logger.js'
 import { joinProviderUrl } from './adapters/url.js'
 

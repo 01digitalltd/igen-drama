@@ -1,283 +1,372 @@
 /**
- * Drizzle schema - MySQL column mappings.
+ * Table metadata for the Mongo query layer.
+ * Documents use camelCase fields; integer primary keys are stored as numeric `_id`.
  */
-import { mysqlTable, text, int, double, boolean, primaryKey, varchar } from 'drizzle-orm/mysql-core'
+export type ColumnRef = {
+  __table: string
+  __field: string
+}
 
-export const dramas = mysqlTable('dramas', {
-  id: int('id').primaryKey().autoincrement(),
-  title: text('title').notNull(),
-  description: text('description'),
-  genre: text('genre'),
-  style: varchar('style', { length: 64 }).default('3d'),
-  aspectRatio: varchar('aspect_ratio', { length: 16 }).default('16:9'),
-  totalEpisodes: int('total_episodes').default(1),
-  totalDuration: int('total_duration').default(0),
-  status: varchar('status', { length: 64 }).notNull().default('draft'),
-  thumbnail: text('thumbnail'),
-  tags: text('tags'),
-  metadata: text('metadata'),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  updatedAt: varchar('updated_at', { length: 64 }).notNull(),
-  deletedAt: varchar('deleted_at', { length: 64 }),
-})
+export type TableDef<T> = { [K in keyof T]: ColumnRef } & {
+  __name: string
+  $inferSelect: T
+}
 
-export const episodes = mysqlTable('episodes', {
-  id: int('id').primaryKey().autoincrement(),
-  dramaId: int('drama_id').notNull(),
-  episodeNumber: int('episode_number').notNull(),
-  title: text('title').notNull(),
-  content: text('content'),
-  scriptContent: text('script_content'),
-  description: text('description'),
-  duration: int('duration').default(0),
-  status: varchar('status', { length: 64 }).default('draft'),
-  videoUrl: text('video_url'),
-  thumbnail: text('thumbnail'),
-  imageConfigId: int('image_config_id'),
-  videoConfigId: int('video_config_id'),
-  resolution: varchar('resolution', { length: 16 }).default('720p'),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  updatedAt: varchar('updated_at', { length: 64 }).notNull(),
-  deletedAt: varchar('deleted_at', { length: 64 }),
-})
+function defineTable<T extends Record<string, unknown>>(name: string, fields: (keyof T & string)[]): TableDef<T> {
+  const table: Record<string, unknown> = { __name: name }
+  for (const field of fields) {
+    table[field] = { __table: name, __field: field }
+  }
+  return table as TableDef<T>
+}
 
-export const characters = mysqlTable('characters', {
-  id: int('id').primaryKey().autoincrement(),
-  dramaId: int('drama_id').notNull(),
-  name: text('name').notNull(),
-  role: text('role'),
-  description: text('description'),
-  appearance: text('appearance'),
-  styling: text('styling'),
-  finalPrompt: text('final_prompt'),
-  personality: text('personality'),
-  imageUrl: text('image_url'),
-  referenceImages: text('reference_images'),
-  seedValue: text('seed_value'),
-  sortOrder: int('sort_order'),
-  localPath: text('local_path'),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  updatedAt: varchar('updated_at', { length: 64 }).notNull(),
-  deletedAt: varchar('deleted_at', { length: 64 }),
-})
+export type DramaRow = {
+  id: number
+  title: string
+  description: string | null
+  genre: string | null
+  style: string | null
+  aspectRatio: string | null
+  totalEpisodes: number | null
+  totalDuration: number | null
+  status: string
+  thumbnail: string | null
+  tags: string | null
+  metadata: string | null
+  ownerUserId: string | null
+  ownerTenantId: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
 
-// Episode-Character many-to-many
-export const episodeCharacters = mysqlTable('episode_characters', {
-  id: int('id').primaryKey().autoincrement(),
-  episodeId: int('episode_id').notNull(),
-  characterId: int('character_id').notNull(),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-})
+export type EpisodeRow = {
+  id: number
+  dramaId: number
+  episodeNumber: number
+  title: string
+  content: string | null
+  scriptContent: string | null
+  description: string | null
+  duration: number | null
+  status: string | null
+  videoUrl: string | null
+  thumbnail: string | null
+  imageConfigId: number | null
+  videoConfigId: number | null
+  resolution: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
 
-// Episode-Scene many-to-many
-export const episodeScenes = mysqlTable('episode_scenes', {
-  id: int('id').primaryKey().autoincrement(),
-  episodeId: int('episode_id').notNull(),
-  sceneId: int('scene_id').notNull(),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-})
+export type CharacterRow = {
+  id: number
+  dramaId: number
+  name: string
+  role: string | null
+  description: string | null
+  appearance: string | null
+  styling: string | null
+  finalPrompt: string | null
+  personality: string | null
+  imageUrl: string | null
+  referenceImages: string | null
+  seedValue: string | null
+  sortOrder: number | null
+  localPath: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
 
-// Episode-Prop many-to-many
-export const episodeProps = mysqlTable('episode_props', {
-  id: int('id').primaryKey().autoincrement(),
-  episodeId: int('episode_id').notNull(),
-  propId: int('prop_id').notNull(),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-})
+export type EpisodeCharacterRow = {
+  id: number
+  episodeId: number
+  characterId: number
+  createdAt: string
+}
 
-export const scenes = mysqlTable('scenes', {
-  id: int('id').primaryKey().autoincrement(),
-  dramaId: int('drama_id').notNull(),
-  episodeId: int('episode_id'),
-  location: text('location').notNull(),
-  time: varchar('time', { length: 64 }).notNull(),
-  prompt: text('prompt').notNull(),
-  lighting: text('lighting'),
-  finalPrompt: text('final_prompt'),
-  storyboardCount: int('storyboard_count').default(1),
-  imageUrl: text('image_url'),
-  status: varchar('status', { length: 64 }).default('pending'),
-  localPath: text('local_path'),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  updatedAt: varchar('updated_at', { length: 64 }).notNull(),
-  deletedAt: varchar('deleted_at', { length: 64 }),
-})
+export type EpisodeSceneRow = {
+  id: number
+  episodeId: number
+  sceneId: number
+  createdAt: string
+}
 
-export const storyboards = mysqlTable('storyboards', {
-  id: int('id').primaryKey().autoincrement(),
-  episodeId: int('episode_id').notNull(),
-  sceneId: int('scene_id'),
-  storyboardNumber: int('storyboard_number').notNull(),
-  title: text('title'),
-  location: text('location'),
-  time: varchar('time', { length: 64 }),
-  shotType: text('shot_type'),
-  angle: text('angle'),
-  movement: text('movement'),
-  result: text('result'),
-  atmosphere: text('atmosphere'),
-  imagePrompt: text('image_prompt'),
-  videoPrompt: text('video_prompt'),
-  bgmPrompt: text('bgm_prompt'),
-  soundEffect: text('sound_effect'),
-  description: text('description'),
-  duration: int('duration').default(0),
-  composedImage: text('composed_image'),
-  firstFrameImage: text('first_frame_image'),
-  lastFrameImage: text('last_frame_image'),
-  referenceImages: text('reference_images'),
-  videoUrl: text('video_url'),
-  subtitleUrl: text('subtitle_url'),
-  composedVideoUrl: text('composed_video_url'),
-  status: varchar('status', { length: 64 }).default('pending'),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  updatedAt: varchar('updated_at', { length: 64 }).notNull(),
-  deletedAt: varchar('deleted_at', { length: 64 }),
-})
+export type EpisodePropRow = {
+  id: number
+  episodeId: number
+  propId: number
+  createdAt: string
+}
 
-export const storyboardCharacters = mysqlTable('storyboard_characters', {
-  storyboardId: int('storyboard_id').notNull(),
-  characterId: int('character_id').notNull(),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.storyboardId, table.characterId] }),
-}))
+export type SceneRow = {
+  id: number
+  dramaId: number
+  episodeId: number | null
+  location: string
+  time: string
+  prompt: string
+  lighting: string | null
+  finalPrompt: string | null
+  storyboardCount: number | null
+  imageUrl: string | null
+  status: string | null
+  localPath: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
 
-export const storyboardProps = mysqlTable('storyboard_props', {
-  storyboardId: int('storyboard_id').notNull(),
-  propId: int('prop_id').notNull(),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.storyboardId, table.propId] }),
-}))
+export type StoryboardRow = {
+  id: number
+  episodeId: number
+  sceneId: number | null
+  storyboardNumber: number
+  title: string | null
+  location: string | null
+  time: string | null
+  shotType: string | null
+  angle: string | null
+  movement: string | null
+  result: string | null
+  atmosphere: string | null
+  imagePrompt: string | null
+  videoPrompt: string | null
+  bgmPrompt: string | null
+  soundEffect: string | null
+  description: string | null
+  duration: number | null
+  composedImage: string | null
+  firstFrameImage: string | null
+  lastFrameImage: string | null
+  referenceImages: string | null
+  videoUrl: string | null
+  subtitleUrl: string | null
+  composedVideoUrl: string | null
+  status: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
 
-export const aiServiceConfigs = mysqlTable('ai_service_configs', {
-  id: int('id').primaryKey().autoincrement(),
-  serviceType: varchar('service_type', { length: 64 }).notNull(),
-  provider: varchar('provider', { length: 64 }),
-  name: text('name').notNull(),
-  baseUrl: text('base_url').notNull(),
-  apiKey: text('api_key').notNull(),
-  model: text('model'),
-  endpoint: text('endpoint'),
-  queryEndpoint: text('query_endpoint'),
-  priority: int('priority').default(0),
-  isDefault: boolean('is_default').default(false),
-  isActive: boolean('is_active').default(true),
-  settings: text('settings'),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  updatedAt: varchar('updated_at', { length: 64 }).notNull(),
-  // 注意: 此表无 deleted_at
-})
+export type StoryboardCharacterRow = {
+  storyboardId: number
+  characterId: number
+}
 
-export const aiServiceProviders = mysqlTable('ai_service_providers', {
-  id: int('id').primaryKey().autoincrement(),
-  name: text('name').notNull(),
-  displayName: text('display_name'),
-  serviceType: varchar('service_type', { length: 64 }).notNull(),
-  provider: varchar('provider', { length: 64 }).notNull(),
-  defaultUrl: text('default_url'),
-  presetModels: text('preset_models'),
-  description: text('description'),
-  isActive: boolean('is_active').default(true),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  updatedAt: varchar('updated_at', { length: 64 }).notNull(),
-})
+export type StoryboardPropRow = {
+  storyboardId: number
+  propId: number
+}
 
-export const stylePresets = mysqlTable('style_presets', {
-  id: int('id').primaryKey().autoincrement(),
-  name: varchar('name', { length: 64 }).notNull(),
-  value: varchar('value', { length: 64 }).notNull(),
-  prompt: text('prompt').notNull(),
-  description: text('description'),
-  sortOrder: int('sort_order').default(0),
-  isActive: boolean('is_active').default(true),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  updatedAt: varchar('updated_at', { length: 64 }).notNull(),
-  // 注意: 此表无 deleted_at（硬删除），value 列有唯一索引（见 DDL）
-})
+export type AiServiceConfigRow = {
+  id: number
+  serviceType: string
+  provider: string | null
+  name: string
+  baseUrl: string
+  apiKey: string
+  model: string | null
+  endpoint: string | null
+  queryEndpoint: string | null
+  priority: number | null
+  isDefault: boolean | null
+  isActive: boolean | null
+  settings: string | null
+  createdAt: string
+  updatedAt: string
+}
 
-// 统一生成任务表：图片/视频生成共用，type 区分，生成参数存 params(JSON)
-export const sysTask = mysqlTable('sys_task', {
-  id: int('id').primaryKey().autoincrement(),
-  type: varchar('type', { length: 16 }).notNull(), // image | video
-  storyboardId: int('storyboard_id'),
-  dramaId: int('drama_id'),
-  sceneId: int('scene_id'),
-  characterId: int('character_id'),
-  propId: int('prop_id'),
-  provider: varchar('provider', { length: 64 }),
-  prompt: text('prompt'),
-  model: text('model'),
-  // image: {size, frameType, referenceImages[]}
-  // video: {referenceMode, referenceImageUrls[], referenceVideoUrls[], referenceAudioUrls[], generateAudio, duration, aspectRatio}
-  params: text('params'),
-  taskId: text('task_id'),
-  resultUrl: text('result_url'),
-  localPath: text('local_path'),
-  status: varchar('status', { length: 64 }).default('processing'),
-  errorMsg: text('error_msg'),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  updatedAt: varchar('updated_at', { length: 64 }).notNull(),
-  completedAt: varchar('completed_at', { length: 64 }),
-})
+export type AiServiceProviderRow = {
+  id: number
+  name: string
+  displayName: string | null
+  serviceType: string
+  provider: string
+  defaultUrl: string | null
+  presetModels: string | null
+  description: string | null
+  isActive: boolean | null
+  createdAt: string
+  updatedAt: string
+}
 
-export const videoMerges = mysqlTable('video_merges', {
-  id: int('id').primaryKey().autoincrement(),
-  episodeId: int('episode_id'),
-  dramaId: int('drama_id'),
-  title: text('title'),
-  provider: varchar('provider', { length: 64 }),
-  model: text('model'),
-  status: varchar('status', { length: 64 }).default('pending'),
-  scenes: text('scenes'), // JSON
-  mergedUrl: text('merged_url'),
-  duration: int('duration'),
-  taskId: text('task_id'),
-  errorMsg: text('error_msg'),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  completedAt: varchar('completed_at', { length: 64 }),
-  deletedAt: varchar('deleted_at', { length: 64 }),
-})
+export type StylePresetRow = {
+  id: number
+  name: string
+  value: string
+  prompt: string
+  description: string | null
+  sortOrder: number | null
+  isActive: boolean | null
+  createdAt: string
+  updatedAt: string
+}
 
-export const props = mysqlTable('props', {
-  id: int('id').primaryKey().autoincrement(),
-  dramaId: int('drama_id').notNull(),
-  name: text('name').notNull(),
-  type: text('type'),
-  description: text('description'),
-  prompt: text('prompt'),
-  finalPrompt: text('final_prompt'),
-  imageUrl: text('image_url'),
-  referenceImages: text('reference_images'),
-  localPath: text('local_path'),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  updatedAt: varchar('updated_at', { length: 64 }).notNull(),
-  deletedAt: varchar('deleted_at', { length: 64 }),
-})
+export type SysTaskRow = {
+  id: number
+  type: string
+  storyboardId: number | null
+  dramaId: number | null
+  sceneId: number | null
+  characterId: number | null
+  propId: number | null
+  provider: string | null
+  prompt: string | null
+  model: string | null
+  params: string | null
+  taskId: string | null
+  resultUrl: string | null
+  localPath: string | null
+  status: string | null
+  errorMsg: string | null
+  createdAt: string
+  updatedAt: string
+  completedAt: string | null
+}
 
-export const assets = mysqlTable('assets', {
-  id: int('id').primaryKey().autoincrement(),
-  dramaId: int('drama_id'),
-  episodeId: int('episode_id'),
-  storyboardId: int('storyboard_id'),
-  storyboardNum: int('storyboard_num'),
-  name: text('name'),
-  description: text('description'),
-  type: text('type'),
-  category: text('category'),
-  url: text('url'),
-  thumbnailUrl: text('thumbnail_url'),
-  localPath: text('local_path'),
-  fileSize: int('file_size'),
-  mimeType: text('mime_type'),
-  width: int('width'),
-  height: int('height'),
-  duration: int('duration'),
-  format: text('format'),
-  imageGenId: int('image_gen_id'),
-  videoGenId: int('video_gen_id'),
-  isFavorite: boolean('is_favorite').default(false),
-  viewCount: int('view_count').default(0),
-  createdAt: varchar('created_at', { length: 64 }).notNull(),
-  updatedAt: varchar('updated_at', { length: 64 }).notNull(),
-  deletedAt: varchar('deleted_at', { length: 64 }),
-})
+export type VideoMergeRow = {
+  id: number
+  episodeId: number | null
+  dramaId: number | null
+  title: string | null
+  provider: string | null
+  model: string | null
+  status: string | null
+  scenes: string | null
+  mergedUrl: string | null
+  duration: number | null
+  taskId: string | null
+  errorMsg: string | null
+  createdAt: string
+  completedAt: string | null
+  deletedAt: string | null
+}
+
+export type PropRow = {
+  id: number
+  dramaId: number
+  name: string
+  type: string | null
+  description: string | null
+  prompt: string | null
+  finalPrompt: string | null
+  imageUrl: string | null
+  referenceImages: string | null
+  localPath: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export type AssetRow = {
+  id: number
+  dramaId: number | null
+  episodeId: number | null
+  storyboardId: number | null
+  storyboardNum: number | null
+  name: string | null
+  description: string | null
+  type: string | null
+  category: string | null
+  url: string | null
+  thumbnailUrl: string | null
+  localPath: string | null
+  fileSize: number | null
+  mimeType: string | null
+  width: number | null
+  height: number | null
+  duration: number | null
+  format: string | null
+  imageGenId: number | null
+  videoGenId: number | null
+  isFavorite: boolean | null
+  viewCount: number | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export const dramas = defineTable<DramaRow>('dramas', [
+  'id', 'title', 'description', 'genre', 'style', 'aspectRatio', 'totalEpisodes', 'totalDuration',
+  'status', 'thumbnail', 'tags', 'metadata', 'ownerUserId', 'ownerTenantId', 'createdAt', 'updatedAt', 'deletedAt',
+])
+
+export const episodes = defineTable<EpisodeRow>('episodes', [
+  'id', 'dramaId', 'episodeNumber', 'title', 'content', 'scriptContent', 'description', 'duration',
+  'status', 'videoUrl', 'thumbnail', 'imageConfigId', 'videoConfigId', 'resolution', 'createdAt', 'updatedAt', 'deletedAt',
+])
+
+export const characters = defineTable<CharacterRow>('characters', [
+  'id', 'dramaId', 'name', 'role', 'description', 'appearance', 'styling', 'finalPrompt', 'personality',
+  'imageUrl', 'referenceImages', 'seedValue', 'sortOrder', 'localPath', 'createdAt', 'updatedAt', 'deletedAt',
+])
+
+export const episodeCharacters = defineTable<EpisodeCharacterRow>('episode_characters', [
+  'id', 'episodeId', 'characterId', 'createdAt',
+])
+
+export const episodeScenes = defineTable<EpisodeSceneRow>('episode_scenes', [
+  'id', 'episodeId', 'sceneId', 'createdAt',
+])
+
+export const episodeProps = defineTable<EpisodePropRow>('episode_props', [
+  'id', 'episodeId', 'propId', 'createdAt',
+])
+
+export const scenes = defineTable<SceneRow>('scenes', [
+  'id', 'dramaId', 'episodeId', 'location', 'time', 'prompt', 'lighting', 'finalPrompt',
+  'storyboardCount', 'imageUrl', 'status', 'localPath', 'createdAt', 'updatedAt', 'deletedAt',
+])
+
+export const storyboards = defineTable<StoryboardRow>('storyboards', [
+  'id', 'episodeId', 'sceneId', 'storyboardNumber', 'title', 'location', 'time', 'shotType', 'angle',
+  'movement', 'result', 'atmosphere', 'imagePrompt', 'videoPrompt', 'bgmPrompt', 'soundEffect', 'description',
+  'duration', 'composedImage', 'firstFrameImage', 'lastFrameImage', 'referenceImages', 'videoUrl',
+  'subtitleUrl', 'composedVideoUrl', 'status', 'createdAt', 'updatedAt', 'deletedAt',
+])
+
+export const storyboardCharacters = defineTable<StoryboardCharacterRow>('storyboard_characters', [
+  'storyboardId', 'characterId',
+])
+
+export const storyboardProps = defineTable<StoryboardPropRow>('storyboard_props', [
+  'storyboardId', 'propId',
+])
+
+export const aiServiceConfigs = defineTable<AiServiceConfigRow>('ai_service_configs', [
+  'id', 'serviceType', 'provider', 'name', 'baseUrl', 'apiKey', 'model', 'endpoint', 'queryEndpoint',
+  'priority', 'isDefault', 'isActive', 'settings', 'createdAt', 'updatedAt',
+])
+
+export const aiServiceProviders = defineTable<AiServiceProviderRow>('ai_service_providers', [
+  'id', 'name', 'displayName', 'serviceType', 'provider', 'defaultUrl', 'presetModels',
+  'description', 'isActive', 'createdAt', 'updatedAt',
+])
+
+export const stylePresets = defineTable<StylePresetRow>('style_presets', [
+  'id', 'name', 'value', 'prompt', 'description', 'sortOrder', 'isActive', 'createdAt', 'updatedAt',
+])
+
+export const sysTask = defineTable<SysTaskRow>('sys_task', [
+  'id', 'type', 'storyboardId', 'dramaId', 'sceneId', 'characterId', 'propId', 'provider', 'prompt',
+  'model', 'params', 'taskId', 'resultUrl', 'localPath', 'status', 'errorMsg', 'createdAt', 'updatedAt', 'completedAt',
+])
+
+export const videoMerges = defineTable<VideoMergeRow>('video_merges', [
+  'id', 'episodeId', 'dramaId', 'title', 'provider', 'model', 'status', 'scenes', 'mergedUrl',
+  'duration', 'taskId', 'errorMsg', 'createdAt', 'completedAt', 'deletedAt',
+])
+
+export const props = defineTable<PropRow>('props', [
+  'id', 'dramaId', 'name', 'type', 'description', 'prompt', 'finalPrompt', 'imageUrl',
+  'referenceImages', 'localPath', 'createdAt', 'updatedAt', 'deletedAt',
+])
+
+export const assets = defineTable<AssetRow>('assets', [
+  'id', 'dramaId', 'episodeId', 'storyboardId', 'storyboardNum', 'name', 'description', 'type', 'category',
+  'url', 'thumbnailUrl', 'localPath', 'fileSize', 'mimeType', 'width', 'height', 'duration', 'format',
+  'imageGenId', 'videoGenId', 'isFavorite', 'viewCount', 'createdAt', 'updatedAt', 'deletedAt',
+])

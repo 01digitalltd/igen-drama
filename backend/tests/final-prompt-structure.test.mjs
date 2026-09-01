@@ -7,16 +7,11 @@ const read = (path) => readFileSync(new URL(path, root), 'utf8')
 
 test('characters and scenes tables store the agent-written final prompt', () => {
   const schema = read('src/db/schema.ts')
-  const mysql = read('src/db/mysql-schema.ts')
 
-  // Drizzle 表定义
-  assert.match(schema, /export const characters = mysqlTable\('characters'[\s\S]*?finalPrompt: text\('final_prompt'\)/)
-  assert.match(schema, /export const scenes = mysqlTable\('scenes'[\s\S]*?finalPrompt: text\('final_prompt'\)/)
-  // 新建表 DDL + 存量表 backfill
-  assert.match(mysql, /CREATE TABLE IF NOT EXISTS characters \([\s\S]*?final_prompt TEXT/)
-  assert.match(mysql, /CREATE TABLE IF NOT EXISTS scenes \([\s\S]*?final_prompt TEXT/)
-  assert.match(mysql, /table: 'characters', column: 'final_prompt'/)
-  assert.match(mysql, /table: 'scenes', column: 'final_prompt'/)
+  assert.match(schema, /export type CharacterRow = \{[\s\S]*?finalPrompt:/)
+  assert.match(schema, /export type SceneRow = \{[\s\S]*?finalPrompt:/)
+  assert.match(schema, /export const characters = defineTable<CharacterRow>\('characters'/)
+  assert.match(schema, /export const scenes = defineTable<SceneRow>\('scenes'/)
 })
 
 test('grid prompt agent tools save agent-written final prompts with style injection', () => {

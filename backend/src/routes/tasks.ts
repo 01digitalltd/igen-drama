@@ -1,9 +1,10 @@
 import { Hono } from 'hono'
-import { eq } from 'drizzle-orm'
+import { eq, and, isNull } from '../db/query.js'
 import { db, schema } from '../db/index.js'
 import { success, created, badRequest } from '../utils/response.js'
 import { generateImage, generateVideo } from '../services/generation.js'
 import { logTaskError, logTaskPayload, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { loadOwnedDrama, loadOwnedStoryboard, shouldScopeToOwner, getOwnerUserId } from '../utils/ownership.js'
 
 const app = new Hono()
 
@@ -34,6 +35,8 @@ app.post('/', async (c) => {
   }
 
   try {
+    if (body.drama_id) await loadOwnedDrama(c, Number(body.drama_id))
+    if (body.storyboard_id) await loadOwnedStoryboard(c, Number(body.storyboard_id))
     // 集锁定的生成配置优先于请求指定；视频分辨率同样锁定到集
     let configId: number | undefined = body.config_id
     let episodeResolution: string | undefined
@@ -95,13 +98,11 @@ app.post('/', async (c) => {
   }
 })
 
-// GET /tasks/:id — 轮询任务状态
-app.get('/:id', async (c) => {
-  const id = Number(c.req.param('id'))
-  const [row] = await db.select().from(schema.sysTask)
-    .where(eq(schema.sysTask.id, id))
-  return success(c, row || null)
-})
+async function assertTaskOwned(c: Parameters<typeof loadOwnedDrama>[0], row: typeof schema.sysTask.$inferSelect | undefined) {
+  if (!row) return
+  if (row.dramaId) await loadOwnedDrama(c, row.dramaId)
+  else if (row.storyboardId) await loadOwnedStoryboard(c, row.storyboardId)
+}
 
 // GET /tasks — 按 type / storyboard_id / drama_id 过滤
 app.get('/', async (c) => {
@@ -109,18 +110,40 @@ app.get('/', async (c) => {
   const storyboardId = c.req.query('storyboard_id')
   const dramaId = c.req.query('drama_id')
 
+  if (dramaId) await loadOwnedDrama(c, Number(dramaId))
+  if (storyboardId) await loadOwnedStoryboard(c, Number(storyboardId))
+
   let rows = await db.select().from(schema.sysTask)
 
   if (type) rows = rows.filter(r => r.type === type)
   if (storyboardId) rows = rows.filter(r => r.storyboardId === Number(storyboardId))
   if (dramaId) rows = rows.filter(r => r.dramaId === Number(dramaId))
 
+  if (shouldScopeToOwner(c) && !dramaId) {
+    const owner = getOwnerUserId(c)!
+    const owned = await db.select({ id: schema.dramas.id }).from(schema.dramas)
+      .where(and(eq(schema.dramas.ownerUserId, owner), isNull(schema.dramas.deletedAt)))
+    const allowed = new Set(owned.map(d => d.id))
+    rows = rows.filter(r => r.dramaId != null && allowed.has(r.dramaId))
+  }
+
   return success(c, rows)
+})
+
+// GET /tasks/:id — 轮询任务状态
+app.get('/:id', async (c) => {
+  const id = Number(c.req.param('id'))
+  const [row] = await db.select().from(schema.sysTask)
+    .where(eq(schema.sysTask.id, id))
+  await assertTaskOwned(c, row)
+  return success(c, row || null)
 })
 
 // DELETE /tasks/:id
 app.delete('/:id', async (c) => {
   const id = Number(c.req.param('id'))
+  const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+  await assertTaskOwned(c, row)
   await db.delete(schema.sysTask).where(eq(schema.sysTask.id, id))
   return success(c)
 })

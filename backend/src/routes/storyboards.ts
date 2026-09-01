@@ -1,9 +1,10 @@
 import { Hono } from 'hono'
-import { eq } from 'drizzle-orm'
+import { eq } from '../db/query.js'
 import { db, getInsertId, schema } from '../db/index.js'
 import { success, created, now, badRequest } from '../utils/response.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { logTaskPayload, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { loadOwnedEpisode, loadOwnedStoryboard } from '../utils/ownership.js'
 
 const app = new Hono()
 
@@ -79,6 +80,8 @@ async function validateStoryboardBindings(episodeId: number, sceneId: number | n
 // POST /storyboards
 app.post('/', async (c) => {
   const body = await c.req.json()
+  if (!body.episode_id) return badRequest(c, 'episode_id required')
+  await loadOwnedEpisode(c, Number(body.episode_id))
   const ts = now()
   logTaskStart('StoryboardAPI', 'create', {
     episodeId: body.episode_id,
@@ -117,6 +120,7 @@ app.post('/', async (c) => {
 // PUT /storyboards/:id
 app.put('/:id', async (c) => {
   const id = Number(c.req.param('id'))
+  await loadOwnedStoryboard(c, id)
   const body = await c.req.json()
   const [storyboard] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id))
   if (!storyboard) return badRequest(c, '镜头不存在')

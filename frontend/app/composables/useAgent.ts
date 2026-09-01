@@ -1,6 +1,10 @@
 import { toast } from 'vue-sonner'
 import { api } from './useApi'
 
+async function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
 export function useAgent() {
   const running = ref(false)
   const runningType = ref<string | null>(null)
@@ -17,6 +21,16 @@ export function useAgent() {
         model: model || undefined,
         config_id: configId || undefined,
       })
+      const jobId = data?.job_id
+      if (jobId) {
+        const deadline = Date.now() + 15 * 60 * 1000
+        while (Date.now() < deadline) {
+          await sleep(2000)
+          const job = await api.get<any>(`/agent/${type}/jobs/${jobId}`)
+          if (job?.status === 'done') break
+          if (job?.status === 'error') throw new Error(job.error || 'Agent failed')
+        }
+      }
       toast.success('完成')
       onDone?.()
     } catch (err: any) {

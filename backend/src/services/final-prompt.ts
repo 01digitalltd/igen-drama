@@ -6,7 +6,7 @@
  * - 道具 → 白底单品静物（single product shot on pure white background）
  * 缺失时运行 prompt_generator Agent 创作并保存；失败返回 ''，由调用方回退到本地拼接提示词
  */
-import { eq } from 'drizzle-orm'
+import { eq } from '../db/query.js'
 import { db, schema } from '../db/index.js'
 import { mastra } from '../mastra/index.js'
 import { buildAgentRequestContext } from '../agents/context.js'

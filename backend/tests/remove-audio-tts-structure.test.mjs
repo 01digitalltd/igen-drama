@@ -41,7 +41,6 @@ test('backend removes TTS endpoints and audio-specific schema fields', () => {
   const storyboards = read('src/routes/storyboards.ts')
   const characters = read('src/routes/characters.ts')
   const schema = read('src/db/schema.ts')
-  const mysqlSchema = read('src/db/mysql-schema.ts')
 
   assert.doesNotMatch(episodes, /audio_config_id/)
   assert.doesNotMatch(episodes, /assign_voices/)
@@ -56,12 +55,4 @@ test('backend removes TTS endpoints and audio-specific schema fields', () => {
   assert.doesNotMatch(schema, /voiceProvider/)
   assert.doesNotMatch(schema, /ttsAudioUrl/)
   assert.doesNotMatch(schema, /aiVoices/)
-  assert.doesNotMatch(mysqlSchema, /audio_config_id/)
-  assert.doesNotMatch(mysqlSchema, /voice_style/)
-  assert.doesNotMatch(mysqlSchema, /voice_sample_url/)
-  assert.doesNotMatch(mysqlSchema, /voice_provider/)
-  assert.doesNotMatch(mysqlSchema, /tts_audio_url/)
-  // 无 ai_voices 表定义；仅保留启动时的孤儿表清理 DROP
-  assert.doesNotMatch(mysqlSchema, /CREATE TABLE IF NOT EXISTS ai_voices/)
-  assert.match(mysqlSchema, /DROP TABLE IF EXISTS `ai_voices`/)
 })

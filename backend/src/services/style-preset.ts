@@ -2,7 +2,7 @@
  * 风格预设服务 — 将项目绑定的视觉风格解析为英文提示词片段
  * dramas.style 存 style_presets.value；查不到/已停用时返回空串（调用方走兜底）
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq } from '../db/query.js'
 import { db, schema } from '../db/index.js'
 
 /** 查询项目绑定的风格预设英文提示词片段；查不到返回 '' */

@@ -1,34 +1,31 @@
 /**
- * Agent 聊天路由 — 非流式版本
+ * Agent 聊天路由 — 异步入队，客户端轮询 job 状态（避免 BFF/Ingress 超时）
  */
 import { Hono } from 'hono'
 import { validAgentTypes } from '../agents/index.js'
-import { buildAgentRequestContext } from '../agents/context.js'
-import { mastra } from '../mastra/index.js'
-import { success, badRequest } from '../utils/response.js'
-import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { success, badRequest, notFound } from '../utils/response.js'
+import { getAgentJob, startAgentJob } from '../services/agent-jobs.js'
+import { loadOwnedDrama, loadOwnedEpisode } from '../utils/ownership.js'
 
 const app = new Hono()
 
-// Mastra v1.17 的 ToolCallChunk / ToolResultChunk 结构：
-// { type: 'tool-call', payload: { toolCallId, toolName, args } }
-// { type: 'tool-result', payload: { toolCallId, toolName, result, isError } }
-function normalizeToolName(entry: any) {
-  return entry?.payload?.toolName
-    || entry?.toolName
-    || entry?.tool?.toolName
-    || entry?.tool?.id
-    || entry?.name
-    || entry?.type
-    || null
+function publicJob(job: ReturnType<typeof getAgentJob>) {
+  if (!job) return null
+  return {
+    job_id: job.id,
+    agent_type: job.agentType,
+    status: job.status,
+    started_at: job.started_at,
+    finished_at: job.finished_at || null,
+    error: job.error || null,
+    type: job.status === 'done' ? 'done' : job.status,
+    text: job.text || '',
+    toolCalls: job.toolCalls || [],
+    toolResults: job.toolResults || [],
+  }
 }
 
-function normalizeToolResult(entry: any) {
-  const result = entry?.payload?.result ?? entry?.result ?? entry?.payload?.output ?? entry?.output ?? entry?.data ?? null
-  return typeof result === 'string' ? result : JSON.stringify(result)
-}
-
-// POST /agent/:type/chat — 非流式 Agent 对话
+// POST /agent/:type/chat — 立即返回 job_id
 app.post('/:type/chat', async (c) => {
   const agentType = c.req.param('type')
   if (!validAgentTypes.includes(agentType)) {
@@ -37,74 +34,43 @@ app.post('/:type/chat', async (c) => {
 
   const body = await c.req.json()
   const { message, drama_id, episode_id } = body
-
-  logTaskStart('Agent', agentType, {
-    dramaId: drama_id,
-    episodeId: episode_id,
-    message,
-  })
-  logTaskPayload('Agent', `${agentType} input`, body)
-
   if (!episode_id || !drama_id) {
-    logTaskError('Agent', agentType, { reason: 'missing drama_id or episode_id' })
     return badRequest(c, 'drama_id and episode_id are required')
   }
-
-  const agent = mastra.getAgent(agentType)
-  if (!agent) {
-    logTaskError('Agent', agentType, { reason: 'agent not found' })
-    return badRequest(c, 'Agent not found')
+  if (!message || typeof message !== 'string') {
+    return badRequest(c, 'message is required')
   }
 
-  const requestContext = buildAgentRequestContext({
-    episodeId: episode_id,
-    dramaId: drama_id,
-    modelOverride: body.model || undefined,
-    textConfigId: body.config_id || undefined,
-  })
-
-  const startTime = performance.now()
+  await loadOwnedDrama(c, Number(drama_id))
+  const episode = await loadOwnedEpisode(c, Number(episode_id))
+  if (episode.dramaId !== Number(drama_id)) {
+    return badRequest(c, 'episode does not belong to drama')
+  }
 
   try {
-    const result = await agent.generate(
-      [{ role: 'user', content: message }],
-      { maxSteps: 20, requestContext },
-    )
-
-    const elapsed = ((performance.now() - startTime) / 1000).toFixed(1)
-    logTaskSuccess('Agent', agentType, { elapsedSeconds: elapsed })
-
-    // 收集所有 tool calls 和 results
-    const toolCalls = result.toolCalls || []
-    const toolResults = result.toolResults || []
-    const normalizedToolCalls = toolCalls.map((tc: any) => ({
-      toolName: normalizeToolName(tc),
-      args: tc?.payload?.args ?? tc?.args ?? tc?.input ?? null,
-    }))
-    const normalizedToolResults = toolResults.map((tr: any) => ({
-      toolName: normalizeToolName(tr),
-      result: normalizeToolResult(tr),
-    }))
-
-    logTaskProgress('Agent', 'tool-summary', {
+    const job = startAgentJob({
       agentType,
-      toolCalls: normalizedToolCalls.map((tc: any) => tc.toolName),
-      toolResults: normalizedToolResults.map((tr: any) => tr.toolName),
+      message,
+      dramaId: Number(drama_id),
+      episodeId: Number(episode_id),
+      model: body.model || undefined,
+      configId: body.config_id || undefined,
     })
-    logTaskPayload('Agent', `${agentType} tool-results`, normalizedToolResults)
-
-    return success(c, {
-      type: 'done',
-      text: result.text || '',
-      toolCalls: normalizedToolCalls,
-      toolResults: normalizedToolResults,
-    })
+    return success(c, publicJob(job))
   } catch (err: any) {
-    const elapsed = ((performance.now() - startTime) / 1000).toFixed(1)
-    logTaskError('Agent', agentType, { elapsedSeconds: elapsed, error: err.message })
-    console.error(err.stack || err)
     return badRequest(c, err.message || 'Agent execution failed')
   }
+})
+
+// GET /agent/:type/jobs/:id — 轮询
+app.get('/:type/jobs/:id', async (c) => {
+  const agentType = c.req.param('type')
+  const id = c.req.param('id')
+  if (!validAgentTypes.includes(agentType)) return badRequest(c, 'Invalid agent type')
+  const job = getAgentJob(id)
+  if (!job || job.agentType !== agentType) return notFound(c, 'job not found')
+  await loadOwnedDrama(c, job.dramaId)
+  return success(c, publicJob(job))
 })
 
 // GET /agent/:type/debug
