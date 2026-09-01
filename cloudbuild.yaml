@@ -1,0 +1,52 @@
+# Cloud Build → Artifact Registry
+# Image: asia-east2-docker.pkg.dev/i-gen-hk/igen/igen-drama:{tag}
+#
+# Tag mapping (GitHub trigger):
+#   staging branch → :staging
+#   main / master  → :latest
+# Manual override:
+#   gcloud builds submit --project=i-gen-hk --config=cloudbuild.yaml --substitutions=_TAG=staging .
+#   gcloud builds submit --project=i-gen-hk --config=cloudbuild.yaml --substitutions=_TAG=latest .
+#
+# Triggers that set a custom service_account MUST keep options.logging: CLOUD_LOGGING_ONLY
+# (or logs_bucket / REGIONAL_USER_OWNED_BUCKET). Otherwise Cloud Build rejects the request.
+
+substitutions:
+  _REGION: asia-east2
+  _REPO: igen
+  _IMAGE_NAME: igen-drama
+  _TAG: latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+steps:
+  - id: build-and-push
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        IMAGE="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE_NAME}"
+        BRANCH="${BRANCH_NAME}"
+        if [[ "$$BRANCH" == "staging" ]]; then
+          TAG=staging
+        elif [[ "$$BRANCH" == "main" || "$$BRANCH" == "master" ]]; then
+          TAG=latest
+        else
+          TAG="${_TAG}"
+        fi
+        echo "Resolved image tag: BRANCH_NAME=${BRANCH_NAME} → TAG=$$TAG (manual _TAG=${_TAG})"
+        docker build \
+          --build-arg NPM_REGISTRY=https://registry.npmjs.org \
+          --build-arg APT_MIRROR=deb.debian.org \
+          -t "$${IMAGE}:$${TAG}" \
+          .
+        if [[ -n "$${COMMIT_SHA:-}" ]]; then
+          docker tag "$${IMAGE}:$${TAG}" "$${IMAGE}:$${COMMIT_SHA}"
+          docker push "$${IMAGE}:$${COMMIT_SHA}"
+        fi
+        docker push "$${IMAGE}:$${TAG}"
+
+timeout: 2400s
