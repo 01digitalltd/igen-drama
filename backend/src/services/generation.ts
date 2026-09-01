@@ -7,6 +7,7 @@ import { eq } from '../db/query.js'
 import { getActiveConfig, getConfigById } from './ai.js'
 import { now } from '../utils/response.js'
 import { downloadFile, generateImageThumb, readImageAsCompressedDataUrl, saveBase64Image } from '../utils/storage.js'
+import { isS3Enabled, toVendorFetchableUrl } from '../utils/s3-media.js'
 import { extractVideoPoster } from '../utils/video-poster.js'
 import { getImageAdapter, getVideoAdapter } from './adapters/registry'
 import type { AIConfig } from './adapters/types'
@@ -213,8 +214,8 @@ async function processTask(id: number, config: AIConfig) {
       const resolvedLastFrameUrl = await normalizeVideoReferenceUrl(params.lastFrameUrl)
       const resolvedReferenceImageUrls = await normalizeVideoReferenceUrls(params.referenceImageUrls)
       // 参考视频/音频文件较大，不适合 dataURL 内联，需解析为公网可访问 URL
-      const resolvedReferenceVideoUrls = resolvePublicMediaUrls(params.referenceVideoUrls, 'video')
-      const resolvedReferenceAudioUrls = resolvePublicMediaUrls(params.referenceAudioUrls, 'audio')
+      const resolvedReferenceVideoUrls = await resolvePublicMediaUrls(params.referenceVideoUrls, 'video')
+      const resolvedReferenceAudioUrls = await resolvePublicMediaUrls(params.referenceAudioUrls, 'audio')
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
@@ -517,13 +518,17 @@ async function normalizeVideoReferenceUrls(refs: string[] | null | undefined): P
 
 /**
  * 将参考视频/音频解析为 Seedance API 可访问的 URL。
- * http(s)/dataURL 直通；本地 static 路径需要 PUBLIC_BASE_URL 拼成公网地址，
- * 未配置时抛出可操作的中文错误（落入 catch 写入 error_msg 供前端展示）。
+ * S3/CloudFront 对象改签成长效 S3 presigned GET（BytePlus 无法带 CloudFront cookie）。
+ * 本地 static 路径需要 PUBLIC_BASE_URL 拼成公网地址。
  */
-function resolvePublicMediaUrl(value: string | null | undefined, kind: 'video' | 'audio'): string | null {
+async function resolvePublicMediaUrl(value: string | null | undefined, kind: 'video' | 'audio'): Promise<string | null> {
   const raw = String(value || '').trim()
   if (!raw) return null
-  if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('data:')) return raw
+  if (raw.startsWith('data:')) return raw
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    if (isS3Enabled()) return toVendorFetchableUrl(raw)
+    return raw
+  }
   if (raw.startsWith('static/') || raw.startsWith('/static/')) {
     const base = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '')
     if (!base) {
@@ -539,8 +544,9 @@ function resolvePublicMediaUrl(value: string | null | undefined, kind: 'video' |
   return raw
 }
 
-function resolvePublicMediaUrls(refs: string[] | null | undefined, kind: 'video' | 'audio'): string[] {
+async function resolvePublicMediaUrls(refs: string[] | null | undefined, kind: 'video' | 'audio'): Promise<string[]> {
   if (!Array.isArray(refs) || !refs.length) return []
   const items = Array.from(new Set(refs.map((item) => String(item || '').trim()).filter(Boolean)))
-  return items.map((item) => resolvePublicMediaUrl(item, kind)).filter((item): item is string => !!item)
+  const resolved = await Promise.all(items.map((item) => resolvePublicMediaUrl(item, kind)))
+  return resolved.filter((item): item is string => !!item)
 }

@@ -1,13 +1,21 @@
 /**
  * 视频海报帧提取 — 供 <video poster> 使用，避免列表页为显示首帧而缓冲整个视频
  */
+import fs from 'fs'
 import path from 'path'
-import { getAbsolutePath } from './storage.js'
+import { v4 as uuid } from 'uuid'
+import {
+  ensureScratchDir,
+  getAbsolutePath,
+  materializeLocalFile,
+  persistDerivedFile,
+} from './storage.js'
+import { isS3Enabled, parseMediaUrlToKey } from './s3-media.js'
 import { ffmpeg, checkFfmpegSuite } from './ffmpeg.js'
 
 /** 由视频相对路径推导海报帧路径：static/videos/x.mp4 → static/videos/x_poster.jpg */
 export function posterPathFor(relativePath: string): string {
-  return relativePath.replace(/\.[^./]+$/, '_poster.jpg')
+  return relativePath.replace(/\.[^./?#]+(?=($|\?|#))/, '_poster.jpg')
 }
 
 /**
@@ -15,16 +23,17 @@ export function posterPathFor(relativePath: string): string {
  * 失败返回 null，不阻断主流程。
  */
 export async function extractVideoPoster(relativePath: string): Promise<string | null> {
+  let local: { filePath: string; cleanup: () => void } | null = null
   try {
-    // ffmpeg 二进制损坏（跨平台拷贝 node_modules / 下载不完整）时静默跳过，
-    // 避免 fluent-ffmpeg 延迟回调里的同步 EFTYPE 崩掉整个进程
     const { ffmpeg: ffmpegOk } = await checkFfmpegSuite()
     if (!ffmpegOk) return null
 
-    const posterRel = posterPathFor(relativePath)
-    const posterAbs = getAbsolutePath(posterRel)
+    local = await materializeLocalFile(relativePath)
+    const scratch = ensureScratchDir()
+    const posterAbs = path.join(scratch, `${uuid()}_poster.jpg`)
+
     await new Promise<void>((resolve, reject) => {
-      ffmpeg(getAbsolutePath(relativePath))
+      ffmpeg(local!.filePath)
         .screenshots({
           timestamps: ['0.5'],
           filename: path.basename(posterAbs),
@@ -34,9 +43,23 @@ export async function extractVideoPoster(relativePath: string): Promise<string |
         .on('end', () => resolve())
         .on('error', reject)
     })
+
+    if (isS3Enabled() && parseMediaUrlToKey(relativePath)) {
+      const stored = await persistDerivedFile(relativePath, posterAbs, posterPathFor, 'image/jpeg')
+      try { fs.unlinkSync(posterAbs) } catch {}
+      return stored
+    }
+
+    const posterRel = posterPathFor(relativePath)
+    const dest = getAbsolutePath(posterRel)
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    fs.copyFileSync(posterAbs, dest)
+    try { fs.unlinkSync(posterAbs) } catch {}
     return posterRel
   } catch (err) {
     console.warn(`[video-poster] 海报帧提取失败 ${relativePath}:`, (err as Error).message)
     return null
+  } finally {
+    local?.cleanup()
   }
 }

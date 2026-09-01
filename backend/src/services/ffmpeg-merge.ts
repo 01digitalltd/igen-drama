@@ -3,7 +3,6 @@
  */
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import { v4 as uuid } from 'uuid'
 import { db, getInsertId, schema } from '../db/index.js'
 import { eq } from '../db/query.js'
@@ -11,16 +10,7 @@ import { now } from '../utils/response.js'
 import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { extractVideoPoster } from '../utils/video-poster.js'
 import { ffmpeg, checkFfmpegSuite } from '../utils/ffmpeg.js'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const STORAGE_ROOT = process.env.STORAGE_PATH || path.resolve(__dirname, '../../../data/static')
-const DATA_ROOT = path.resolve(__dirname, '../../../data')
-
-function toAbsPath(relativePath: string): string {
-  if (path.isAbsolute(relativePath)) return relativePath
-  if (relativePath.startsWith('static/')) return path.join(DATA_ROOT, relativePath)
-  return path.join(STORAGE_ROOT, relativePath)
-}
+import { ensureScratchDir, materializeLocalFile, persistLocalFile } from '../utils/storage.js'
 
 /**
  * 拼接一集的镜头视频。
@@ -37,33 +27,21 @@ export async function mergeEpisodeVideos(episodeId: number, dramaId: number, sto
     storyboards = storyboards.filter(sb => allow.has(sb.id))
   }
 
-  // 允许部分拼接:按镜号顺序拼接已生成的镜头,未生成的跳过
   const clips = storyboards
     .map(sb => ({ sb, url: sb.videoUrl || sb.composedVideoUrl }))
     .filter(c => Boolean(c.url)) as { sb: typeof storyboards[number]; url: string }[]
 
   if (clips.length === 0) throw new Error('所选镜头还没有可拼接的视频')
 
-  // 拼接前探测 ffmpeg：二进制损坏时 fluent-ffmpeg 的同步 EFTYPE 会崩掉整个进程，
-  // 这里提前拦截并给出可操作的修复指引（路由层会作为 400 返回前端）
   const suite = await checkFfmpegSuite()
   if (!suite.ffmpeg || !suite.ffprobe) {
     throw new Error('本机 ffmpeg 不可用，无法拼接视频（常见于 node_modules 跨平台拷贝或 ffmpeg-static 下载损坏）。请删除 node_modules 后在本机重新 npm install，或设置 FFMPEG_BIN 指向有效的 ffmpeg 可执行文件后重启服务')
-  }
-
-  // 校验视频文件真实存在:DB 里的 video_url 可能指向已被清理的文件,
-  // 直接拼会得到 ffmpeg 的 "No such file or directory" 晦涩报错
-  const missing = clips.filter(c => !fs.existsSync(toAbsPath(c.url)))
-  if (missing.length > 0) {
-    const nums = missing.map(c => `S${c.sb.storyboardNumber}`).join('、')
-    throw new Error(`镜头 ${nums} 的视频文件已丢失（本地文件不存在），请重新生成这些镜头的视频，或在拼接时取消勾选`)
   }
 
   const videos = clips.map(c => c.url)
 
   logTaskStart('MergeTask', 'episode-merge', { episodeId, dramaId, clips: videos.length })
 
-  // 创建 merge 记录
   const ts = now()
   const res = await db.insert(schema.videoMerges).values({
     episodeId,
@@ -77,7 +55,6 @@ export async function mergeEpisodeVideos(episodeId: number, dramaId: number, sto
   })
   const mergeId = getInsertId(res)
 
-  // 异步执行
   doMerge(mergeId, episodeId, videos).catch(async err => {
     logTaskError('MergeTask', 'episode-merge', { mergeId, episodeId, error: err.message })
     console.error(`[Merge] Failed:`, err)
@@ -90,65 +67,75 @@ export async function mergeEpisodeVideos(episodeId: number, dramaId: number, sto
 }
 
 async function doMerge(mergeId: number, episodeId: number, videos: string[]) {
-  // 生成 concat 列表文件
-  const listDir = path.join(STORAGE_ROOT, 'temp')
-  fs.mkdirSync(listDir, { recursive: true })
-  const listPath = path.join(listDir, `${uuid()}.txt`)
+  const scratch = ensureScratchDir()
+  const materialized: Array<{ filePath: string; cleanup: () => void }> = []
 
-  const listContent = videos
-    .map(v => `file '${toAbsPath(v)}'`)
-    .join('\n')
-  fs.writeFileSync(listPath, listContent, 'utf-8')
+  try {
+    for (const url of videos) {
+      try {
+        materialized.push(await materializeLocalFile(url))
+      } catch (err) {
+        throw new Error(
+          `镜头视频无法读取，请重新生成后再拼接：${(err as Error).message}`,
+        )
+      }
+    }
 
-  // 输出文件
-  const outputDir = path.join(STORAGE_ROOT, 'merged')
-  fs.mkdirSync(outputDir, { recursive: true })
-  const outputFilename = `${uuid()}.mp4`
-  const outputPath = path.join(outputDir, outputFilename)
+    const listPath = path.join(scratch, `${uuid()}.txt`)
+    const listContent = materialized
+      .map(item => `file '${item.filePath}'`)
+      .join('\n')
+    fs.writeFileSync(listPath, listContent, 'utf-8')
 
-  await new Promise<void>((resolve, reject) => {
-    ffmpeg()
-      .input(listPath)
-      .inputOptions(['-f', 'concat', '-safe', '0'])
-      .outputOptions([
-        '-fflags', '+genpts',
-        '-c:v', 'libx264',
-        '-preset', 'medium',
-        '-crf', '23',
-        '-c:a', 'aac',
-        '-ar', '48000',
-        '-b:a', '192k',
-        '-movflags', '+faststart',
-      ])
-      .output(outputPath)
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err))
-      .run()
+    const outputFilename = `${uuid()}.mp4`
+    const outputPath = path.join(scratch, outputFilename)
 
-  })
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(listPath)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .outputOptions([
+          '-fflags', '+genpts',
+          '-c:v', 'libx264',
+          '-preset', 'medium',
+          '-crf', '23',
+          '-c:a', 'aac',
+          '-ar', '48000',
+          '-b:a', '192k',
+          '-movflags', '+faststart',
+        ])
+        .output(outputPath)
+        .on('end', () => resolve())
+        .on('error', (err) => reject(err))
+        .run()
+    })
 
-  // 清理临时文件
-  fs.unlinkSync(listPath)
+    try { fs.unlinkSync(listPath) } catch {}
 
-  // 获取时长
-  const duration = await getVideoDuration(outputPath)
+    const duration = await getVideoDuration(outputPath)
+    const mergedStored = await persistLocalFile(outputPath, 'merged')
+    await extractVideoPoster(mergedStored)
 
-  const mergedRelative = `static/merged/${outputFilename}`
+    await db.update(schema.videoMerges)
+      .set({ status: 'completed', mergedUrl: mergedStored, duration, completedAt: now() })
+      .where(eq(schema.videoMerges.id, mergeId))
 
-  // 成片海报帧（导出页封面用）
-  await extractVideoPoster(mergedRelative)
+    await db.update(schema.episodes)
+      .set({ videoUrl: mergedStored, updatedAt: now() })
+      .where(eq(schema.episodes.id, episodeId))
 
-  // 更新 merge 记录
-  await db.update(schema.videoMerges)
-    .set({ status: 'completed', mergedUrl: mergedRelative, duration, completedAt: now() })
-    .where(eq(schema.videoMerges.id, mergeId))
+    try { fs.unlinkSync(outputPath) } catch {}
 
-  // 更新 episode
-  await db.update(schema.episodes)
-    .set({ videoUrl: mergedRelative, updatedAt: now() })
-    .where(eq(schema.episodes.id, episodeId))
-
-  logTaskSuccess('MergeTask', 'episode-merge', { mergeId, episodeId, output: mergedRelative, duration, clips: videos.length })
+    logTaskSuccess('MergeTask', 'episode-merge', {
+      mergeId,
+      episodeId,
+      output: mergedStored,
+      duration,
+      clips: videos.length,
+    })
+  } finally {
+    for (const item of materialized) item.cleanup()
+  }
 }
 
 function getVideoDuration(filePath: string): Promise<number> {
