@@ -11,13 +11,14 @@ import { db, schema } from '../db/index.js'
 import { mastra } from '../mastra/index.js'
 import { buildAgentRequestContext } from '../agents/context.js'
 import { logTaskError, logTaskProgress } from '../utils/task-logger.js'
+import { withContentLanguage } from '../utils/content-language.js'
 
 type CharacterRow = typeof schema.characters.$inferSelect
 type SceneRow = typeof schema.scenes.$inferSelect
 type PropRow = typeof schema.props.$inferSelect
 
 /** 顶栏选择的文本模型/配置覆盖（不传则跟随 Agent 与文本配置默认） */
-export interface PromptAgentOptions { model?: string; configId?: number }
+export interface PromptAgentOptions { model?: string; configId?: number; locale?: string }
 
 async function runPromptAgent(episodeId: number, dramaId: number, message: string, opts?: PromptAgentOptions) {
   const agent = mastra.getAgent('prompt_generator')
@@ -27,8 +28,9 @@ async function runPromptAgent(episodeId: number, dramaId: number, message: strin
     dramaId,
     modelOverride: opts?.model || undefined,
     textConfigId: opts?.configId || undefined,
+    locale: opts?.locale || undefined,
   })
-  await agent.generate([{ role: 'user', content: message }], { maxSteps: 12, requestContext })
+  await agent.generate([{ role: 'user', content: withContentLanguage(message, opts?.locale) }], { maxSteps: 12, requestContext })
 }
 
 /** 确保角色拥有三视图最终提示词，返回最终提示词（失败返回 ''）；force 时忽略已有提示词强制重新生成 */

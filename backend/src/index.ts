@@ -22,6 +22,7 @@ import skills from './routes/skills.js'
 import props from './routes/props.js'
 import { requestLogger, errorHandler } from './middleware/logger.js'
 import { serviceAuth } from './middleware/service-auth.js'
+import { requestLocale } from './middleware/request-locale.js'
 import { db, schema } from './db/index.js'
 import { eq } from './db/query.js'
 import { now } from './utils/response.js'
@@ -46,6 +47,7 @@ app.get('/api/v1/health', (c) => c.json({ status: 'ok', timestamp: new Date().to
 // API routes
 const api = new Hono()
 api.use('*', serviceAuth)
+api.use('*', requestLocale)
 api.route('/dramas', dramas)
 api.route('/episodes', episodes)
 api.route('/storyboards', storyboards)

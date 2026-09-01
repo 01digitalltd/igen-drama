@@ -7,6 +7,7 @@ import { getActiveConfigId } from '../services/ai.js'
 import { EXTRACT_TARGETS, getExtractionStatus, startExtraction, type ExtractTarget } from '../services/extraction.js'
 import { getVideoPromptBatchStatus, startVideoPromptBatch } from '../services/video-prompts.js'
 import { loadOwnedDrama, loadOwnedEpisode } from '../utils/ownership.js'
+import { getRequestLocale } from '../middleware/request-locale.js'
 
 const app = new Hono()
 
@@ -139,7 +140,11 @@ app.post('/:id/extract', async (c) => {
   const body = await c.req.json()
   const target = body.target as ExtractTarget
   if (!EXTRACT_TARGETS.includes(target)) return badRequest(c, 'target 必须是 characters / scenes / props')
-  const started = startExtraction(ep.id, ep.dramaId, target, { model: body.model || undefined, configId: body.config_id ?? undefined })
+  const started = startExtraction(ep.id, ep.dramaId, target, {
+    model: body.model || undefined,
+    configId: body.config_id ?? undefined,
+    locale: getRequestLocale(c, body.locale),
+  })
   return success(c, { target, status: 'running', already_running: !started })
 })
 
@@ -158,7 +163,12 @@ app.post('/:id/generate-video-prompts', async (c) => {
   const storyboardIds = Array.isArray(body.storyboard_ids)
     ? body.storyboard_ids.map(Number).filter((n: number) => Number.isInteger(n) && n > 0)
     : undefined
-  const result = await startVideoPromptBatch(ep.id, ep.dramaId, { model: body.model || undefined, configId: body.config_id ?? undefined }, storyboardIds)
+  const result = await startVideoPromptBatch(
+    ep.id,
+    ep.dramaId,
+    { model: body.model || undefined, configId: body.config_id ?? undefined, locale: getRequestLocale(c, body.locale) },
+    storyboardIds,
+  )
   if (result.total === -1) return success(c, { status: 'running', already_running: true })
   if (!result.started) return success(c, { status: 'idle', total: 0 })
   return success(c, { status: 'running', total: result.total })

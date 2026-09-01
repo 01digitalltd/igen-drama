@@ -6,6 +6,7 @@ import { validAgentTypes } from '../agents/index.js'
 import { success, badRequest, notFound } from '../utils/response.js'
 import { getAgentJob, startAgentJob } from '../services/agent-jobs.js'
 import { loadOwnedDrama, loadOwnedEpisode } from '../utils/ownership.js'
+import { getRequestLocale } from '../middleware/request-locale.js'
 
 const app = new Hono()
 
@@ -55,6 +56,7 @@ app.post('/:type/chat', async (c) => {
       episodeId: Number(episode_id),
       model: body.model || undefined,
       configId: body.config_id || undefined,
+      locale: getRequestLocale(c, body.locale),
     })
     return success(c, publicJob(job))
   } catch (err: any) {

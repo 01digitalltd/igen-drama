@@ -9,6 +9,7 @@ export interface AgentRequestContextValues {
   dramaId: number
   modelOverride?: string
   textConfigId?: number
+  locale?: string
 }
 
 export function buildAgentRequestContext(values: AgentRequestContextValues): RequestContext<AgentRequestContextValues> {
@@ -17,6 +18,7 @@ export function buildAgentRequestContext(values: AgentRequestContextValues): Req
   rc.set('dramaId', values.dramaId)
   if (values.modelOverride) rc.set('modelOverride', values.modelOverride)
   if (values.textConfigId) rc.set('textConfigId', values.textConfigId)
+  if (values.locale) rc.set('locale', values.locale)
   return rc
 }
 
@@ -28,4 +30,9 @@ export function getEpisodeId(requestContext: RequestContext | undefined): number
 export function getDramaId(requestContext: RequestContext | undefined): number | null {
   const v = requestContext?.get('dramaId' as never)
   return typeof v === 'number' ? v : null
+}
+
+export function getAgentLocale(requestContext: RequestContext | undefined): string | null {
+  const v = requestContext?.get('locale' as never)
+  return typeof v === 'string' && v.trim() ? v : null
 }

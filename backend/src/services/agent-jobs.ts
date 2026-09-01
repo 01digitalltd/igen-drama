@@ -5,7 +5,7 @@
 import { validAgentTypes } from '../agents/index.js'
 import { buildAgentRequestContext } from '../agents/context.js'
 import { mastra } from '../mastra/index.js'
-import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { withContentLanguage } from '../utils/content-language.js'
 
 export interface AgentJob {
   id: string
@@ -53,6 +53,7 @@ export function startAgentJob(params: {
   episodeId: number
   model?: string
   configId?: number
+  locale?: string
 }): AgentJob {
   const { agentType, message, dramaId, episodeId } = params
   if (!validAgentTypes.includes(agentType)) {
@@ -85,11 +86,12 @@ export function startAgentJob(params: {
     dramaId,
     modelOverride: params.model || undefined,
     textConfigId: params.configId || undefined,
+    locale: params.locale || undefined,
   })
   const startTime = performance.now()
 
   ;(async () => agent.generate(
-    [{ role: 'user', content: message }],
+    [{ role: 'user', content: withContentLanguage(message, params.locale) }],
     { maxSteps: 20, requestContext },
   ))()
     .then((result: any) => {

@@ -5,6 +5,7 @@
  */
 import { mastra } from '../mastra/index.js'
 import { buildAgentRequestContext } from '../agents/context.js'
+import { contentLanguageInstruction } from '../utils/content-language.js'
 import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 
 export type ExtractTarget = 'characters' | 'scenes' | 'props'
@@ -28,7 +29,7 @@ const EXTRACT_MESSAGES: Record<ExtractTarget, string> = {
 }
 
 /** 启动异步提取任务（立即返回）；同集同类型已在运行时返回 false；可指定文本模型覆盖 */
-export function startExtraction(episodeId: number, dramaId: number, target: ExtractTarget, opts: { model?: string; configId?: number } = {}): boolean {
+export function startExtraction(episodeId: number, dramaId: number, target: ExtractTarget, opts: { model?: string; configId?: number; locale?: string } = {}): boolean {
   const key = keyOf(episodeId, target)
   if (tasks.get(key)?.status === 'running') return false
 
@@ -44,8 +45,14 @@ export function startExtraction(episodeId: number, dramaId: number, target: Extr
       dramaId,
       modelOverride: opts.model || undefined,
       textConfigId: opts.configId || undefined,
+      locale: opts.locale || undefined,
     })
-    return agent.generate([{ role: 'user', content: EXTRACT_MESSAGES[target] }], {
+    const extractMessage = [
+      EXTRACT_MESSAGES[target],
+      '必须调用对应工具把结果写入数据库，禁止只回复文字摘要。',
+      contentLanguageInstruction(opts.locale),
+    ].join('\n\n')
+    return agent.generate([{ role: 'user', content: extractMessage }], {
       maxSteps: 20,
       requestContext,
       // 逐步打印 Agent 进展：调用了哪些工具、输出了什么

@@ -5,6 +5,8 @@ description: 角色、场景和道具提取的规范与方法
 
 # 角色、场景与道具提取指南
 
+提取结果必须通过 `save_dedup_characters` / `save_dedup_scenes` / `save_dedup_props` 写入数据库，禁止只回复文字摘要。用户消息会指定本次只提取其中一类。
+
 ## 角色提取规范
 
 提取的角色字段（与 `save_dedup_characters` 工具参数一一对应）：

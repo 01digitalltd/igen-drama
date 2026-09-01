@@ -7,7 +7,8 @@ import { z } from 'zod'
 import { db, schema } from '../../db/index.js'
 import { eq } from '../../db/query.js'
 import { now } from '../../utils/response.js'
-import { getEpisodeId } from '../context.js'
+import { getEpisodeId, getAgentLocale } from '../context.js'
+import { withContentLanguage } from '../../utils/content-language.js'
 
 const readEpisodeScript = createTool({
   id: 'read_episode_script',
@@ -39,10 +40,11 @@ const rewriteToScreenplay = createTool({
     if (!ep) return { error: `Episode not found` }
     const source = ep.content || ep.scriptContent
     if (!source) return { error: `Episode has no content to rewrite` }
+    const locale = getAgentLocale(context?.requestContext)
 
     return {
       source_content: source,
-      instruction: `请将以下内容改写为格式化剧本。
+      instruction: withContentLanguage(`请将以下内容改写为格式化剧本。
 
 格式规范：
 - 场景头：## S编号 | 内景/外景 · 地点 | 时间段
@@ -53,7 +55,7 @@ const rewriteToScreenplay = createTool({
 ${instructions || ''}
 
 【原始内容】
-${source}`,
+${source}`, locale),
     }
   },
 })

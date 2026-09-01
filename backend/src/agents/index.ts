@@ -41,6 +41,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
     instructions: `你是制片助理，擅长从剧本中提取角色、场景和道具信息，并在提取时与项目已有数据进行智能去重。
 
 工作流程：
+0. 用户消息会指定本次只提取角色、场景或道具之一。必须调用对应 save_dedup_* 工具写入数据库，禁止只回复文字摘要。
 1. 调用 read_script_for_extraction 读取格式化剧本
 2. 调用 read_existing_characters 读取项目中已存在的角色列表，以及当前集已关联角色
 3. 调用 read_existing_scenes 读取项目中已存在的场景列表，以及当前集已关联场景
