@@ -16,6 +16,33 @@ import { now } from '../../utils/response.js'
 import { getDramaStylePrompt } from '../../services/style-preset.js'
 import { getDramaId } from '../context.js'
 
+export async function persistCharacterFinalPrompt(dramaId: number, characterId: number, prompt: string) {
+  const stylePrompt = await getDramaStylePrompt(dramaId)
+  const finalPrompt = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
+  await db.update(schema.characters)
+    .set({ finalPrompt, updatedAt: now() })
+    .where(eq(schema.characters.id, characterId))
+  return finalPrompt
+}
+
+export async function persistSceneFinalPrompt(dramaId: number, sceneId: number, prompt: string) {
+  const stylePrompt = await getDramaStylePrompt(dramaId)
+  const finalPrompt = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
+  await db.update(schema.scenes)
+    .set({ finalPrompt, updatedAt: now() })
+    .where(eq(schema.scenes.id, sceneId))
+  return finalPrompt
+}
+
+export async function persistPropFinalPrompt(dramaId: number, propId: number, prompt: string) {
+  const stylePrompt = await getDramaStylePrompt(dramaId)
+  const finalPrompt = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
+  await db.update(schema.props)
+    .set({ finalPrompt, updatedAt: now() })
+    .where(eq(schema.props.id, propId))
+  return finalPrompt
+}
+
 // ─── 角色提示词 ───────────────────────────────────────
 
 const readCharacters = createTool({
@@ -56,11 +83,7 @@ const saveCharacterFinalPrompt = createTool({
       .where(eq(schema.characters.id, character_id))
     if (!c) return { error: 'Character not found' }
 
-    const stylePrompt = await getDramaStylePrompt(dramaId)
-    const finalPrompt = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
-    await db.update(schema.characters)
-      .set({ finalPrompt, updatedAt: now() })
-      .where(eq(schema.characters.id, character_id))
+    const finalPrompt = await persistCharacterFinalPrompt(dramaId, character_id, prompt)
 
     return {
       character_id: c.id,
@@ -110,11 +133,7 @@ const saveSceneFinalPrompt = createTool({
       .where(eq(schema.scenes.id, scene_id))
     if (!s) return { error: 'Scene not found' }
 
-    const stylePrompt = await getDramaStylePrompt(dramaId)
-    const finalPrompt = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
-    await db.update(schema.scenes)
-      .set({ finalPrompt, updatedAt: now() })
-      .where(eq(schema.scenes.id, scene_id))
+    const finalPrompt = await persistSceneFinalPrompt(dramaId, scene_id, prompt)
 
     return {
       scene_id: s.id,
@@ -163,11 +182,7 @@ const savePropFinalPrompt = createTool({
       .where(eq(schema.props.id, prop_id))
     if (!p) return { error: 'Prop not found' }
 
-    const stylePrompt = await getDramaStylePrompt(dramaId)
-    const finalPrompt = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
-    await db.update(schema.props)
-      .set({ finalPrompt, updatedAt: now() })
-      .where(eq(schema.props.id, prop_id))
+    const finalPrompt = await persistPropFinalPrompt(dramaId, prop_id, prompt)
 
     return {
       prop_id: p.id,

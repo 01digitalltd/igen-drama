@@ -61,6 +61,10 @@ test('image generation prefers the stored final prompt with agent generation and
   assert.match(service, /export async function ensureCharacterFinalPrompt/)
   assert.match(service, /export async function ensureSceneFinalPrompt/)
   assert.match(service, /getAgent\('prompt_generator'/)
+  assert.match(service, /toolChoice: 'none'/)
+  assert.match(service, /structuredOutput/)
+  assert.match(service, /persistCharacterFinalPrompt/)
+  assert.match(service, /persistSceneFinalPrompt/)
   // 已有最终提示词直接复用（force 时忽略强制重新生成）
   assert.match(service, /if \(char\.finalPrompt && !force\) return char\.finalPrompt/)
   assert.match(service, /if \(scene\.finalPrompt && !force\) return scene\.finalPrompt/)
@@ -71,7 +75,6 @@ test('image generation prefers the stored final prompt with agent generation and
   assert.match(characters, /text_model/)
   assert.match(characters, /finalPrompt \|\| characterImagePrompt\(char, stylePrompt\)/)
   assert.match(scenes, /ensureSceneFinalPrompt\(scene, ep\.id, /)
-  // 描述字段编辑后最终提示词失效
-  assert.match(characters, /updates\.finalPrompt = null/)
-  assert.match(scenes, /updates\.finalPrompt = null/)
+  assert.match(characters, /updates\.finalPrompt = body\.final_prompt \|\| null/)
+  assert.match(scenes, /updates\.finalPrompt = body\.final_prompt \|\| null/)
 })
