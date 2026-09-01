@@ -62,6 +62,7 @@ test('episodes route exposes async extract endpoints', () => {
   assert.match(route, /startExtraction\(ep\.id, ep\.dramaId, target, \{[\s\S]*model: body\.model/)
   // 顶栏文本模型覆盖透传到提取 Agent
   assert.match(read('src/services/extraction.ts'), /modelOverride: opts\.model/)
-  assert.match(read('src/services/extraction.ts'), /withContentLanguage\(EXTRACT_MESSAGES\[target\], opts\.locale\)/)
+  assert.match(read('src/services/extraction.ts'), /contentLanguageInstruction\(opts\.locale\)/)
+  assert.match(read('src/services/extraction.ts'), /必须调用对应工具把结果写入数据库/)
   assert.match(route, /getExtractionStatus\(id\)/)
 })

@@ -22,14 +22,17 @@ export function buildAgentRequestContext(values: AgentRequestContextValues): Req
   return rc
 }
 
+export function parseContextId(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isInteger(n) && n > 0 ? n : null
+}
+
 export function getEpisodeId(requestContext: RequestContext | undefined): number | null {
-  const v = requestContext?.get('episodeId' as never)
-  return typeof v === 'number' ? v : null
+  return parseContextId(requestContext?.get('episodeId' as never))
 }
 
 export function getDramaId(requestContext: RequestContext | undefined): number | null {
-  const v = requestContext?.get('dramaId' as never)
-  return typeof v === 'number' ? v : null
+  return parseContextId(requestContext?.get('dramaId' as never))
 }
 
 export function getAgentLocale(requestContext: RequestContext | undefined): string | null {
