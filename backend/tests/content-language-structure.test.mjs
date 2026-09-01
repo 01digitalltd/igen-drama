@@ -21,7 +21,7 @@ test('agent jobs and extraction inject UI locale into the user message', () => {
   assert.match(jobs, /from '\.\.\/utils\/task-logger\.js'/)
   assert.match(jobs, /logTaskStart/)
   assert.match(jobs, /withContentLanguage\(message, params\.locale\)/)
-  assert.match(extract, /contentLanguageInstruction\(opts\.locale\)/)
+  assert.match(extract, /contentLanguageInstruction\(locale\)/)
   assert.match(agentRoute, /locale: getRequestLocale\(c, body\.locale\)/)
   assert.match(epRoute, /locale: getRequestLocale\(c, body\.locale\)/)
 })

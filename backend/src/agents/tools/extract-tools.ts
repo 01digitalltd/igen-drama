@@ -69,7 +69,12 @@ type ToolContext = ToolExecutionContext | undefined
 function requireIds(context: ToolContext): { episodeId: number; dramaId: number } | { error: string } {
   const episodeId = getEpisodeId(context?.requestContext)
   const dramaId = getDramaId(context?.requestContext)
-  if (!episodeId || !dramaId) return { error: 'Missing episodeId/dramaId in request context' }
+  if (!episodeId || !dramaId) {
+    logTaskProgress('ExtractTool', 'missing-context', {
+      hasRequestContext: Boolean(context?.requestContext),
+    })
+    return { error: 'Missing episodeId/dramaId in request context' }
+  }
   return { episodeId, dramaId }
 }
 
