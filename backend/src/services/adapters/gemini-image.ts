@@ -1,8 +1,13 @@
 /**
- * Gemini 图片生成 Adapter
- * 认证: URL Query 参数 ?key= 或 Header x-goog-api-key
- * 请求: Google REST 风格的 contents[].parts[] 结构
- * 响应: base64 编码在 inlineData.data 中，无 URL
+ * Gemini image generation adapter.
+ *
+ * Official Gemini image models (Nano Banana / gemini-3.*-image) are generated
+ * with generateContent, same as mkt-ai's GeminiImageService (@google/genai).
+ * The Interactions API POST always returns an `id`; treating that as an async
+ * task and polling GET /v1beta/{id} is wrong (timeout after 10 minutes).
+ *
+ * Poll remains implemented for in-flight Interactions jobs (resume) and any
+ * response that is actually in_progress: GET /v1beta/interactions/{id}.
  */
 import type {
   ImageProviderAdapter,
@@ -15,40 +20,29 @@ import type {
 import { joinProviderUrl } from './url'
 import { parseDataUrl } from '../../utils/storage.js'
 
+const INTERACTIONS_API_REVISION = '2026-05-20'
+const IN_PROGRESS_STATUSES = new Set([
+  'in_progress',
+  'queued',
+  'running',
+  'pending',
+  'processing',
+])
+const FAILED_STATUSES = new Set([
+  'failed',
+  'cancelled',
+  'canceled',
+  'error',
+  'incomplete',
+])
+
 export class GeminiImageAdapter implements ImageProviderAdapter {
   provider = 'gemini'
 
   buildGenerateRequest(config: AIConfig, record: ImageGenerationRecord): ProviderRequest {
-    // Gemini 模型名格式: "models/gemini-3-pro-image" 或直接 "gemini-3-pro-image"
-    const modelName = record.model || config.model || 'gemini-3-pro-image'
-    // interactions 端点仅官方 API 可用;中转站(new-api 类)普遍未配置该端点类型,
-    // 会报 "endpointType=GEMINI_INTERACTIONS 未启用",此类端点回退到 generateContent 分支
-    const isGemini3Image = /gemini-3.*image/.test(modelName)
-    const isOfficialHost = /generativelanguage\.googleapis\.com/.test(config.baseUrl || '')
-
-    if (isGemini3Image && isOfficialHost) {
-      return {
-        url: joinProviderUrl(config.baseUrl, '/v1beta', '/interactions'),
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': config.apiKey,
-        },
-        body: {
-          model: modelName.replace(/^models\//, ''),
-          input: record.prompt || 'Generate an image',
-          response_format: {
-            type: 'image',
-            aspect_ratio: this.parseAspectRatio(record.size),
-            image_size: this.parseImageSize(record.size),
-          },
-        },
-      }
-    }
-
+    const modelName = record.model || config.model || 'gemini-3.1-flash-image'
     const model = modelName.startsWith('models/') ? modelName : `models/${modelName}`
 
-    // Google REST 风格请求体
     const parts: any[] = []
     if (record.referenceImages) {
       try {
@@ -75,7 +69,6 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
       generationConfig: {
         responseModalities: ['IMAGE', 'TEXT'],
         imageConfig: {
-          // 解析 size 如 "1920x1080" -> aspectRatio
           aspectRatio: this.parseAspectRatio(record.size),
           imageSize: this.parseImageSize(record.size),
         },
@@ -113,8 +106,16 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
       return { isAsync: false, imageUrl: undefined }
     }
 
-    if (result.task_id || result.id) {
-      return { isAsync: true, taskId: result.task_id || result.id }
+    const status = String(result?.status || result?.state || '').toLowerCase()
+    if (FAILED_STATUSES.has(status)) {
+      throw new Error(result?.error?.message || result?.error || `Gemini generation ${status}`)
+    }
+
+    const interactionId = this.interactionId(result)
+    // Interactions responses always have `id`. Only poll when Google says
+    // the job is still running — never because an `id` field exists.
+    if (interactionId && IN_PROGRESS_STATUSES.has(status)) {
+      return { isAsync: true, taskId: interactionId }
     }
 
     if (result.error) {
@@ -124,19 +125,37 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
   }
 
   parsePollResponse(result: any): ImagePollResponse {
-    // Gemini 是同步的，通常不会走到这里
-    return { status: 'completed' }
+    const status = String(result?.status || result?.state || '').toLowerCase()
+    const imageUrl = this.extractImageUrl(result) || undefined
+    const hasImage = Boolean(imageUrl || this.extractImageBase64(result))
+
+    if (FAILED_STATUSES.has(status)) {
+      return {
+        status: 'failed',
+        error: result?.error?.message || result?.error || 'Gemini generation failed',
+      }
+    }
+
+    if (hasImage) {
+      return { status: 'completed', imageUrl }
+    }
+
+    if (status === 'completed') {
+      return { status: 'failed', error: 'Gemini interaction completed without image' }
+    }
+
+    return { status: 'processing' }
   }
 
   buildPollRequest(config: AIConfig, taskId: string): ProviderRequest {
-    // Gemini 不需要轮询，但实现接口以保持一致
-    const url = new URL(joinProviderUrl(config.baseUrl, '/v1beta', `/${taskId}`))
+    const url = new URL(joinProviderUrl(config.baseUrl, '/v1beta', this.interactionPollPath(taskId)))
     url.searchParams.set('key', config.apiKey)
     return {
       url: url.toString(),
       method: 'GET',
       headers: {
         'x-goog-api-key': config.apiKey,
+        'Api-Revision': INTERACTIONS_API_REVISION,
       },
       body: undefined,
     }
@@ -146,33 +165,30 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
     return result?.data?.[0]?.url
       || result?.image_url
       || result?.url
+      || result?.output_image?.uri
+      || result?.output_image?.url
       || null
   }
 
   extractImageBase64(result: any): { data: string; mimeType: string } | null {
-    const b64 = result?.data?.[0]?.b64_json
-    if (b64) {
-      return { data: b64, mimeType: 'image/png' }
-    }
+    return findInlineImage(result)
+  }
 
-    if (result?.output_image?.data) {
-      return {
-        data: result.output_image.data,
-        mimeType: result.output_image.mime_type || result.output_image.mimeType || 'image/png',
-      }
-    }
+  private interactionId(result: any): string | undefined {
+    const raw = result?.task_id || result?.id
+    if (!raw || typeof raw !== 'string') return undefined
+    return raw
+  }
 
-    const parts = result.candidates?.[0]?.content?.parts || []
-    for (const part of parts) {
-      if (part.inlineData || part.inline_data) {
-        const inline = part.inlineData || part.inline_data
-        return {
-          data: inline.data,
-          mimeType: inline.mimeType || inline.mime_type || 'image/png',
-        }
-      }
+  private interactionPollPath(taskId: string): string {
+    const trimmed = String(taskId || '').replace(/^\/+/, '')
+    if (trimmed.startsWith('v1beta/interactions/')) {
+      return `/${trimmed.slice('v1beta/'.length)}`
     }
-    return null
+    if (trimmed.startsWith('interactions/')) {
+      return `/${trimmed}`
+    }
+    return `/interactions/${trimmed}`
   }
 
   private parseAspectRatio(size?: string | null): string {
@@ -196,4 +212,47 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
   private gcd(a: number, b: number): number {
     return b === 0 ? a : this.gcd(b, a % b)
   }
+}
+
+function looksLikeImageBase64(data: string): boolean {
+  if (typeof data !== 'string' || data.length < 80) return false
+  const head = data.slice(0, 16)
+  return head.startsWith('iVBORw0') || head.startsWith('/9j/') || head.startsWith('UklGR') || head.startsWith('R0lGOD')
+}
+
+function findInlineImage(node: any, depth = 0): { data: string; mimeType: string } | null {
+  if (!node || depth > 8) return null
+
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findInlineImage(item, depth + 1)
+      if (found) return found
+    }
+    return null
+  }
+
+  if (typeof node !== 'object') return null
+
+  const inline = node.inlineData || node.inline_data
+  if (inline?.data) {
+    return {
+      data: inline.data,
+      mimeType: inline.mimeType || inline.mime_type || 'image/png',
+    }
+  }
+
+  const mime = String(node.mime_type || node.mimeType || '')
+  const rawData = node.data || node.b64_json
+  const typedImage = String(node.type || '').toLowerCase() === 'image'
+  if (typeof rawData === 'string' && (typedImage || mime.startsWith('image/') || looksLikeImageBase64(rawData))) {
+    return { data: rawData, mimeType: mime || 'image/png' }
+  }
+
+  for (const key of ['output_image', 'candidates', 'content', 'parts', 'outputs', 'steps', 'image', 'result', 'data']) {
+    if (node[key]) {
+      const found = findInlineImage(node[key], depth + 1)
+      if (found) return found
+    }
+  }
+  return null
 }

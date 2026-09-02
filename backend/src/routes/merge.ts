@@ -39,9 +39,8 @@ app.get('/episodes/:id/merge', async (c) => {
   await loadOwnedEpisode(c, episodeId)
   const merges = await db.select().from(schema.videoMerges)
     .where(eq(schema.videoMerges.episodeId, episodeId))
-
-
-  const latest = merges[merges.length - 1]
+  merges.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+  const latest = merges[0]
   if (!latest) return success(c, null)
 
   return success(c, toSnakeCase(latest))

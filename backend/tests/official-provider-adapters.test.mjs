@@ -112,8 +112,8 @@ test('AI config probe uses provider-specific auth schemes', () => {
 
   assert.match(geminiHeaders, /x-goog-api-key/)
   assert.doesNotMatch(geminiHeaders, /Authorization\s*=\s*`Bearer/)
-  assert.match(route, /modelName\.startsWith\('gemini-3'\)/)
-  assert.match(route, /'\/interactions'/)
+  assert.match(route, /:generateContent/)
+  assert.match(route, /contents: \[\{ parts: \[\{ text: 'hi' \}\] \}\]/)
   assert.match(route, /function bearerHeaders/)
   assert.match(route, /p === 'openai'/)
   assert.match(route, /p === 'volcengine'/)
@@ -169,9 +169,10 @@ test('new image and video models use their current API shapes', () => {
 
   assert.match(openaiImage, /isGptImage2/)
   assert.match(openaiImage, /normalizeGptImage2Size/)
-  assert.match(geminiImage, /isGemini3Image/)
-  assert.match(geminiImage, /\/v1beta'[\s\S]*'\/interactions'/)
-  assert.match(geminiImage, /response_format/)
+  assert.match(geminiImage, /generateContent/)
+  assert.match(geminiImage, /responseModalities/)
+  assert.match(geminiImage, /\/interactions\//)
+  assert.doesNotMatch(geminiImage, /\$\{taskId\}`\)/)
   assert.doesNotMatch(geminiImage, /Authorization': `Bearer/)
   assert.match(volcVideo, /doubao-seedance-2-0-fast-260128/)
   // Seedance 2.0 多模态能力（含 BytePlus dreamina 国际站模型名）
