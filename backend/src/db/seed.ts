@@ -8,6 +8,7 @@ const stylePresetSeeds = [
   { name: '吉卜力手绘', value: 'ghibli', sortOrder: 3, prompt: 'Studio Ghibli style, hand-drawn animation, soft watercolor painted backgrounds, warm nostalgic lighting, gentle natural palette, whimsical cozy atmosphere', description: '吉卜力手绘治愈风' },
   { name: '水彩绘本', value: 'watercolor', sortOrder: 4, prompt: 'watercolor illustration style, soft translucent washes, visible paper texture, delicate fluid brushwork, light airy atmosphere, hand-painted storybook feel', description: '水彩插画质感' },
   { name: '美式漫画', value: 'comic', sortOrder: 5, prompt: 'Western comic book style, bold black ink outlines, halftone dot shading, dynamic saturated colors, dramatic contrast lighting, flat graphic novel look', description: '美式漫画粗线条风格' },
+  { name: '写实真人', value: 'realistic', sortOrder: 6, prompt: 'photorealistic live-action cinematic still, real human actors with natural skin texture pores and imperfections, real-world photography not illustration, 35mm film look, natural lighting, shallow depth of field, no anime, no cel shading, no 3D render, no CGI character, no cartoon', description: '真人实拍电影质感，自然皮肤与光影，非动画非 3D' },
 ]
 
 export async function seedMongo() {

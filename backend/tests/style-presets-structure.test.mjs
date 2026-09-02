@@ -53,6 +53,14 @@ test('drama style prompt is injected into image prompt composition', () => {
   assert.match(scenes, /getDramaStylePrompt\(scene\.dramaId\)/)
 })
 
+test('style preset seed includes photoreal live-action', () => {
+  const seed = read('src/db/seed.ts')
+
+  assert.match(seed, /value: 'realistic'/)
+  assert.match(seed, /photorealistic live-action/)
+  assert.match(seed, /写实真人/)
+})
+
 test('agent default prompts no longer hardcode consistent art style', () => {
   const agents = read('src/agents/index.ts')
 
