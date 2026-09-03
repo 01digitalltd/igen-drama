@@ -485,7 +485,7 @@ const providerPresets = {
   video: {
     gemini: { label: 'Gemini Omni 官方', baseUrl: 'https://generativelanguage.googleapis.com', models: ['gemini-omni-flash-preview'] },
     volcengine: { label: 'Seedance 2.0 官方', baseUrl: 'https://ark.cn-beijing.volces.com', models: ['doubao-seedance-2-0-fast-260128', 'doubao-seedance-2-0-260128', 'doubao-seedance-2-0-mini-260615'] },
-    minimax: { label: 'MiniMax H3 官方', baseUrl: 'https://api.minimaxi.com', models: ['MiniMax-H3'] },
+    minimax: { label: 'MiniMax H3 官方', baseUrl: 'https://api.minimax.io', models: ['MiniMax-H3'] },
   },
 }
 const huobaoQuickConfigs = [

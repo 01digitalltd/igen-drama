@@ -27,3 +27,11 @@ test('POST /episodes still honors explicit config ids when caller passes them', 
   assert.match(route, /body\.image_config_id \?\? await getActiveConfigId/)
   assert.match(route, /body\.video_config_id \?\? await getActiveConfigId/)
 })
+
+test('PUT /episodes can switch the locked video config', () => {
+  const route = read('src/routes/episodes.ts')
+
+  assert.match(route, /'video_config_id'/)
+  assert.match(route, /isOfficialProvider\('video',\s*cfg\.provider\)/)
+  assert.match(route, /drizzleUpdates\.videoConfigId = nextVideoConfigId/)
+})

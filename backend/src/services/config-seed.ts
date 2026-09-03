@@ -59,6 +59,7 @@ export async function seedAiConfigsFromEnv() {
     console.log(`[config-seed] inserted ${spec.serviceType} config (${provider} / ${model})`)
   }
   await ensureGeminiVideoConfig()
+  await ensureMinimaxVideoConfig()
 }
 
 function defaultProvider(serviceType: ServiceType): string {
@@ -115,4 +116,52 @@ async function ensureGeminiVideoConfig() {
     updatedAt: ts,
   })
   console.log(`[config-seed] inserted video config (gemini / ${model})`)
+}
+
+/**
+ * MiniMax H3 video reuses the TTS MiniMax key (MINIMAX_API_KEY) on api.minimax.io.
+ * Inserts a secondary video config unless one is already active.
+ * When DRAMA_VIDEO_PROVIDER=minimax it is seeded at higher priority so it becomes the default.
+ */
+async function ensureMinimaxVideoConfig() {
+  const videos = ((await db.select().from(schema.aiServiceConfigs)
+    .where(eq(schema.aiServiceConfigs.serviceType, 'video'))) as Array<{ provider?: string | null; isActive?: unknown }>)
+  if (videos.some((row) => row.provider === 'minimax' && row.isActive)) return
+
+  const provider = (readEnv('DRAMA_VIDEO', 'PROVIDER') || 'gemini').toLowerCase()
+  const apiKey = (
+    process.env.MINIMAX_API_KEY
+    || process.env.DRAMA_MINIMAX_API_KEY
+    || (provider === 'minimax' ? readEnv('DRAMA_VIDEO', 'API_KEY') : '')
+    || ''
+  ).trim()
+  const baseUrl = (
+    process.env.MINIMAX_VIDEO_BASE_URL
+    || process.env.MINIMAX_TTS_BASE_URL
+    || (provider === 'minimax' ? readEnv('DRAMA_VIDEO', 'BASE_URL') : '')
+    || 'https://api.minimax.io'
+  ).trim()
+  const model = (provider === 'minimax' ? readEnv('DRAMA_VIDEO', 'MODEL') : '') || 'MiniMax-H3'
+
+  if (!apiKey) {
+    console.warn('[config-seed] skip minimax video: set MINIMAX_API_KEY (same key as TTS)')
+    return
+  }
+
+  const preferMinimax = provider === 'minimax'
+  const ts = now()
+  await db.insert(schema.aiServiceConfigs).values({
+    serviceType: 'video',
+    provider: 'minimax',
+    name: 'platform-video-minimax',
+    baseUrl,
+    apiKey,
+    model: JSON.stringify([model]),
+    priority: preferMinimax ? 120 : 90,
+    isDefault: preferMinimax,
+    isActive: true,
+    createdAt: ts,
+    updatedAt: ts,
+  })
+  console.log(`[config-seed] inserted video config (minimax / ${model})`)
 }

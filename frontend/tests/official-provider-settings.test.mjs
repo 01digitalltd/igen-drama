@@ -28,18 +28,19 @@ test('settings page exposes official provider templates only', () => {
   assert.doesNotMatch(useApi, /huobaoPreset/i)
   assert.doesNotMatch(useApi, /\/huobao-preset/)
 
-  assert.match(settingsPage, /const providers = \['gemini', 'openai', 'volcengine'\]/)
+  assert.match(settingsPage, /const providers = \['gemini', 'openai', 'volcengine', 'minimax'\]/)
   assert.match(settingsPage, /https:\/\/generativelanguage\.googleapis\.com/)
   assert.match(settingsPage, /https:\/\/api\.openai\.com/)
   assert.match(settingsPage, /https:\/\/ark\.cn-beijing\.volces\.com/)
+  assert.match(settingsPage, /https:\/\/api\.minimax\.io/)
   assert.doesNotMatch(settingsPage, /https:\/\/api\.deepseek\.com/)
   assert.doesNotMatch(settingsPage, /https:\/\/dashscope\.aliyuncs\.com/)
   assert.doesNotMatch(settingsPage, /https:\/\/api\.vidu\.com/)
+  assert.doesNotMatch(settingsPage, /https:\/\/api\.minimaxi\.com/)
   assert.doesNotMatch(settingsPage, /\['ali'|'ali',|, 'ali'\]/)
   assert.match(settingsPage, /火宝快捷配置/)
   assert.match(settingsPage, /https:\/\/api\.chatfire\.site/)
   assert.match(settingsPage, /applyHuobaoQuickConfig/)
-  assert.doesNotMatch(settingsPage, /https:\/\/api\.minimax\.io/)
 })
 
 test('settings page offers official default model IDs', () => {
@@ -54,7 +55,7 @@ test('settings page offers official default model IDs', () => {
   assert.match(settingsPage, /doubao-seedance-2-0-260128/)
   assert.match(settingsPage, /doubao-seedance-2-0-fast-260128/)
   assert.match(settingsPage, /doubao-seedance-2-0-mini-260615/)
-  assert.doesNotMatch(settingsPage, /deepseek-v4-pro/)
+  assert.match(settingsPage, /MiniMax-H3/)
   assert.doesNotMatch(settingsPage, /gpt-5\.4/)
   assert.doesNotMatch(settingsPage, /doubao-seed-1-6/)
   assert.doesNotMatch(settingsPage, /wan2\.6-t2i/)
@@ -74,10 +75,11 @@ test('only text service configs expose the connection test button', () => {
   assert.match(settingsPage, /v-if="st\.type === 'text'" class="btn btn-ghost btn-sm" @click="testExistingCfg\(c\)">测试/)
 })
 
-test('settings page only offers openai, gemini and volcengine presets', () => {
-  assert.doesNotMatch(providerPresetBlock('text'), /deepseek|minimax/i)
+test('settings page only offers openai, gemini, volcengine and MiniMax H3 presets', () => {
+  assert.doesNotMatch(providerPresetBlock('text'), /minimax/i)
   assert.doesNotMatch(providerPresetBlock('image'), /'ali'|minimax/i)
-  assert.doesNotMatch(providerPresetBlock('video'), /'ali'|'vidu'|minimax/i)
+  assert.doesNotMatch(providerPresetBlock('video'), /'ali'|'vidu'/i)
   assert.match(providerPresetBlock('video'), /volcengine/)
+  assert.match(providerPresetBlock('video'), /minimax/)
   assert.doesNotMatch(settingsPage, /audio:\s*\{/)
 })

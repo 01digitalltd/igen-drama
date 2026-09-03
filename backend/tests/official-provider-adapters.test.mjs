@@ -169,6 +169,9 @@ test('new image and video models use their current API shapes', () => {
   const volcVideo = read('src/services/adapters/volcengine-video.ts')
   const registry = read('src/services/adapters/registry.ts')
 
+  const minimaxVideo = read('src/services/adapters/minimax-video.ts')
+  const configSeed = read('src/services/config-seed.ts')
+
   assert.match(openaiImage, /isGptImage2/)
   assert.match(openaiImage, /normalizeGptImage2Size/)
   assert.match(geminiImage, /generateContent/)
@@ -188,4 +191,8 @@ test('new image and video models use their current API shapes', () => {
   assert.match(volcVideo, /reference_video/)
   assert.match(volcVideo, /reference_audio/)
   assert.match(volcVideo, /generate_audio:\s*record\.generateAudio/)
+  assert.match(minimaxVideo, /MiniMax-H3/)
+  assert.match(minimaxVideo, /\/v2',\s*'\/video_generation'/)
+  assert.match(configSeed, /ensureMinimaxVideoConfig/)
+  assert.match(configSeed, /MINIMAX_API_KEY/)
 })

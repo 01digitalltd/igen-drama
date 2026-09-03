@@ -38,8 +38,12 @@ app.post('/', async (c) => {
   try {
     if (body.drama_id) await loadOwnedDrama(c, Number(body.drama_id))
     if (body.storyboard_id) await loadOwnedStoryboard(c, Number(body.storyboard_id))
-    // 集锁定的生成配置优先于请求指定；视频分辨率同样锁定到集
-    let configId: number | undefined = body.config_id
+    // Explicit config_id from the client wins so the studio model picker can switch
+    // Gemini Omni / MiniMax H3 / Seedance. Episode lock is only the fallback.
+    const requestedConfigId = Number(body.config_id)
+    let configId: number | undefined = Number.isInteger(requestedConfigId) && requestedConfigId > 0
+      ? requestedConfigId
+      : undefined
     let episodeResolution: string | undefined
     let episodeId: number | undefined
     if (body.storyboard_id) {
@@ -47,7 +51,7 @@ app.post('/', async (c) => {
       if (sb) {
         const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId))
         const locked = type === 'image' ? ep?.imageConfigId : ep?.videoConfigId
-        if (locked != null) configId = locked
+        if (configId == null && locked != null) configId = locked
         if (type === 'video' && ep?.resolution) episodeResolution = ep.resolution
         episodeId = sb.episodeId
       }

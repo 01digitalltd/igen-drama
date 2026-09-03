@@ -25,9 +25,6 @@ export async function seedMongo() {
   await getCollection(schema.stylePresets.__name).createIndex({ value: 1 }, { unique: true })
   await db.collection(collectionName('counters')).createIndex({ _id: 1 })
 
-  await getCollection(schema.aiServiceConfigs.__name).deleteMany({ provider: 'minimax' })
-  await getCollection(schema.aiServiceProviders.__name).deleteMany({ provider: 'minimax' })
-
   const presets = getCollection(schema.stylePresets.__name)
   const counters = db.collection(collectionName('counters'))
   const ts = now()

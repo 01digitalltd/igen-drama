@@ -4,7 +4,7 @@ import { and, eq, isNull } from '../db/query.js'
 import { db, getInsertId, schema } from '../db/index.js'
 import { success, notFound, badRequest, now } from '../utils/response.js'
 import { toSnakeCaseArray, toSnakeCase } from '../utils/transform.js'
-import { getActiveConfigId } from '../services/ai.js'
+import { getActiveConfigId, isOfficialProvider } from '../services/ai.js'
 import { EXTRACT_TARGETS, getExtractionStatus, startExtraction, type ExtractTarget } from '../services/extraction.js'
 import { listAgentJobsForEpisode, toPublicAgentJob } from '../services/agent-jobs.js'
 import { subscribeEpisodeEvents } from '../services/episode-events.js'
@@ -63,7 +63,7 @@ app.put('/:id', async (c) => {
   await loadOwnedEpisode(c, id)
   const body = await c.req.json()
 
-  const allowed = ['content', 'script_content', 'title', 'description', 'status', 'resolution']
+  const allowed = ['content', 'script_content', 'title', 'description', 'status', 'resolution', 'video_config_id']
   const updates: Record<string, any> = {}
   for (const key of allowed) {
     if (key in body) updates[key] = body[key]
@@ -71,6 +71,20 @@ app.put('/:id', async (c) => {
   if (Object.keys(updates).length === 0) return badRequest(c, 'no valid fields')
   if ('resolution' in updates && !['480p', '720p'].includes(updates.resolution)) {
     return badRequest(c, 'resolution 只支持 480p / 720p')
+  }
+
+  let nextVideoConfigId: number | undefined
+  if ('video_config_id' in updates) {
+    const videoConfigId = Number(updates.video_config_id)
+    if (!Number.isInteger(videoConfigId) || videoConfigId <= 0) {
+      return badRequest(c, 'video_config_id 无效')
+    }
+    const [cfg] = await db.select().from(schema.aiServiceConfigs)
+      .where(eq(schema.aiServiceConfigs.id, videoConfigId))
+    if (!cfg?.isActive || cfg.serviceType !== 'video' || !isOfficialProvider('video', cfg.provider)) {
+      return badRequest(c, '未找到启用的视频生成配置')
+    }
+    nextVideoConfigId = videoConfigId
   }
 
   // Map snake_case to camelCase for drizzle
@@ -81,6 +95,7 @@ app.put('/:id', async (c) => {
   if ('description' in updates) drizzleUpdates.description = updates.description
   if ('status' in updates) drizzleUpdates.status = updates.status
   if ('resolution' in updates) drizzleUpdates.resolution = updates.resolution
+  if (nextVideoConfigId != null) drizzleUpdates.videoConfigId = nextVideoConfigId
 
   await db.update(schema.episodes).set(drizzleUpdates).where(eq(schema.episodes.id, id))
   return success(c)
