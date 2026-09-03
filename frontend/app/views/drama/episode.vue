@@ -175,7 +175,11 @@
             </div>
           </div>
 
-          <div v-if="!scriptContent && !rn" class="step-empty">
+          <div v-if="rn && rt === 'script_rewriter'" class="step-loading">
+            <Loader2 :size="24" class="animate-spin" style="color:var(--accent)" />
+            <div class="loading-text">正在改写剧本...</div>
+          </div>
+          <div v-else-if="!scriptContent" class="step-empty">
             <div class="empty-visual">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
                 <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
@@ -193,10 +197,6 @@
                 跳过改写
               </button>
             </div>
-          </div>
-          <div v-else-if="rn && rt === 'script_rewriter'" class="step-loading">
-            <Loader2 :size="24" class="animate-spin" style="color:var(--accent)" />
-            <div class="loading-text">正在改写剧本...</div>
           </div>
           <textarea v-else class="fill-textarea" v-model="localScript" placeholder="格式化剧本内容..." />
         </div>
@@ -2317,6 +2317,7 @@ function goNextStep() {
   if (scriptStep.value === 0 && localRaw.value.trim()) {
     saveRaw()
     scriptStep.value = 1
+    doRewrite()
     return
   }
   if (scriptStep.value === 1 && canGoNext.value) {
@@ -2492,12 +2493,14 @@ const showBottomBubble = computed(() => panel.value === 'script' || panel.value 
 
 function goSubStep(key) {
   if (key.startsWith('script:')) {
+    const fromRaw = panel.value === 'script' && scriptStep.value === 0
     panel.value = 'script'
     const stepMap = {
       'script:raw': 0,
       'script:rewrite': 1,
     }
     scriptStep.value = stepMap[key] ?? 0
+    if (key === 'script:rewrite' && fromRaw && localRaw.value.trim()) doRewrite()
     return
   }
   if (key.startsWith('prod:')) {
@@ -2656,7 +2659,15 @@ async function refresh() {
 
 function saveRaw() { episodeAPI.update(epId.value, { content: localRaw.value }); episode.value.content = localRaw.value }
 function saveScr() { episodeAPI.update(epId.value, { script_content: localScript.value }); episode.value.script_content = localScript.value }
-function doRewrite() { saveRaw(); runAgent('script_rewriter', '请读取剧本并改写为格式化剧本，然后保存', dramaId, epId.value, refresh, chatModelOverride(), chatConfigId()) }
+function doRewrite() {
+  saveRaw()
+  runAgent('script_rewriter', '请读取剧本并改写为格式化剧本，然后保存', dramaId, epId.value, async () => {
+    await refresh()
+    panel.value = 'production'
+    prodTab.value = 'assets'
+    doExtractAll()
+  }, chatModelOverride(), chatConfigId())
+}
 function skipRewrite() {
   const raw = (localRaw.value || rawContent.value || '').trim()
   if (!raw) {

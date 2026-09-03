@@ -33,3 +33,15 @@ test('video generation duration follows the prompt timeline, not a separate inpu
   assert.doesNotMatch(page, /v-model\.number="videoDuration"/)
   assert.match(page, /依提示词时间轴/)
 })
+
+test('jumping from raw content to AI rewrite starts the rewriter automatically', () => {
+  assert.match(page, /scriptStep\.value = 1\s*doRewrite\(\)/)
+  assert.match(page, /key === 'script:rewrite' && fromRaw && localRaw\.value\.trim\(\)\) doRewrite\(\)/)
+})
+
+test('AI rewrite completion automatically extracts assets', () => {
+  assert.match(
+    page,
+    /await refresh\(\)\s*panel\.value = 'production'\s*prodTab\.value = 'assets'\s*doExtractAll\(\)/,
+  )
+})
