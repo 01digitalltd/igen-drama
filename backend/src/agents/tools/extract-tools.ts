@@ -381,7 +381,7 @@ const saveDedupScenes = createTool({
     scenes: z.array(z.object({
       location: z.string(),
       time: z.string().optional(),
-      prompt: z.string().optional(),
+      prompt: z.string().optional().describe('Empty location only: architecture, furnishings, era, materials. No people, actions, or handheld plot props.'),
       description: z.string().optional(),
       lighting: z.string().optional(),
     })),

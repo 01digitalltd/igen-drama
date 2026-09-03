@@ -5,6 +5,7 @@ import { success, created, badRequest, now } from '../utils/response.js'
 import { generateImage } from '../services/generation.js'
 import { getDramaStylePrompt } from '../services/style-preset.js'
 import { ensureSceneFinalPrompt } from '../services/final-prompt.js'
+import { appendEmptySceneGuard } from '../services/empty-scene-prompt.js'
 import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { loadOwnedDrama, loadOwnedScene } from '../utils/ownership.js'
 import { getRequestLocale } from '../middleware/request-locale.js'
@@ -67,6 +68,20 @@ app.put('/:id', async (c) => {
   return success(c)
 })
 
+/** Local fallback: empty establishing plate, no people, no hero props. */
+function sceneImagePrompt(scene: typeof schema.scenes.$inferSelect, stylePrompt = '') {
+  return [
+    stylePrompt || '',
+    '固定机位广角建立镜头，清晰的空场景',
+    scene.location,
+    scene.time || '',
+    scene.prompt || '高质量场景',
+    scene.lighting || '电影感光影',
+    '前景中景后景分层，出入口、地面、墙面与固定陈设位置清晰',
+    '画面中没有任何人物，没有角色背影或剪影，没有可手持的剧情道具，空场景',
+  ].filter(Boolean).join(', ')
+}
+
 // POST /scenes/:id/generate-image — enqueue immediately; wait via SSE + task poll
 app.post('/:id/generate-image', async (c) => {
   const id = Number(c.req.param('id'))
@@ -77,13 +92,7 @@ app.post('/:id/generate-image', async (c) => {
   if (!ep) return badRequest(c, 'Episode not found')
 
   const stylePrompt = await getDramaStylePrompt(scene.dramaId)
-  const prompt = scene.finalPrompt || [
-    stylePrompt || '',
-    scene.location,
-    scene.time || '',
-    scene.prompt || '高质量场景',
-    scene.lighting || '电影感光影',
-  ].filter(Boolean).join(', ')
+  const prompt = appendEmptySceneGuard(scene.finalPrompt || sceneImagePrompt(scene, stylePrompt), true)
   try {
     logTaskStart('SceneImage', 'generate', { sceneId: id, episodeId: ep.id, dramaId: scene.dramaId, location: scene.location })
     await db.update(schema.scenes).set({ status: 'processing', updatedAt: now() }).where(eq(schema.scenes.id, id))

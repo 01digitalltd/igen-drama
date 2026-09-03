@@ -33,7 +33,7 @@ test('prompt agent instructions reference per-asset skills; skill files define t
   const sceneSkill = read('workspace/skills/prompt-generator/scene-prompt/SKILL.md')
 
   assert.match(agents, /角色三视图/)
-  assert.match(agents, /场景固定视角/)
+  assert.match(agents, /场景无人物空镜/)
   assert.match(agents, /道具白底单品/)
   assert.match(agents, /save_character_final_prompt/)
   assert.match(agents, /save_scene_final_prompt/)
@@ -88,4 +88,21 @@ test('image generation prefers the stored final prompt with agent generation and
   assert.match(scenes, /ensureSceneFinalPrompt\(scene, ep\.id, /)
   assert.match(characters, /updates\.finalPrompt = body\.final_prompt \|\| null/)
   assert.match(scenes, /updates\.finalPrompt = body\.final_prompt \|\| null/)
+})
+
+test('scene stills are empty establishing plates without people or hero props', () => {
+  const service = read('src/services/final-prompt.ts')
+  const scenes = read('src/routes/scenes.ts')
+  const tools = read('src/agents/tools/image-prompt-tools.ts')
+  const skill = read('workspace/skills/prompt-generator/scene-prompt/SKILL.md')
+  const extractor = read('src/agents/index.ts')
+
+  assert.match(service, /空镜场景参考图/)
+  assert.match(service, /不能有任何人物/)
+  assert.match(service, /可手持或推动剧情的道具/)
+  assert.match(scenes, /appendEmptySceneGuard\(scene\.finalPrompt \|\| sceneImagePrompt\(scene, stylePrompt\), true\)/)
+  assert.match(scenes, /没有可手持的剧情道具/)
+  assert.match(tools, /appendEmptySceneGuard\(withStyle\)/)
+  assert.match(skill, /可手持或推动剧情的道具/)
+  assert.match(extractor, /不要写人物、动作、对白或剧情道具/)
 })

@@ -67,7 +67,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 提取要求：
 - 只提取当前集真实出现或被明确提及、且对当前集叙事有效的角色、场景和道具
 - 角色只需要两个核心描述字段：appearance（样貌：年龄感、五官、体态、气质等，角色的性格特点要转化为外在气质与神态融入样貌描写，不要单独输出性格字段）和 styling（妆造：发型、服装、妆面、配饰等）
-- 场景只需要两个核心描述字段：prompt（场景描述：空间、陈设、年代质感、关键视觉元素等）和 lighting（场景光影：光源、色调、明暗、氛围等）
+- 场景只需要两个核心描述字段：prompt（场景描述：只写空空间、固定陈设、年代质感、建筑与材质，不要写人物、动作、对白或剧情道具）和 lighting（场景光影：光源、色调、明暗、氛围等）
 - 道具字段：name（道具名）、type（类型：日常/武器/交通/装饰/文件等）、description（物品外貌：只描写物品本身的物理外观——材质、颜色、形状、大小、新旧程度、磨损痕迹等，不要写剧情用途，不要涉及与角色或其他事物的关联）。道具不需要输出图片提示词，最终提示词由提示词生成 Agent 后续专门生成
 - 不要遗漏任何有台词或重要动作的角色`,
   },
@@ -121,7 +121,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 
 工作流程：
 1. 调用 read_characters / read_scenes / read_props 读取资产信息
-2. 按对应资产的技能规范（角色三视图 / 场景固定视角 / 道具白底单品）创作最终提示词
+2. 按对应资产的技能规范（角色三视图 / 场景无人物空镜 / 道具白底单品）创作最终提示词。场景图是空镜建立镜头：不要把角色或剧情道具画进场景
 3. 调用 save_character_final_prompt / save_scene_final_prompt / save_prop_final_prompt 逐个保存
 
 ## 视频提示词

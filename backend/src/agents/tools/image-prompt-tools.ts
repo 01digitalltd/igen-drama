@@ -4,7 +4,7 @@
  *
  * Agent 负责创作最终提示词：
  * 1. 角色 → 三视图（character turnaround：正面/侧面/背面）
- * 2. 场景 → 固定视角 + 前景/中景/后景分层构图
+ * 2. 场景 → 无人物空镜建立镜头（前景/中景/后景，不含角色与剧情道具）
  * 3. 道具 → 白底单品静物（single product shot on pure white background）
  * 工具负责读取资产信息与保存 Agent 产出的最终提示词（保存时注入项目视觉风格）
  */
@@ -15,6 +15,7 @@ import { eq } from '../../db/query.js'
 import { now } from '../../utils/response.js'
 import { getDramaStylePrompt } from '../../services/style-preset.js'
 import { stripCharacterFaceGridPrompt } from '../../services/face-grid.js'
+import { appendEmptySceneGuard } from '../../services/empty-scene-prompt.js'
 import { getDramaId } from '../context.js'
 
 export async function persistCharacterFinalPrompt(dramaId: number, characterId: number, prompt: string) {
@@ -29,7 +30,8 @@ export async function persistCharacterFinalPrompt(dramaId: number, characterId: 
 
 export async function persistSceneFinalPrompt(dramaId: number, sceneId: number, prompt: string) {
   const stylePrompt = await getDramaStylePrompt(dramaId)
-  const finalPrompt = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
+  const withStyle = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
+  const finalPrompt = appendEmptySceneGuard(withStyle)
   await db.update(schema.scenes)
     .set({ finalPrompt, updatedAt: now() })
     .where(eq(schema.scenes.id, sceneId))
@@ -100,7 +102,7 @@ const saveCharacterFinalPrompt = createTool({
 
 const readScenes = createTool({
   id: 'read_scenes',
-  description: '读取当前剧集中的所有场景信息，用于生成场景固定视角最终提示词。',
+  description: '读取当前剧集中的所有场景信息，用于生成场景无人物空镜最终提示词。',
   inputSchema: z.object({}),
   execute: async (_input, context) => {
     const dramaId = getDramaId(context?.requestContext)
@@ -126,7 +128,7 @@ const saveSceneFinalPrompt = createTool({
   description: '保存为场景创作的固定视角（前景/中景/后景）最终提示词。项目视觉风格会由工具自动拼接，prompt 参数中不要包含风格词。',
   inputSchema: z.object({
     scene_id: z.number(),
-    prompt: z.string().describe('场景固定视角最终提示词（纯中文，不含风格词）'),
+    prompt: z.string().describe('场景无人物空镜最终提示词（纯中文，不含风格词，不含人物与剧情道具）'),
   }),
   execute: async ({ scene_id, prompt }, context) => {
     const dramaId = getDramaId(context?.requestContext)

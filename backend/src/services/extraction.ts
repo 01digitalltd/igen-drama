@@ -53,7 +53,7 @@ function extractSchema(target: ExtractTarget) {
       scenes: z.array(z.object({
         location: z.string(),
         time: z.string().optional(),
-        prompt: z.string().optional(),
+        prompt: z.string().optional().describe('Empty location: architecture and furnishings only. No people, actions, or handheld plot props.'),
         lighting: z.string().optional(),
         description: z.string().optional(),
       })),
@@ -219,7 +219,7 @@ function extractUserMessage(target: ExtractTarget, script: string, existingHint:
   const rules = target === 'characters'
     ? 'Extract every character who has dialogue or an important action. Each item needs name, and preferably role, appearance (look + temperament), and styling (hair, makeup, costume).'
     : target === 'scenes'
-      ? 'Extract every distinct location+time. Each item needs location, and preferably time, prompt (space, set dressing), and lighting.'
+      ? 'Extract every distinct location+time. Each item needs location, and preferably time, prompt (empty space and set dressing only — no people, actions, or handheld plot props), and lighting.'
       : 'Extract only plot-critical props (0-3). Skip everyday objects and set dressing. Empty array is valid. description is physical appearance only.'
   return [
     `Extract ${kind} from the formatted screenplay below. Return JSON only.`,
