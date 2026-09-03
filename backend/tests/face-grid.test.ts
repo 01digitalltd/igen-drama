@@ -17,7 +17,7 @@ test('only realistic style gets the face grid', () => {
   )
   assert.match(
     withRealisticCharacterFaceGrid('realistic', 'character turnaround'),
-    /6x6 white grid across the entire image/,
+    /9x9 white grid across the entire image/,
   )
   assert.match(
     withRealisticCharacterFaceGrid('realistic', 'character turnaround'),
@@ -25,10 +25,10 @@ test('only realistic style gets the face grid', () => {
   )
 })
 
-test('video prompt asks to remove the full-image white 6x6 grid for realistic dramas', () => {
+test('video prompt asks to remove the full-image white 9x9 grid for realistic dramas', () => {
   const next = withRealisticVideoFaceGridRemoval('realistic', '0-3秒：@小明抬头。')
-  assert.match(next, /去掉参考图整张画面上的白色6×6网格/)
-  assert.match(next, /Remove the white 6x6 grid covering the entire reference image/)
+  assert.match(next, /去掉参考图整张画面上的白色9×9网格/)
+  assert.match(next, /Remove the white 9x9 grid covering the entire reference image/)
   assert.doesNotMatch(next, /脸部/)
   assert.doesNotMatch(next, /orange/i)
   assert.equal(
@@ -42,17 +42,23 @@ test('face-grid helpers are idempotent', () => {
   assert.equal(withRealisticCharacterFaceGrid('realistic', once), once)
   const videoOnce = withRealisticVideoFaceGridRemoval('realistic', 'action')
   assert.equal(withRealisticVideoFaceGridRemoval('realistic', videoOnce), videoOnce)
-  assert.ok(REALISTIC_FACE_GRID_IMAGE_PROMPT.includes('6x6'))
+  assert.ok(REALISTIC_FACE_GRID_IMAGE_PROMPT.includes('9x9'))
   assert.ok(REALISTIC_FACE_GRID_IMAGE_PROMPT.includes('#FFFFFF'))
   assert.ok(REALISTIC_FACE_GRID_IMAGE_PROMPT.includes('100% opacity'))
-  assert.ok(REALISTIC_FACE_GRID_VIDEO_PROMPT.includes('白色6×6'))
+  assert.ok(REALISTIC_FACE_GRID_VIDEO_PROMPT.includes('白色9×9'))
 })
 
-test('legacy face-only grid prompt is replaced with a full-image 6x6 grid', () => {
-  const legacy =
+test('legacy grid prompts are replaced with a full-image 9x9 grid', () => {
+  const faceOnly =
     'character turnaround, on every visible human face only, overlay an ultra-fine orange mesh grid of hair-thin lines covering forehead, cheeks, nose, lips, chin and ears; do not cover hair, neck, body or clothing; the orange grid must stay clearly visible'
-  const next = withRealisticCharacterFaceGrid('realistic', legacy)
-  assert.match(next, /6x6 white grid across the entire image/)
-  assert.doesNotMatch(next, /orange mesh grid/)
-  assert.doesNotMatch(next, /every visible human face only/)
+  const fromFace = withRealisticCharacterFaceGrid('realistic', faceOnly)
+  assert.match(fromFace, /9x9 white grid across the entire image/)
+  assert.doesNotMatch(fromFace, /orange mesh grid/)
+  assert.doesNotMatch(fromFace, /every visible human face only/)
+
+  const sixBySix =
+    'character turnaround, overlay a 6x6 white grid across the entire image (pure white #FFFFFF, 100% opacity, 12px-thick lines); six columns by six rows spanning the full frame from edge to edge, covering people, clothing, background and all other content; the white grid must stay fully opaque and clearly visible'
+  const fromSix = withRealisticCharacterFaceGrid('realistic', sixBySix)
+  assert.match(fromSix, /9x9 white grid across the entire image/)
+  assert.doesNotMatch(fromSix, /6x6/)
 })
