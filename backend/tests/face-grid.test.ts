@@ -21,6 +21,10 @@ test('only realistic style gets the face grid', () => {
   )
   assert.match(
     withRealisticCharacterFaceGrid('realistic', 'character turnaround'),
+    /visually split every facial feature/,
+  )
+  assert.match(
+    withRealisticCharacterFaceGrid('realistic', 'character turnaround'),
     /12px-thick/,
   )
 })
@@ -28,7 +32,8 @@ test('only realistic style gets the face grid', () => {
 test('video prompt asks to remove the full-image white 9x9 grid for realistic dramas', () => {
   const next = withRealisticVideoFaceGridRemoval('realistic', '0-3秒：@小明抬头。')
   assert.match(next, /去掉参考图整张画面上的白色9×9网格/)
-  assert.match(next, /Remove the white 9x9 grid covering the entire reference image/)
+  assert.match(next, /把被网格切开的五官重新拼成完整眉眼鼻口耳/)
+  assert.match(next, /reassemble split facial features/)
   assert.doesNotMatch(next, /脸部/)
   assert.doesNotMatch(next, /orange/i)
   assert.equal(
@@ -45,7 +50,9 @@ test('face-grid helpers are idempotent', () => {
   assert.ok(REALISTIC_FACE_GRID_IMAGE_PROMPT.includes('9x9'))
   assert.ok(REALISTIC_FACE_GRID_IMAGE_PROMPT.includes('#FFFFFF'))
   assert.ok(REALISTIC_FACE_GRID_IMAGE_PROMPT.includes('100% opacity'))
+  assert.ok(REALISTIC_FACE_GRID_IMAGE_PROMPT.includes('split every facial feature'))
   assert.ok(REALISTIC_FACE_GRID_VIDEO_PROMPT.includes('白色9×9'))
+  assert.ok(REALISTIC_FACE_GRID_VIDEO_PROMPT.includes('五官'))
 })
 
 test('legacy grid prompts are replaced with a full-image 9x9 grid', () => {
@@ -59,6 +66,12 @@ test('legacy grid prompts are replaced with a full-image 9x9 grid', () => {
   const sixBySix =
     'character turnaround, overlay a 6x6 white grid across the entire image (pure white #FFFFFF, 100% opacity, 12px-thick lines); six columns by six rows spanning the full frame from edge to edge, covering people, clothing, background and all other content; the white grid must stay fully opaque and clearly visible'
   const fromSix = withRealisticCharacterFaceGrid('realistic', sixBySix)
-  assert.match(fromSix, /9x9 white grid across the entire image/)
+  assert.match(fromSix, /visually split every facial feature/)
   assert.doesNotMatch(fromSix, /6x6/)
+
+  const nineByNine =
+    'character turnaround, overlay a 9x9 white grid across the entire image (pure white #FFFFFF, 100% opacity, 12px-thick lines); nine columns by nine rows spanning the full frame from edge to edge, covering people, clothing, background and all other content; the white grid must stay fully opaque and clearly visible'
+  const fromNine = withRealisticCharacterFaceGrid('realistic', nineByNine)
+  assert.match(fromNine, /visually split every facial feature/)
+  assert.equal((fromNine.match(/overlay a 9x9 white grid/g) || []).length, 1)
 })
