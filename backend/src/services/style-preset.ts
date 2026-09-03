@@ -14,3 +14,10 @@ export async function getDramaStylePrompt(dramaId: number | null | undefined): P
     .where(and(eq(schema.stylePresets.value, drama.style), eq(schema.stylePresets.isActive, true)))
   return preset?.prompt || ''
 }
+
+/** dramas.style key, e.g. realistic / 3d / anime */
+export async function getDramaStyleValue(dramaId: number | null | undefined): Promise<string> {
+  if (!dramaId) return ''
+  const [drama] = await db.select().from(schema.dramas).where(eq(schema.dramas.id, dramaId))
+  return String(drama?.style || '').trim()
+}

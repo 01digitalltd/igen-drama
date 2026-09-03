@@ -14,6 +14,8 @@ import type { AIConfig } from './adapters/types'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn, redactUrl } from '../utils/task-logger.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
+import { getDramaStyleValue } from './style-preset.js'
+import { withRealisticCharacterFaceGrid, withRealisticVideoFaceGridRemoval } from './face-grid.js'
 
 type TaskType = 'image' | 'video'
 
@@ -233,10 +235,14 @@ async function processTask(id: number, config: AIConfig) {
     if (type === 'image') {
       const adapter = getImageAdapter(config.provider)
       const resolvedReferenceImages = await normalizeReferenceImages(params.referenceImages)
+      const styleValue = record.characterId ? await getDramaStyleValue(record.dramaId) : ''
+      const imagePrompt = record.characterId
+        ? withRealisticCharacterFaceGrid(styleValue, record.prompt || '')
+        : record.prompt
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
-        prompt: record.prompt,
+        prompt: imagePrompt,
         size: params.size,
         frameType: params.frameType,
         referenceImages: resolvedReferenceImages.length ? JSON.stringify(resolvedReferenceImages) : null,
@@ -250,10 +256,12 @@ async function processTask(id: number, config: AIConfig) {
       // 参考视频/音频文件较大，不适合 dataURL 内联，需解析为公网可访问 URL
       const resolvedReferenceVideoUrls = await resolvePublicMediaUrls(params.referenceVideoUrls, 'video')
       const resolvedReferenceAudioUrls = await resolvePublicMediaUrls(params.referenceAudioUrls, 'audio')
+      const styleValue = await getDramaStyleValue(record.dramaId)
+      const videoPrompt = withRealisticVideoFaceGridRemoval(styleValue, record.prompt || '')
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
-        prompt: record.prompt,
+        prompt: videoPrompt,
         referenceMode: params.referenceMode,
         imageUrl: resolvedImageUrl,
         firstFrameUrl: resolvedFirstFrameUrl,

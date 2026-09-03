@@ -45,20 +45,20 @@ test('drama style prompt is injected into image prompt composition', () => {
 
   assert.match(service, /getDramaStylePrompt/)
   assert.match(service, /stylePresets\.value, drama\.style/)
-  assert.match(gridTools, /getDramaStylePrompt\(dramaId\)/)
-  // 保存最终提示词时由工具拼接项目视觉风格（风格片段置于最前方）
-  assert.match(gridTools, /stylePrompt \? `\$\{stylePrompt\}, \$\{prompt\}` : prompt/)
-  assert.match(characters, /getDramaStylePrompt/)
-  assert.match(characters, /characterImagePrompt\(char, stylePrompt\)/)
+  assert.match(gridTools, /withRealisticCharacterFaceGrid/)
+  assert.match(characters, /withRealisticCharacterFaceGrid/)
   assert.match(scenes, /getDramaStylePrompt\(scene\.dramaId\)/)
 })
 
 test('style preset seed includes photoreal live-action', () => {
   const seed = read('src/db/seed.ts')
+  const generation = read('src/services/generation.ts')
 
   assert.match(seed, /value: 'realistic'/)
   assert.match(seed, /photorealistic live-action/)
   assert.match(seed, /写实真人/)
+  assert.match(generation, /withRealisticCharacterFaceGrid/)
+  assert.match(generation, /withRealisticVideoFaceGridRemoval/)
 })
 
 test('agent default prompts no longer hardcode consistent art style', () => {
