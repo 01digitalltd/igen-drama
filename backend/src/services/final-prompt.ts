@@ -134,7 +134,7 @@ export async function ensureCharacterFinalPrompt(char: CharacterRow, episodeId: 
         [
           `为角色「${char.name}」(character_id=${char.id}) 写一张角色设定参考图的最终提示词。`,
           '构图：左侧正脸特写，右侧并列正面、90 度侧面、背面三张等高全身视图；同一张脸、同一发型、同一服装；纯白背景、均匀棚拍光。',
-          '若本剧是写实真人风格：正脸特写与每个全身视图的人物脸部都必须覆盖橙色超幼线网格（发丝细、密、只盖脸，不盖头发/脖子/衣服），网格必须清晰可见。',
+          '若本剧是写实真人风格：整张图必须覆盖白色 6×6 网格（纯白、不透明度 100%、线宽 12px，铺满全画幅，覆盖人物、服装与背景），网格必须完全不透明、清晰可见。',
           '只输出纯中文单段描述，不要风格词、不要英文。',
           `身份：${char.role || ''}；外貌：${char.appearance || char.description || ''}；妆造：${char.styling || ''}`,
           'Return JSON {"prompt":"..."} only.',
