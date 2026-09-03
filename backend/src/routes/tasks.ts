@@ -5,6 +5,7 @@ import { success, created, badRequest } from '../utils/response.js'
 import { generateImage, generateVideo } from '../services/generation.js'
 import { logTaskError, logTaskPayload, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { loadOwnedDrama, loadOwnedStoryboard, shouldScopeToOwner, getOwnerUserId } from '../utils/ownership.js'
+import { toSnakeCase } from '../utils/transform.js'
 
 const app = new Hono()
 
@@ -96,7 +97,7 @@ app.post('/', async (c) => {
     const [record] = await db.select().from(schema.sysTask)
       .where(eq(schema.sysTask.id, id))
     logTaskSuccess('TaskAPI', 'generate', { taskId: id, type, provider: record?.provider })
-    return created(c, record)
+    return created(c, record ? toSnakeCase(record) : record)
   } catch (err: any) {
     logTaskError('TaskAPI', 'generate', { type, error: err.message })
     return badRequest(c, err.message)
@@ -132,7 +133,7 @@ app.get('/', async (c) => {
     rows = rows.filter(r => r.dramaId != null && allowed.has(r.dramaId))
   }
 
-  return success(c, rows)
+  return success(c, rows.map(r => toSnakeCase(r)))
 })
 
 // GET /tasks/:id — 轮询任务状态
@@ -141,7 +142,7 @@ app.get('/:id', async (c) => {
   const [row] = await db.select().from(schema.sysTask)
     .where(eq(schema.sysTask.id, id))
   await assertTaskOwned(c, row)
-  return success(c, row || null)
+  return success(c, row ? toSnakeCase(row) : null)
 })
 
 // DELETE /tasks/:id
