@@ -4,8 +4,8 @@
  * Omni uses the Interactions API (POST /v1beta/interactions), not Veo
  * generate_videos / generateContent. Drama shots map to:
  * - text_to_video when there are no images
- * - image_to_video for a single first-frame / still
- * - reference_to_video when multiple character/scene stills are supplied
+ * - image_to_video only for a dedicated first/last frame with no refs
+ * - reference_to_video for character/scene stills, including a single image
  *
  * Video generation is started with background=true and polled via
  * GET /v1beta/interactions/{id}. REST returns video bytes on
@@ -88,10 +88,22 @@ export function normalizeOmniAspectRatio(aspectRatio?: string | null) {
   return '16:9'
 }
 
-export function chooseOmniVideoTask(imageCount: number) {
+const REFERENCE_GUIDE =
+  'Use the given image(s) as references for video generation. The images should not be used as literal initial frames.'
+
+export function chooseOmniVideoTask(
+  imageCount: number,
+  opts?: { literalFirstFrame?: boolean },
+) {
   if (imageCount <= 0) return 'text_to_video'
-  if (imageCount === 1) return 'image_to_video'
+  if (opts?.literalFirstFrame) return 'image_to_video'
   return 'reference_to_video'
+}
+
+export function withOmniReferenceGuide(prompt: string, task: string) {
+  if (task !== 'reference_to_video') return prompt
+  if (prompt.includes('should not be used as literal initial frames')) return prompt
+  return prompt ? `${prompt}\n\n${REFERENCE_GUIDE}` : REFERENCE_GUIDE
 }
 
 function collectVideoParts(node: any, depth = 0, out: any[] = []) {
@@ -153,18 +165,23 @@ export class GeminiVideoAdapter implements VideoProviderAdapter {
       throw new Error('Gemini Omni 需要提示词或至少一张参考图')
     }
 
+    const task = chooseOmniVideoTask(imageSources.length, {
+      literalFirstFrame: Boolean(firstFrame || lastFrame) && refImages.length === 0,
+    })
+    const text = withOmniReferenceGuide(prompt, task)
+
     const input: any[] = []
-    if (prompt) input.push({ type: 'text', text: prompt })
+    if (text) input.push({ type: 'text', text })
     input.push(...imageSources)
 
     const durationSec = normalizeOmniDurationSeconds(record.duration)
     const body = {
       model,
-      input: input.length === 1 && input[0].type === 'text' ? prompt : input,
+      input: input.length === 1 && input[0].type === 'text' ? text : input,
       background: true,
       generation_config: {
         video_config: {
-          task: chooseOmniVideoTask(imageSources.length),
+          task,
         },
       },
       response_format: {

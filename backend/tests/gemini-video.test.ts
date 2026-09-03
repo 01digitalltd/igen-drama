@@ -7,6 +7,7 @@ import {
   normalizeOmniAspectRatio,
   normalizeOmniDurationSeconds,
   toOmniImageInput,
+  withOmniReferenceGuide,
 } from '../src/services/adapters/gemini-video.ts'
 
 const adapter = new GeminiVideoAdapter()
@@ -26,8 +27,13 @@ test('Omni model detection and duration/aspect clamps', () => {
   assert.equal(normalizeOmniAspectRatio('9:16'), '9:16')
   assert.equal(normalizeOmniAspectRatio('adaptive'), '16:9')
   assert.equal(chooseOmniVideoTask(0), 'text_to_video')
-  assert.equal(chooseOmniVideoTask(1), 'image_to_video')
+  assert.equal(chooseOmniVideoTask(1), 'reference_to_video')
+  assert.equal(chooseOmniVideoTask(1, { literalFirstFrame: true }), 'image_to_video')
   assert.equal(chooseOmniVideoTask(3), 'reference_to_video')
+  assert.match(
+    withOmniReferenceGuide('抬头。', 'reference_to_video'),
+    /should not be used as literal initial frames/,
+  )
 })
 
 test('reference stills become Interactions image inputs', () => {
@@ -59,7 +65,31 @@ test('buildGenerateRequest uses Interactions API with background poll', () => {
   assert.equal(req.body.response_format.duration, '10s')
   assert.equal(req.body.response_format.aspect_ratio, '9:16')
   assert.equal(req.body.input[0].type, 'text')
+  assert.match(req.body.input[0].text, /should not be used as literal initial frames/)
   assert.equal(req.body.input.filter((item: { type: string }) => item.type === 'image').length, 2)
+})
+
+test('a single reference still uses reference_to_video, not image_to_video', () => {
+  const req = adapter.buildGenerateRequest(config, {
+    id: 2,
+    prompt: '小明转身离开。',
+    referenceImageUrls: JSON.stringify(['https://cdn.example.com/hero.jpg']),
+    duration: 5,
+    aspectRatio: '9:16',
+  })
+  assert.equal(req.body.generation_config.video_config.task, 'reference_to_video')
+  assert.equal(req.body.input.filter((item: { type: string }) => item.type === 'image').length, 1)
+})
+
+test('a dedicated first frame without refs stays image_to_video', () => {
+  const req = adapter.buildGenerateRequest(config, {
+    id: 3,
+    prompt: '镜头推进。',
+    firstFrameUrl: 'https://cdn.example.com/start.jpg',
+    duration: 5,
+  })
+  assert.equal(req.body.generation_config.video_config.task, 'image_to_video')
+  assert.doesNotMatch(String(req.body.input[0].text), /literal initial frames/)
 })
 
 test('parseGenerateResponse polls in-progress interactions and reads REST video bytes', () => {

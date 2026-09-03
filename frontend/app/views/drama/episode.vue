@@ -3201,7 +3201,10 @@ function getShotReferenceIndexMap(sb) {
 
 // 将视频提示词里的 @名字 替换为 @图片N名字（N 为参考图序号，1 起），生成时使用
 function resolveVideoPromptRefs(sb) {
-  const prompt = sb.video_prompt || sb.videoPrompt || ''
+  const dedicated = (sb.video_prompt || sb.videoPrompt || '').trim()
+  const description = (sb.description || '').trim()
+  const atmosphere = (sb.atmosphere || '').trim()
+  const prompt = dedicated || (description && atmosphere ? `${description}\n\n${atmosphere}` : (description || atmosphere))
   const map = getShotReferenceIndexMap(sb)
   const names = Object.keys(map).sort((a, b) => b.length - a.length)
   if (!names.length) return prompt

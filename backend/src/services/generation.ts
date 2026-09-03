@@ -16,6 +16,7 @@ import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue } from './style-preset.js'
 import { withRealisticCharacterFaceGrid, withRealisticVideoFaceGridRemoval } from './face-grid.js'
+import { resolveStoryboardVideoPrompt } from './storyboard-prompt.js'
 
 type TaskType = 'image' | 'video'
 
@@ -124,10 +125,16 @@ export async function generateVideo(params: GenerateVideoParams): Promise<number
   }
   if (!config) throw new Error('未配置视频模型，请先到「设置」页添加并启用 AI 服务')
 
+  let prompt = (params.prompt || '').trim()
+  if (!prompt && params.storyboardId) {
+    const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, params.storyboardId))
+    if (sb) prompt = resolveStoryboardVideoPrompt(sb)
+  }
+
   const id = await createTask('video', config, {
     storyboardId: params.storyboardId,
     dramaId: params.dramaId,
-    prompt: params.prompt,
+    prompt,
     model: params.model || config.model,
   }, {
     referenceMode: params.referenceMode || 'reference',
@@ -257,7 +264,12 @@ async function processTask(id: number, config: AIConfig) {
       const resolvedReferenceVideoUrls = await resolvePublicMediaUrls(params.referenceVideoUrls, 'video')
       const resolvedReferenceAudioUrls = await resolvePublicMediaUrls(params.referenceAudioUrls, 'audio')
       const styleValue = await getDramaStyleValue(record.dramaId)
-      const videoPrompt = withRealisticVideoFaceGridRemoval(styleValue, record.prompt || '')
+      let prompt = (record.prompt || '').trim()
+      if (!prompt && record.storyboardId) {
+        const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
+        if (sb) prompt = resolveStoryboardVideoPrompt(sb)
+      }
+      const videoPrompt = withRealisticVideoFaceGridRemoval(styleValue, prompt)
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
