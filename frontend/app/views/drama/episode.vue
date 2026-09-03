@@ -806,7 +806,7 @@
                       <span :class="['dot', videoTaskState(selectedSb) === 'done' && 'ok', videoTaskState(selectedSb) === 'pending' && 'pending']" />
                       {{ videoTaskStatusLabel(selectedSb) }}
                     </span>
-                    <span v-if="selectedSb.duration" class="video-player-sub">{{ selectedSb.duration }}s</span>
+                    <span v-if="shotVideoGenerationDuration(selectedSb)" class="video-player-sub">{{ shotVideoGenerationDuration(selectedSb) }}s</span>
                   </div>
                   <button
                     v-if="previewVideoUrl"
@@ -957,8 +957,7 @@
                     <div class="video-param-row">
                       <span class="video-param-name">生成时长</span>
                       <span class="video-param-control">
-                        <input v-model.number="videoDuration" type="number" min="4" max="15" class="input video-duration-input" />
-                        <span class="video-param-unit">s（4-15）</span>
+                        <span class="video-param-unit">{{ shotVideoGenerationDuration(selectedSb) }}s · {{ promptDurationClamped(selectedSb) ? `提示词 ${promptDurationSeconds(selectedSb)}s，此模型上限 ${currentVideoDurationBounds().max}s` : '依提示词时间轴' }}</span>
                       </span>
                     </div>
                   </section>
@@ -1682,7 +1681,6 @@ function closeTaskDrawer() {
 const videoRefVideoUrls = ref([])
 const videoRefAudioUrls = ref([])
 const videoRefImageUrls = ref([])
-const videoDuration = ref(10)
 const uploadingRefMedia = ref(false)
 const imageViewer = ref({ open: false, src: '', title: '' })
 const activeMerge = ref(null) // 成片大预览弹窗中正在播放的拼接记录
@@ -2012,7 +2010,7 @@ function videoTaskActionLabel(sb) {
 }
 
 const videoTaskRows = computed(() => sbs.value.map((sb, index) => {
-  const duration = Number(sb.duration || 5)
+  const duration = shotVideoGenerationDuration(sb)
   const referenceCount = getShotReferenceImages(sb).length
   const sceneName = getSceneName(sb)
   return {
@@ -3270,12 +3268,53 @@ function resolveVideoPromptRefs(sb) {
   })
 }
 
+function parseVideoPromptDurationSeconds(prompt) {
+  const text = String(prompt || '')
+  let maxEnd = 0
+  const rangeRe = /(\d+)\s*[-–~—]\s*(\d+)\s*(?:秒|s)(?=$|[^\d])/gi
+  let match
+  while ((match = rangeRe.exec(text))) {
+    const end = Number(match[2])
+    if (Number.isFinite(end) && end > maxEnd) maxEnd = end
+  }
+  return maxEnd > 0 ? maxEnd : null
+}
+
+function videoDurationBounds(provider, model) {
+  const p = String(provider || '').toLowerCase()
+  const m = String(model || '').toLowerCase()
+  if (p === 'gemini' || m.includes('omni')) return { min: 3, max: 10 }
+  if (p === 'minimax' || m.includes('minimax')) return { min: 4, max: 15 }
+  return { min: 4, max: 15 }
+}
+
+function currentVideoDurationBounds() {
+  const opt = videoModelOptions.value.find(o => o.key === videoModel.value)
+    || videoModelOptions.value.find(o => o.configId === lockedVideoConfigId.value)
+    || videoConfigs.value.find(c => c.id === lockedVideoConfigId.value)
+  return videoDurationBounds(opt?.provider, opt?.model || bareModelName(videoModel.value))
+}
+
+function promptDurationSeconds(sb) {
+  return parseVideoPromptDurationSeconds(sb?.video_prompt || sb?.videoPrompt) ?? Number(sb?.duration || 10)
+}
+
+function shotVideoGenerationDuration(sb) {
+  const bounds = currentVideoDurationBounds()
+  const raw = promptDurationSeconds(sb)
+  const n = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 10
+  return Math.min(bounds.max, Math.max(bounds.min, n))
+}
+
+function promptDurationClamped(sb) {
+  return promptDurationSeconds(sb) !== shotVideoGenerationDuration(sb)
+}
+
 // 切换选中分镜时重置视频生成面板
 watch(selectedSb, (sb) => {
   videoRefVideoUrls.value = []
   videoRefAudioUrls.value = []
   videoRefImageUrls.value = []
-  videoDuration.value = Number(sb?.duration || 10)
 })
 
 function pickFile(accept, cb) {
@@ -3350,7 +3389,7 @@ async function genVid(sb) {
     storyboard_id: sb.id,
     drama_id: dramaId,
     prompt: resolveVideoPromptRefs(sb),
-    duration: Number(videoDuration.value || sb.duration || 10),
+    duration: shotVideoGenerationDuration(sb),
     aspect_ratio: dramaAspectRatio.value,
     generate_audio: true,
     model: bareModelName(videoModel.value) || undefined,

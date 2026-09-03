@@ -15,3 +15,10 @@ test('video generation blocks Seedance for realistic dramas', () => {
   assert.match(generation, /assertSeedanceAllowedForStyle/)
   assert.match(generation, /excludeProviders: \['volcengine'\]/)
 })
+
+test('video generation duration follows the prompt timeline instead of the request body', () => {
+  const generation = readFileSync(new URL('../src/services/generation.ts', import.meta.url), 'utf8')
+  assert.match(generation, /resolveVideoGenerationDuration/)
+  assert.match(generation, /parseVideoPromptDurationSeconds|shotDuration/)
+  assert.doesNotMatch(generation, /duration: params\.duration \|\| 5/)
+})

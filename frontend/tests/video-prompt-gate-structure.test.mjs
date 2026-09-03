@@ -26,3 +26,10 @@ test('video generation is blocked until every shot has a video prompt', () => {
 test('agent completion callback is awaited so prompt batch sees fresh shots', () => {
   assert.match(useAgent, /await onDone\?\.\(\)/)
 })
+
+test('video generation duration follows the prompt timeline, not a separate input', () => {
+  assert.match(page, /function parseVideoPromptDurationSeconds/)
+  assert.match(page, /duration: shotVideoGenerationDuration\(sb\)/)
+  assert.doesNotMatch(page, /v-model\.number="videoDuration"/)
+  assert.match(page, /依提示词时间轴/)
+})

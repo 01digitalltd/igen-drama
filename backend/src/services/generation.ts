@@ -17,7 +17,7 @@ import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue } from './style-preset.js'
 import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt, stripVideoFaceGridPrompt } from './face-grid.js'
-import { resolveStoryboardVideoPrompt } from './storyboard-prompt.js'
+import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration } from './storyboard-prompt.js'
 
 type TaskType = 'image' | 'video'
 
@@ -131,10 +131,20 @@ export async function generateVideo(params: GenerateVideoParams): Promise<number
   assertSeedanceAllowedForStyle(style, config.provider, params.model || config.model)
 
   let prompt = (params.prompt || '').trim()
-  if (!prompt && params.storyboardId) {
+  let shotDuration: number | undefined
+  if (params.storyboardId) {
     const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, params.storyboardId))
-    if (sb) prompt = resolveStoryboardVideoPrompt(sb)
+    if (sb) {
+      if (!prompt) prompt = resolveStoryboardVideoPrompt(sb)
+      shotDuration = sb.duration || undefined
+    }
   }
+  const duration = resolveVideoGenerationDuration({
+    prompt,
+    shotDuration,
+    provider: config.provider,
+    model: params.model || config.model,
+  })
 
   const id = await createTask('video', config, {
     storyboardId: params.storyboardId,
@@ -150,7 +160,7 @@ export async function generateVideo(params: GenerateVideoParams): Promise<number
     referenceVideoUrls: params.referenceVideoUrls,
     referenceAudioUrls: params.referenceAudioUrls,
     generateAudio: params.generateAudio === false ? 0 : 1,
-    duration: params.duration || 5,
+    duration,
     aspectRatio: params.aspectRatio || '16:9',
     // 保留高分辨率档位透传（MiniMax 768P/2K），火山等适配器内部自行归并
     resolution: ['480p', '720p', '1080p', '2K'].includes(params.resolution || '') ? params.resolution : '720p',
@@ -164,7 +174,7 @@ export async function generateVideo(params: GenerateVideoParams): Promise<number
     storyboardId: params.storyboardId,
     dramaId: params.dramaId,
     referenceMode: params.referenceMode || 'reference',
-    duration: params.duration || 5,
+    duration,
   })
   logTaskPayload('VideoTask', 'enqueue params', {
     id,
