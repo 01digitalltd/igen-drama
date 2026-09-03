@@ -58,7 +58,7 @@ test('backend rejects unsupported providers at DB and route boundaries', () => {
   assert.match(ai, /officialProviders/)
   assert.match(ai, /text:\s*\[\s*'openai',\s*'gemini',\s*'volcengine'\s*\]/)
   assert.match(ai, /image:\s*\[\s*'openai',\s*'gemini',\s*'volcengine'\s*\]/)
-  assert.match(ai, /video:\s*\[\s*'volcengine'\s*\]/)
+  assert.match(ai, /video:\s*\[\s*'gemini',\s*'volcengine',\s*'minimax'\s*\]/)
   assert.doesNotMatch(ai, /'deepseek'/)
   assert.doesNotMatch(ai, /'ali'/)
   assert.doesNotMatch(ai, /'vidu'/)
@@ -165,7 +165,9 @@ test('OpenAI image adapter uses GPT Image request shape and keeps DALL-E respons
 test('new image and video models use their current API shapes', () => {
   const openaiImage = read('src/services/adapters/openai-image.ts')
   const geminiImage = read('src/services/adapters/gemini-image.ts')
+  const geminiVideo = read('src/services/adapters/gemini-video.ts')
   const volcVideo = read('src/services/adapters/volcengine-video.ts')
+  const registry = read('src/services/adapters/registry.ts')
 
   assert.match(openaiImage, /isGptImage2/)
   assert.match(openaiImage, /normalizeGptImage2Size/)
@@ -174,6 +176,11 @@ test('new image and video models use their current API shapes', () => {
   assert.match(geminiImage, /\/interactions\//)
   assert.doesNotMatch(geminiImage, /\$\{taskId\}`\)/)
   assert.doesNotMatch(geminiImage, /Authorization': `Bearer/)
+  assert.match(registry, /GeminiVideoAdapter/)
+  assert.match(geminiVideo, /gemini-omni-flash-preview/)
+  assert.match(geminiVideo, /\/interactions/)
+  assert.match(geminiVideo, /background:\s*true/)
+  assert.match(geminiVideo, /reference_to_video/)
   assert.match(volcVideo, /doubao-seedance-2-0-fast-260128/)
   // Seedance 2.0 多模态能力（含 BytePlus dreamina 国际站模型名）
   assert.match(volcVideo, /function isSeedance20Model/)

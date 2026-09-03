@@ -50,8 +50,11 @@ function mimeTypeToExt(mimeType: string): string {
     'image/jpg': '.jpg',
     'image/webp': '.webp',
     'image/gif': '.gif',
+    'video/mp4': '.mp4',
+    'video/webm': '.webm',
+    'video/quicktime': '.mov',
   }
-  return map[mimeType] || '.png'
+  return map[mimeType] || (mimeType.startsWith('video/') ? '.mp4' : '.png')
 }
 
 function getExtFromUrl(url: string): string {
@@ -115,6 +118,11 @@ export async function saveUploadedFile(data: ArrayBuffer, subDir: string, origin
 export async function saveBase64Image(base64Data: string, mimeType: string, subDir: string): Promise<string> {
   const ext = mimeTypeToExt(mimeType)
   return persistBuffer(Buffer.from(base64Data, 'base64'), subDir, ext, mimeType)
+}
+
+export async function saveBase64Video(base64Data: string, mimeType: string, subDir: string): Promise<string> {
+  const ext = mimeTypeToExt(mimeType || 'video/mp4')
+  return persistBuffer(Buffer.from(base64Data, 'base64'), subDir, ext, mimeType || 'video/mp4')
 }
 
 export async function persistLocalFile(absPath: string, subDir: string): Promise<string> {

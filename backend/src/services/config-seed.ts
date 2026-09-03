@@ -58,9 +58,61 @@ export async function seedAiConfigsFromEnv() {
     })
     console.log(`[config-seed] inserted ${spec.serviceType} config (${provider} / ${model})`)
   }
+  await ensureGeminiVideoConfig()
 }
 
 function defaultProvider(serviceType: ServiceType): string {
-  if (serviceType === 'video') return 'volcengine'
+  if (serviceType === 'video') return 'gemini'
   return 'openai'
+}
+
+async function ensureGeminiVideoConfig() {
+  const provider = (readEnv('DRAMA_VIDEO', 'PROVIDER') || 'gemini').toLowerCase()
+  if (provider !== 'gemini') return
+
+  const videos = ((await db.select().from(schema.aiServiceConfigs)
+    .where(eq(schema.aiServiceConfigs.serviceType, 'video'))) as Array<{ provider?: string | null; isActive?: unknown }>)
+  if (videos.some((row) => row.provider === 'gemini' && row.isActive)) return
+
+  let apiKey = readEnv('DRAMA_VIDEO', 'API_KEY')
+  let baseUrl = readEnv('DRAMA_VIDEO', 'BASE_URL') || 'https://generativelanguage.googleapis.com'
+  const model = readEnv('DRAMA_VIDEO', 'MODEL') || 'gemini-omni-flash-preview'
+
+  if (!apiKey) {
+    const donors = ((await db.select().from(schema.aiServiceConfigs)) as Array<{
+      isActive?: unknown
+      provider?: string | null
+      serviceType?: string | null
+      apiKey?: string | null
+      baseUrl?: string | null
+      priority?: number | null
+    }>)
+      .filter((row) => Boolean(row.isActive) && row.provider === 'gemini' && (row.serviceType === 'image' || row.serviceType === 'text'))
+      .sort((a, b) => (Number(b.priority) || 0) - (Number(a.priority) || 0))
+    const donor = donors[0]
+    if (donor?.apiKey) {
+      apiKey = donor.apiKey
+      if (!readEnv('DRAMA_VIDEO', 'BASE_URL') && donor.baseUrl) baseUrl = donor.baseUrl
+    }
+  }
+  if (!apiKey || !baseUrl) {
+    console.warn('[config-seed] skip gemini video: set DRAMA_VIDEO_API_KEY or reuse an active Gemini text/image key')
+    return
+  }
+
+  const ts = now()
+  await db.insert(schema.aiServiceConfigs).values({
+    serviceType: 'video',
+    provider: 'gemini',
+    name: 'platform-video',
+    baseUrl,
+    apiKey,
+    model: JSON.stringify([model]),
+    priority: 110,
+    isDefault: true,
+    isActive: true,
+    createdAt: ts,
+    updatedAt: ts,
+  })
+  console.log(`[config-seed] inserted video config (gemini / ${model})`)
 }

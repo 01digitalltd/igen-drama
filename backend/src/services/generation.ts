@@ -6,7 +6,7 @@ import { db, getInsertId, schema } from '../db/index.js'
 import { eq } from '../db/query.js'
 import { getActiveConfig, getActiveConfigId, getConfigById, isOfficialProvider } from './ai.js'
 import { now } from '../utils/response.js'
-import { downloadFile, generateImageThumb, readImageAsCompressedDataUrl, saveBase64Image } from '../utils/storage.js'
+import { downloadFile, generateImageThumb, readImageAsCompressedDataUrl, saveBase64Image, saveBase64Video } from '../utils/storage.js'
 import { isS3Enabled, toVendorFetchableUrl } from '../utils/s3-media.js'
 import { extractVideoPoster } from '../utils/video-poster.js'
 import { getImageAdapter, getVideoAdapter } from './adapters/registry'
@@ -331,6 +331,16 @@ async function processTask(id: number, config: AIConfig) {
       return
     }
 
+    if (!isAsync) {
+      const b64 = adapter.extractVideoBase64(result)
+      if (b64) {
+        logTaskProgress(label, 'sync-base64-complete', { id, mimeType: b64.mimeType })
+        await handleVideoCompleteBase64(record, b64.data, b64.mimeType, params.duration)
+        return
+      }
+      throw new Error('No video URL or base64 data in response')
+    }
+
     await markPolling(id, taskId)
     await pollTask(record, config, taskId!)
   } catch (err: any) {
@@ -459,10 +469,18 @@ async function pollTask(
               return
             }
           }
-        } else if (pollResp.videoUrl) {
-          logTaskSuccess(label, 'poll-complete', { id: record.id, taskId, videoUrl: pollResp.videoUrl })
-          await handleVideoComplete(record, pollResp.videoUrl, null)
-          return
+        } else {
+          if (pollResp.videoUrl) {
+            logTaskSuccess(label, 'poll-complete', { id: record.id, taskId, videoUrl: pollResp.videoUrl })
+            await handleVideoComplete(record, pollResp.videoUrl, null)
+            return
+          }
+          const b64 = (adapter as ReturnType<typeof getVideoAdapter>).extractVideoBase64(result)
+          if (b64) {
+            logTaskSuccess(label, 'poll-base64-complete', { id: record.id, taskId, mimeType: b64.mimeType })
+            await handleVideoCompleteBase64(record, b64.data, b64.mimeType, null)
+            return
+          }
         }
       }
       if (pollResp.status === 'failed') {
@@ -626,6 +644,28 @@ async function writeBackImageAssets(record: SysTaskRecord, localPath: string) {
   if (record.propId) {
     await db.update(schema.props).set({ imageUrl: localPath, updatedAt: now() }).where(eq(schema.props.id, record.propId))
   }
+}
+
+async function handleVideoCompleteBase64(
+  record: SysTaskRecord,
+  base64Data: string,
+  mimeType: string,
+  duration: number | null | undefined,
+) {
+  const localPath = await saveBase64Video(base64Data, mimeType, 'videos')
+  await extractVideoPoster(localPath)
+  await db.update(schema.sysTask)
+    .set({ localPath, status: 'completed', completedAt: now(), updatedAt: now() })
+    .where(eq(schema.sysTask.id, record.id))
+
+  logTaskSuccess('VideoTask', 'saved-base64', { id: record.id, mimeType, localPath, storyboardId: record.storyboardId })
+
+  if (record.storyboardId) {
+    await db.update(schema.storyboards)
+      .set({ videoUrl: localPath, duration: duration || undefined, updatedAt: now() })
+      .where(eq(schema.storyboards.id, record.storyboardId))
+  }
+  await emitTaskEvent(record.id)
 }
 
 async function handleVideoComplete(record: SysTaskRecord, videoUrl: string, duration: number | null | undefined) {

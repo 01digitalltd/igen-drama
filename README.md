@@ -87,7 +87,7 @@ data/       — 生成资源文件
 |---|---|
 | **文本** | OpenAI(兼容接口)、Gemini |
 | **图片** | OpenAI、Gemini、火山引擎 |
-| **视频** | 火山引擎 Seedance 2.0(标准 / Fast / Mini) |
+| **视频** | Gemini Omni Flash（默认）、火山引擎 Seedance 2.0、MiniMax H3 |
 
 ---
 

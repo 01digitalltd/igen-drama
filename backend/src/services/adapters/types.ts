@@ -57,6 +57,8 @@ export interface VideoProviderAdapter {
   parsePollResponse(result: any): VideoPollResponse
 
   extractVideoUrl(result: any): string | null
+
+  extractVideoBase64(result: any): { data: string; mimeType: string } | null
 }
 
 // ============ 通用类型 ============

@@ -145,6 +145,10 @@ export class VolcEngineVideoAdapter implements VideoProviderAdapter {
     return result.video_url || result.content?.video_url || result.data?.video_url || null
   }
 
+  extractVideoBase64(_result: any): { data: string; mimeType: string } | null {
+    return null
+  }
+
   private normalizeDuration(duration?: number | null): number {
     const parsed = Math.round(Number(duration || 5))
     if (!Number.isFinite(parsed)) return 5

@@ -155,6 +155,10 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
     return task.content?.url || task.video_url || null
   }
 
+  extractVideoBase64(_result: any): { data: string; mimeType: string } | null {
+    return null
+  }
+
   private normalizeDuration(duration?: number | null): number {
     const parsed = Math.round(Number(duration || 5))
     if (!Number.isFinite(parsed)) return 5
