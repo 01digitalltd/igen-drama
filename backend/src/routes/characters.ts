@@ -4,8 +4,8 @@ import { db, getInsertId, schema } from '../db/index.js'
 import { success, created, badRequest, now } from '../utils/response.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { generateImage } from '../services/generation.js'
-import { getDramaStylePrompt, getDramaStyleValue } from '../services/style-preset.js'
-import { withRealisticCharacterFaceGrid } from '../services/face-grid.js'
+import { getDramaStylePrompt } from '../services/style-preset.js'
+import { stripCharacterFaceGridPrompt } from '../services/face-grid.js'
 import { ensureCharacterFinalPrompt } from '../services/final-prompt.js'
 import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { loadOwnedCharacter, loadOwnedDrama } from '../utils/ownership.js'
@@ -95,11 +95,8 @@ app.post('/:id/generate-image', async (c) => {
   const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
   if (!ep) return badRequest(c, 'Episode not found')
 
-  const [stylePrompt, styleValue] = await Promise.all([
-    getDramaStylePrompt(char.dramaId),
-    getDramaStyleValue(char.dramaId),
-  ])
-  const prompt = withRealisticCharacterFaceGrid(styleValue, char.finalPrompt || characterImagePrompt(char, stylePrompt))
+  const stylePrompt = await getDramaStylePrompt(char.dramaId)
+  const prompt = stripCharacterFaceGridPrompt(char.finalPrompt || characterImagePrompt(char, stylePrompt))
   try {
     logTaskStart('CharacterImage', 'generate', { characterId: id, episodeId: ep.id, dramaId: char.dramaId })
     const genId = await generateImage({ characterId: id, dramaId: char.dramaId, episodeId: ep.id, prompt, model: body.model, size: CHARACTER_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })
@@ -140,14 +137,11 @@ app.post('/batch-generate-images', async (c) => {
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
   const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
   if (!ep) return badRequest(c, 'Episode not found')
-  const [stylePrompt, styleValue] = await Promise.all([
-    getDramaStylePrompt(ep.dramaId),
-    getDramaStyleValue(ep.dramaId),
-  ])
+  const stylePrompt = await getDramaStylePrompt(ep.dramaId)
   const results = await Promise.all(ids.map(async (cid) => {
     const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, cid))
     if (!char) return 0
-    const prompt = withRealisticCharacterFaceGrid(styleValue, char.finalPrompt || characterImagePrompt(char, stylePrompt))
+    const prompt = stripCharacterFaceGridPrompt(char.finalPrompt || characterImagePrompt(char, stylePrompt))
     try {
       return await generateImage({ characterId: cid, dramaId: char.dramaId, episodeId: ep.id, prompt, model: body.model, size: CHARACTER_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })
     } catch {

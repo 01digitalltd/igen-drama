@@ -15,7 +15,8 @@ import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuc
 import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue } from './style-preset.js'
-import { withRealisticCharacterFaceGrid, withRealisticVideoFaceGridRemoval } from './face-grid.js'
+import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from './video-model-policy.js'
+import { stripCharacterFaceGridPrompt, stripVideoFaceGridPrompt } from './face-grid.js'
 import { resolveStoryboardVideoPrompt } from './storyboard-prompt.js'
 
 type TaskType = 'image' | 'video'
@@ -116,14 +117,18 @@ export async function generateImage(params: GenerateImageParams): Promise<number
 }
 
 export async function generateVideo(params: GenerateVideoParams): Promise<number> {
+  const style = await getDramaStyleValue(params.dramaId)
+  const videoOpts = isRealisticDramaStyle(style) ? { excludeProviders: ['volcengine'] } : undefined
+
   // 指定配置（集锁定）可能已停用/删除/厂商收敛，失效时回退到当前启用配置
   let config = params.configId ? await getConfigById(params.configId) : null
   let configId = params.configId ?? null
   if (!config) {
-    config = await getActiveConfig('video')
-    configId = await getActiveConfigId('video')
+    config = await getActiveConfig('video', videoOpts)
+    configId = await getActiveConfigId('video', videoOpts)
   }
   if (!config) throw new Error('未配置视频模型，请先到「设置」页添加并启用 AI 服务')
+  assertSeedanceAllowedForStyle(style, config.provider, params.model || config.model)
 
   let prompt = (params.prompt || '').trim()
   if (!prompt && params.storyboardId) {
@@ -242,9 +247,8 @@ async function processTask(id: number, config: AIConfig) {
     if (type === 'image') {
       const adapter = getImageAdapter(config.provider)
       const resolvedReferenceImages = await normalizeReferenceImages(params.referenceImages)
-      const styleValue = record.characterId ? await getDramaStyleValue(record.dramaId) : ''
       const imagePrompt = record.characterId
-        ? withRealisticCharacterFaceGrid(styleValue, record.prompt || '')
+        ? stripCharacterFaceGridPrompt(record.prompt || '')
         : record.prompt
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
@@ -263,13 +267,12 @@ async function processTask(id: number, config: AIConfig) {
       // 参考视频/音频文件较大，不适合 dataURL 内联，需解析为公网可访问 URL
       const resolvedReferenceVideoUrls = await resolvePublicMediaUrls(params.referenceVideoUrls, 'video')
       const resolvedReferenceAudioUrls = await resolvePublicMediaUrls(params.referenceAudioUrls, 'audio')
-      const styleValue = await getDramaStyleValue(record.dramaId)
       let prompt = (record.prompt || '').trim()
       if (!prompt && record.storyboardId) {
         const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
         if (sb) prompt = resolveStoryboardVideoPrompt(sb)
       }
-      const videoPrompt = withRealisticVideoFaceGridRemoval(styleValue, prompt)
+      const videoPrompt = stripVideoFaceGridPrompt(prompt)
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,

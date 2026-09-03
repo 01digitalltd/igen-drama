@@ -13,17 +13,14 @@ import { z } from 'zod'
 import { db, schema } from '../../db/index.js'
 import { eq } from '../../db/query.js'
 import { now } from '../../utils/response.js'
-import { getDramaStylePrompt, getDramaStyleValue } from '../../services/style-preset.js'
-import { withRealisticCharacterFaceGrid } from '../../services/face-grid.js'
+import { getDramaStylePrompt } from '../../services/style-preset.js'
+import { stripCharacterFaceGridPrompt } from '../../services/face-grid.js'
 import { getDramaId } from '../context.js'
 
 export async function persistCharacterFinalPrompt(dramaId: number, characterId: number, prompt: string) {
-  const [stylePrompt, styleValue] = await Promise.all([
-    getDramaStylePrompt(dramaId),
-    getDramaStyleValue(dramaId),
-  ])
+  const stylePrompt = await getDramaStylePrompt(dramaId)
   const withStyle = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
-  const finalPrompt = withRealisticCharacterFaceGrid(styleValue, withStyle)
+  const finalPrompt = stripCharacterFaceGridPrompt(withStyle)
   await db.update(schema.characters)
     .set({ finalPrompt, updatedAt: now() })
     .where(eq(schema.characters.id, characterId))

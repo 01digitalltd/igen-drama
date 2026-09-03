@@ -29,30 +29,30 @@ test('grid prompt agent tools save agent-written final prompts with style inject
 
 test('prompt agent instructions reference per-asset skills; skill files define the specs', () => {
   const agents = read('src/agents/index.ts')
-  const settings = read('../frontend/app/pages/settings.vue')
   const charSkill = read('workspace/skills/prompt-generator/character-prompt/SKILL.md')
   const sceneSkill = read('workspace/skills/prompt-generator/scene-prompt/SKILL.md')
 
-  for (const src of [agents, settings]) {
-    // 三类图片规范入口（具体创作规则在各自 SKILL.md 中）
-    assert.match(src, /角色三视图/)
-    assert.match(src, /场景固定视角/)
-    assert.match(src, /道具白底单品/)
-    // 保存工具约定
-    assert.match(src, /save_character_final_prompt/)
-    assert.match(src, /save_scene_final_prompt/)
-  }
+  assert.match(agents, /角色三视图/)
+  assert.match(agents, /场景固定视角/)
+  assert.match(agents, /道具白底单品/)
+  assert.match(agents, /save_character_final_prompt/)
+  assert.match(agents, /save_scene_final_prompt/)
   // 角色三视图 / 场景固定视角的必备要素由技能文件承载（纯中文输出）
   assert.match(charSkill, /正脸特写/)
   assert.match(charSkill, /正面、90 度侧面、背面/)
   assert.match(charSkill, /三个视图的脸、发型和服装完全一致/)
-  assert.match(charSkill, /白色 6×6 网格/)
-  assert.match(charSkill, /五官分拆/)
+  assert.doesNotMatch(charSkill, /白色 6×6 网格/)
+  assert.doesNotMatch(charSkill, /五官分拆/)
   assert.match(charSkill, /纯中文/)
   assert.match(sceneSkill, /固定机位广角镜头/)
   assert.match(sceneSkill, /前景（\[前景元素\]）、中景（\[中景主体空间\]）、后景（\[后景纵深\]）/)
   assert.match(sceneSkill, /出入口/)
   assert.match(sceneSkill, /纯中文/)
+  const videoSkill = read('workspace/skills/prompt-generator/video-prompt/SKILL.md')
+  const finalPrompt = read('src/services/final-prompt.ts')
+  assert.doesNotMatch(agents, /白色6×6网格|白色 6×6 网格/)
+  assert.doesNotMatch(videoSkill, /6×6 网格/)
+  assert.doesNotMatch(finalPrompt, /6×6 网格/)
 })
 
 test('image generation prefers the stored final prompt with agent generation and legacy fallback', () => {

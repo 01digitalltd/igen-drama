@@ -5,6 +5,8 @@ import { db, getInsertId, schema } from '../db/index.js'
 import { success, notFound, badRequest, now } from '../utils/response.js'
 import { toSnakeCaseArray, toSnakeCase } from '../utils/transform.js'
 import { getActiveConfigId, isOfficialProvider } from '../services/ai.js'
+import { getDramaStyleValue } from '../services/style-preset.js'
+import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from '../services/video-model-policy.js'
 import { EXTRACT_TARGETS, getExtractionStatus, startExtraction, type ExtractTarget } from '../services/extraction.js'
 import { listAgentJobsForEpisode, toPublicAgentJob } from '../services/agent-jobs.js'
 import { subscribeEpisodeEvents } from '../services/episode-events.js'
@@ -18,13 +20,26 @@ const app = new Hono()
 app.post('/', async (c) => {
   const body = await c.req.json()
   if (!body.drama_id) return badRequest(c, 'drama_id required')
-  await loadOwnedDrama(c, Number(body.drama_id))
+  const dramaId = Number(body.drama_id)
+  await loadOwnedDrama(c, dramaId)
+
+  const style = await getDramaStyleValue(dramaId)
+  const videoOpts = isRealisticDramaStyle(style) ? { excludeProviders: ['volcengine'] } : undefined
 
   // 图片/视频配置：显式传入优先，缺省时自动锁定当前启用的最高优先级官方配置
   const imageConfigId = body.image_config_id ?? await getActiveConfigId('image')
-  const videoConfigId = body.video_config_id ?? await getActiveConfigId('video')
+  const videoConfigId = body.video_config_id ?? await getActiveConfigId('video', videoOpts)
   if (!imageConfigId) return badRequest(c, '未找到启用的图片生成配置，请先在设置中心添加')
   if (!videoConfigId) return badRequest(c, '未找到启用的视频生成配置，请先在设置中心添加')
+  if (videoConfigId) {
+    const [videoCfg] = await db.select().from(schema.aiServiceConfigs)
+      .where(eq(schema.aiServiceConfigs.id, Number(videoConfigId)))
+    try {
+      assertSeedanceAllowedForStyle(style, videoCfg?.provider, videoCfg?.model)
+    } catch (err: any) {
+      return badRequest(c, err.message)
+    }
+  }
   const ts = now()
 
   // Get next episode number（忽略已软删的集，删除中间集后新集号可复用空位之后的最大值）
@@ -83,6 +98,12 @@ app.put('/:id', async (c) => {
       .where(eq(schema.aiServiceConfigs.id, videoConfigId))
     if (!cfg?.isActive || cfg.serviceType !== 'video' || !isOfficialProvider('video', cfg.provider)) {
       return badRequest(c, '未找到启用的视频生成配置')
+    }
+    const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, id))
+    try {
+      assertSeedanceAllowedForStyle(await getDramaStyleValue(ep?.dramaId), cfg.provider, cfg.model)
+    } catch (err: any) {
+      return badRequest(c, err.message)
     }
     nextVideoConfigId = videoConfigId
   }

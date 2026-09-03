@@ -45,9 +45,11 @@ test('drama style prompt is injected into image prompt composition', () => {
 
   assert.match(service, /getDramaStylePrompt/)
   assert.match(service, /stylePresets\.value, drama\.style/)
-  assert.match(gridTools, /withRealisticCharacterFaceGrid/)
-  assert.match(characters, /withRealisticCharacterFaceGrid/)
+  assert.match(gridTools, /stripCharacterFaceGridPrompt/)
+  assert.match(characters, /stripCharacterFaceGridPrompt/)
   assert.match(scenes, /getDramaStylePrompt\(scene\.dramaId\)/)
+  assert.doesNotMatch(gridTools, /withRealisticCharacterFaceGrid/)
+  assert.doesNotMatch(characters, /withRealisticCharacterFaceGrid/)
 })
 
 test('style preset seed includes photoreal live-action', () => {
@@ -57,8 +59,10 @@ test('style preset seed includes photoreal live-action', () => {
   assert.match(seed, /value: 'realistic'/)
   assert.match(seed, /photorealistic live-action/)
   assert.match(seed, /写实真人/)
-  assert.match(generation, /withRealisticCharacterFaceGrid/)
-  assert.match(generation, /withRealisticVideoFaceGridRemoval/)
+  assert.match(generation, /stripCharacterFaceGridPrompt/)
+  assert.match(generation, /stripVideoFaceGridPrompt/)
+  assert.doesNotMatch(generation, /withRealisticCharacterFaceGrid/)
+  assert.doesNotMatch(generation, /withRealisticVideoFaceGridRemoval/)
 })
 
 test('agent default prompts no longer hardcode consistent art style', () => {

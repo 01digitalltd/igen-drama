@@ -9,3 +9,9 @@ test('video generation honors request config_id over the episode lock', () => {
   assert.match(route, /if \(configId == null && locked != null\) configId = locked/)
   assert.doesNotMatch(route, /if \(locked != null\) configId = locked/)
 })
+
+test('video generation blocks Seedance for realistic dramas', () => {
+  const generation = readFileSync(new URL('../src/services/generation.ts', import.meta.url), 'utf8')
+  assert.match(generation, /assertSeedanceAllowedForStyle/)
+  assert.match(generation, /excludeProviders: \['volcengine'\]/)
+})

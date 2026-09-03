@@ -61,12 +61,25 @@ export function getTextProviderBaseUrl(config: AIConfig) {
 const lastLoggedActiveConfigKey = new Map<string, string>()
 const lastLoggedConfigByIdKey = new Map<number, string>()
 
-export async function getActiveConfig(serviceType: ServiceType): Promise<AIConfig | null> {
-  const rows = (await db.select().from(schema.aiServiceConfigs)
+export type ActiveConfigOpts = {
+  excludeProviders?: string[]
+}
+
+async function listActiveOfficialConfigs(serviceType: ServiceType, opts?: ActiveConfigOpts) {
+  const exclude = new Set((opts?.excludeProviders || []).map((p) => p.toLowerCase()))
+  return (await db.select().from(schema.aiServiceConfigs)
     .where(eq(schema.aiServiceConfigs.serviceType, serviceType))
   )
-    .filter(r => r.isActive && isOfficialProvider(serviceType, r.provider))
-    .sort((a, b) => (b.priority || 0) - (a.priority || 0)) // 高优先级优先
+    .filter((r) => (
+      r.isActive
+      && isOfficialProvider(serviceType, r.provider)
+      && !exclude.has((r.provider || '').toLowerCase())
+    ))
+    .sort((a, b) => (b.priority || 0) - (a.priority || 0))
+}
+
+export async function getActiveConfig(serviceType: ServiceType, opts?: ActiveConfigOpts): Promise<AIConfig | null> {
+  const rows = await listActiveOfficialConfigs(serviceType, opts)
 
   const active = rows[0]
   if (!active) {
@@ -104,12 +117,8 @@ export async function getTextConfig(): Promise<AIConfig> {
 /**
  * 取某服务类型当前启用且优先级最高的官方配置 ID（创建集时自动锁定用）
  */
-export async function getActiveConfigId(serviceType: ServiceType): Promise<number | null> {
-  const rows = (await db.select().from(schema.aiServiceConfigs)
-    .where(eq(schema.aiServiceConfigs.serviceType, serviceType))
-  )
-    .filter(r => r.isActive && isOfficialProvider(serviceType, r.provider))
-    .sort((a, b) => (b.priority || 0) - (a.priority || 0))
+export async function getActiveConfigId(serviceType: ServiceType, opts?: ActiveConfigOpts): Promise<number | null> {
+  const rows = await listActiveOfficialConfigs(serviceType, opts)
   return rows[0]?.id ?? null
 }
 

@@ -46,6 +46,7 @@
             :show-config="videoModelMultiCfg"
           />
         </div>
+        <p v-if="isRealisticDrama" class="dim" style="font-size:11px;margin:6px 0 0">写实真人不可选 Seedance</p>
         <div class="studio-actions">
           <button class="btn" @click="refresh">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -716,6 +717,18 @@
                 AI 生成分镜
               </button>
             </div>
+            <div v-else-if="!allVideoPromptsReady" class="step-empty video-task-empty-state">
+              <div class="empty-visual">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              </div>
+              <div class="empty-title">请先完成全部视频提示词</div>
+              <div class="empty-desc">分镜拆分后会自动生成提示词，完成后即可进入此步骤。</div>
+              <button class="btn btn-primary" :disabled="videoPromptBatch.running || !sbs.length" @click="prodTab = 'storyboard'; batchVideoPrompts()">
+                <Loader2 v-if="videoPromptBatch.running" :size="13" class="animate-spin" />
+                <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                {{ videoPromptBatch.running ? `提示词 ${videoPromptBatch.completed}/${videoPromptBatch.total}` : '批量视频提示词' }}
+              </button>
+            </div>
             <div v-else class="video-task-workbench has-player">
               <section class="video-task-list">
                 <div class="video-task-head">
@@ -1223,7 +1236,7 @@
         <button
           v-else-if="panel === 'production'"
           class="bubble-btn primary"
-          :disabled="prodTab === 'videos' && !canExport"
+          :disabled="(prodTab === 'storyboard' && !allVideoPromptsReady) || (prodTab === 'videos' && !canExport)"
           @click="goNextProd"
         >
           {{ prodTabIdx < prodTabDefs.length - 1 ? (prodTabDefs[prodTabIdx + 1]?.label || '下一步') : '进入导出' }}
@@ -2030,6 +2043,15 @@ const lockedImageConfigLabel = computed(() => configLabel(imageConfigs.value.fin
 const lockedVideoConfigLabel = computed(() => configLabel(videoConfigs.value.find(c => c.id === lockedVideoConfigId.value)))
 // 画面比例在创建项目时固定，视频生成统一使用
 const dramaAspectRatio = computed(() => drama.value?.aspect_ratio || drama.value?.aspectRatio || '16:9')
+const isRealisticDrama = computed(() => {
+  const style = String(drama.value?.style || '').trim().toLowerCase()
+  return style === 'realistic'
+})
+function isSeedanceVideoModel(provider, model) {
+  const p = String(provider || '').toLowerCase()
+  const m = String(model || '').toLowerCase()
+  return p === 'volcengine' || m.includes('seedance')
+}
 
 // 生成可选模型列表：配置中的模型数组（首位为配置默认）；API 可能返回数组或 JSON 字符串
 function configModels(cfg) {
@@ -2068,7 +2090,11 @@ function hasMultiConfigs(options) {
 }
 const textModelOptions = computed(() => collectModelOptions(textConfigs.value))
 const imageModelOptions = computed(() => collectModelOptions(imageConfigs.value))
-const videoModelOptions = computed(() => collectModelOptions(videoConfigs.value))
+const videoModelOptions = computed(() => {
+  const all = collectModelOptions(videoConfigs.value)
+  if (!isRealisticDrama.value) return all
+  return all.filter(o => !isSeedanceVideoModel(o.provider, o.model))
+})
 
 // 配置变化后校验持久化的模型是否仍存在（配置被删/模型被移除时回退默认，避免把失效模型传给后端）
 function pruneStaleModel(modelRef, optionsRef) {
@@ -2261,6 +2287,11 @@ function goNextProd() {
     return
   }
   if (prodTab.value === 'storyboard') {
+    if (!allVideoPromptsReady.value) {
+      toast.warning('请先完成全部分镜的视频提示词')
+      if (!videoPromptBatch.value.running && sbs.value.length) batchVideoPrompts()
+      return
+    }
     prodTab.value = 'videos'
     return
   }
@@ -2301,6 +2332,10 @@ const charImgCount = computed(() => visualChars.value.filter(c => c.image_url ||
 const sceneImgCount = computed(() => scenes.value.filter(s => s.image_url || s.imageUrl).length)
 const propImgCount = computed(() => propItems.value.filter(p => p.image_url || p.imageUrl).length)
 const shotVidCount = computed(() => sbs.value.filter(s => s.video_url || s.videoUrl).length)
+function hasVideoPrompt(sb) {
+  return Boolean(String(sb.video_prompt || sb.videoPrompt || '').trim())
+}
+const allVideoPromptsReady = computed(() => sbs.value.length > 0 && sbs.value.every(hasVideoPrompt))
 const visualCharTotal = computed(() => visualChars.value.length)
 const pendingCharacterImageCount = computed(() => Math.max(visualCharTotal.value - charImgCount.value, 0))
 const pendingSceneImageCount = computed(() => Math.max(scenes.value.length - sceneImgCount.value, 0))
@@ -2383,7 +2418,7 @@ function mainStageDone(stageId) {
   if (stageId === 'videos') {
     return !!sbs.value.length && shotVidCount.value === sbs.value.length
   }
-  if (stageId === 'storyboard') return !!sbs.value.length
+  if (stageId === 'storyboard') return allVideoPromptsReady.value
   if (stageId === 'export') return !!mergeUrl.value
   return false
 }
@@ -2400,6 +2435,13 @@ function goMainStage(stageId) {
     return
   }
   if (stageId === 'videos') {
+    if (!allVideoPromptsReady.value) {
+      toast.warning('请先完成全部分镜的视频提示词')
+      panel.value = 'production'
+      prodTab.value = 'storyboard'
+      if (!videoPromptBatch.value.running && sbs.value.length) batchVideoPrompts()
+      return
+    }
     panel.value = 'production'
     prodTab.value = 'videos'
     return
@@ -2461,6 +2503,13 @@ function goSubStep(key) {
     return
   }
   if (key.startsWith('prod:')) {
+    if (key === 'prod:videos' && !allVideoPromptsReady.value) {
+      toast.warning('请先完成全部分镜的视频提示词')
+      panel.value = 'production'
+      prodTab.value = 'storyboard'
+      if (!videoPromptBatch.value.running && sbs.value.length) batchVideoPrompts()
+      return
+    }
     panel.value = 'production'
     prodTab.value = key.replace('prod:', '')
     return
@@ -2777,7 +2826,7 @@ function doBreakdown() {
   const propList = propItems.value.length
     ? propItems.value.map(p => `${p.name}(ID:${p.id})`).join('、')
     : '（当前集还没有道具）'
-  runAgent('storyboard_breaker', `请基于当前集剧本拆分分镜（不需要生成视频提示词，video_prompt 在视频生成阶段按需生成）。
+  runAgent('storyboard_breaker', `请基于当前集剧本拆分分镜（不需要生成视频提示词，video_prompt 在拆分完成后由提示词任务自动生成）。
 
 当前集已有角色：${charList}
 当前集已有场景：${sceneList}
@@ -2787,7 +2836,10 @@ function doBreakdown() {
 - 每个镜头必须根据剧本内容，从上述当前集已有角色中选出出场的角色绑定 character_ids（ID 必须来自上述列表；有角色出场就必须绑定，不要遗漏）
 - 每个镜头尽量匹配上述已有场景填写 scene_id（ID 必须来自上述列表），不要凭空创造新场景
 - 每个镜头出现关键道具（被使用、交接、特写或在画面中明显可见）时，从上述当前集已有道具中绑定 prop_ids（ID 必须来自上述列表）；没有道具出现可传空数组
-- 只有纯环境空镜头才可以不绑定角色`, dramaId, epId.value, refresh, chatModelOverride(), chatConfigId())
+- 只有纯环境空镜头才可以不绑定角色`, dramaId, epId.value, async () => {
+    await refresh()
+    await batchVideoPrompts()
+  }, chatModelOverride(), chatConfigId())
 }
 
 // 按需为单个分镜生成视频提示词：由 prompt_generator 读取分镜字段生成并保存到 video_prompt

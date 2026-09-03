@@ -32,7 +32,7 @@ export function useAgent() {
         }
       }
       toast.success('完成')
-      onDone?.()
+      await onDone?.()
     } catch (err: any) {
       toast.error(err.message)
     } finally {

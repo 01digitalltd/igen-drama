@@ -11,9 +11,11 @@ test('POST /episodes auto-locks configs when not provided', () => {
 
   // 不再强制要求 config id
   assert.doesNotMatch(route, /image_config_id and video_config_id are required/)
-  // 通过 getActiveConfigId 自动锁定
+  // 通过 getActiveConfigId 自动锁定；写实真人跳过 Seedance
   assert.match(route, /getActiveConfigId\('image'\)/)
-  assert.match(route, /getActiveConfigId\('video'\)/)
+  assert.match(route, /getActiveConfigId\('video', videoOpts\)/)
+  assert.match(route, /excludeProviders: \['volcengine'\]/)
+  assert.match(route, /assertSeedanceAllowedForStyle/)
   // ai.ts 提供 getActiveConfigId
   assert.match(ai, /export async function getActiveConfigId/)
   // 找不到启用配置时给可操作的错误提示
@@ -25,7 +27,7 @@ test('POST /episodes still honors explicit config ids when caller passes them', 
   const route = read('src/routes/episodes.ts')
 
   assert.match(route, /body\.image_config_id \?\? await getActiveConfigId/)
-  assert.match(route, /body\.video_config_id \?\? await getActiveConfigId/)
+  assert.match(route, /body\.video_config_id \?\? await getActiveConfigId\('video', videoOpts\)/)
 })
 
 test('PUT /episodes can switch the locked video config', () => {
@@ -34,4 +36,5 @@ test('PUT /episodes can switch the locked video config', () => {
   assert.match(route, /'video_config_id'/)
   assert.match(route, /isOfficialProvider\('video',\s*cfg\.provider\)/)
   assert.match(route, /drizzleUpdates\.videoConfigId = nextVideoConfigId/)
+  assert.match(route, /assertSeedanceAllowedForStyle/)
 })
