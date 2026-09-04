@@ -113,6 +113,9 @@ test('parseGenerateResponse polls in-progress interactions and reads REST video 
 
   const poll = adapter.buildPollRequest(config, 'v1_abc')
   assert.match(poll.url, /\/v1beta\/interactions\/v1_abc/)
+  const cancel = adapter.buildCancelRequest(config, 'v1_abc')
+  assert.equal(cancel.method, 'POST')
+  assert.match(cancel.url, /\/v1beta\/interactions\/v1_abc\/cancel/)
   const pollResp = adapter.parsePollResponse({
     id: 'v1_abc',
     status: 'completed',

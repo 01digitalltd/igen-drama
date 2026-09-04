@@ -38,6 +38,13 @@ const VIDEO_RESUME_MAX_AGE_MS = 6 * 60 * 60 * 1000
 const SUBMIT_RETRY_MAX_AGE_MS = 3 * 60 * 1000
 
 const activeProcessors = new Set<number>()
+const cancelledTaskIds = new Set<number>()
+const videoWaitQueue: number[] = []
+const activeVideoIds = new Set<number>()
+/** One Gemini/MiniMax clip at a time; extra POSTs wait as status=queued. */
+const VIDEO_MAX_CONCURRENT = 1
+const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'error', 'success', 'done', 'cancelled', 'canceled'])
+let pumpingVideoQueue = false
 
 interface GenerateImageParams {
   storyboardId?: number
@@ -206,15 +213,84 @@ async function createTask(
     ...fields,
     provider: config.provider,
     params: JSON.stringify(params),
-    status: 'processing',
+    status: type === 'video' ? 'queued' : 'processing',
     createdAt: ts,
     updatedAt: ts,
   })
 
   const id = getInsertId(res)
   void emitTaskEvent(id)
-  startTaskProcessor(id, type, processTask(id, config))
+  if (type === 'video') enqueueVideo(id)
+  else startTaskProcessor(id, type, processTask(id, config))
   return id
+}
+
+function enqueueVideo(id: number) {
+  if (!Number.isInteger(id) || id <= 0) return
+  if (cancelledTaskIds.has(id) || activeVideoIds.has(id) || videoWaitQueue.includes(id)) return
+  videoWaitQueue.push(id)
+  void pumpVideoQueue()
+}
+
+function videoRunningCount() {
+  return activeVideoIds.size
+}
+
+async function pumpVideoQueue() {
+  if (pumpingVideoQueue) return
+  pumpingVideoQueue = true
+  try {
+    while (videoRunningCount() < VIDEO_MAX_CONCURRENT && videoWaitQueue.length) {
+      const id = videoWaitQueue.shift()
+      if (id == null) break
+      if (cancelledTaskIds.has(id) || activeVideoIds.has(id) || activeProcessors.has(id)) continue
+      const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+      if (!row || row.type !== 'video' || TERMINAL_TASK_STATUSES.has(String(row.status))) continue
+      const config = await resolveConfigForTask(row)
+      if (!config) {
+        await failTask(id, '找不到可用的视频 AI 配置')
+        continue
+      }
+      startVideoProcessor(id, config)
+    }
+  } finally {
+    pumpingVideoQueue = false
+    if (videoWaitQueue.length && videoRunningCount() < VIDEO_MAX_CONCURRENT) {
+      void pumpVideoQueue()
+    }
+  }
+}
+
+function startVideoProcessor(id: number, config: AIConfig) {
+  if (activeProcessors.has(id) || activeVideoIds.has(id)) return
+  activeVideoIds.add(id)
+  startTaskProcessor(id, 'video', processTask(id, config).finally(() => {
+    activeVideoIds.delete(id)
+    void pumpVideoQueue()
+  }))
+}
+
+async function isCancelled(id: number) {
+  if (cancelledTaskIds.has(id)) return true
+  const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+  return TERMINAL_TASK_STATUSES.has(String(row?.status)) && /cancel/i.test(String(row?.status || ''))
+}
+
+function isAbortError(err: unknown) {
+  const name = String((err as { name?: string })?.name || '')
+  const message = String((err as { message?: string })?.message || '')
+  return name === 'AbortError' || /aborted|abort/i.test(message)
+}
+
+async function sleepOrCancel(id: number, ms: number) {
+  const step = 500
+  let left = ms
+  while (left > 0) {
+    if (await isCancelled(id)) return true
+    await new Promise((r) => setTimeout(r, Math.min(step, left)))
+    left -= step
+  }
+  return isCancelled(id)
 }
 
 function startTaskProcessor(id: number, type: TaskType, work: Promise<void>) {
@@ -241,9 +317,17 @@ function parseTaskParams(raw: string | null | undefined): Record<string, any> {
 
 async function processTask(id: number, config: AIConfig) {
   try {
+    if (await isCancelled(id)) return
     const [record] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
     if (!record) return
+    if (TERMINAL_TASK_STATUSES.has(String(record.status))) return
     const type = record.type as TaskType
+    if (type === 'video' && record.status === 'queued') {
+      await db.update(schema.sysTask)
+        .set({ status: 'processing', updatedAt: now() })
+        .where(eq(schema.sysTask.id, id))
+      await emitTaskEvent(id)
+    }
     const label = taskLabel(type)
     const params = parseTaskParams(record.params)
     logTaskProgress(label, 'build-request', {
@@ -312,6 +396,8 @@ async function processTask(id: number, config: AIConfig) {
     })
     logTaskPayload(label, 'request payload', { id, method, url, headers, body })
 
+    if (await isCancelled(id)) return
+
     const resp = await fetch(url, {
       method,
       headers,
@@ -371,11 +457,15 @@ async function processTask(id: number, config: AIConfig) {
     await markPolling(id, taskId)
     await pollTask(record, config, taskId!)
   } catch (err: any) {
+    if (isAbortError(err) || await isCancelled(id)) return
     await failTask(id, err.message)
   }
 }
 
 async function markPolling(id: number, taskId: string | undefined) {
+  if (cancelledTaskIds.has(id)) return
+  const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+  if (!row || TERMINAL_TASK_STATUSES.has(String(row.status))) return
   await db.update(schema.sysTask)
     .set({ taskId, status: 'processing', updatedAt: now() })
     .where(eq(schema.sysTask.id, id))
@@ -383,6 +473,9 @@ async function markPolling(id: number, taskId: string | undefined) {
 }
 
 async function failTask(id: number, message: string) {
+  if (cancelledTaskIds.has(id)) return
+  const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+  if (!row || TERMINAL_TASK_STATUSES.has(String(row.status))) return
   logTaskError('SysTask', 'failed', { id, error: message })
   await db.update(schema.sysTask)
     .set({ status: 'failed', errorMsg: message, updatedAt: now() })
@@ -443,6 +536,7 @@ async function pollTask(
     : createdAtMs + VIDEO_RESUME_MAX_AGE_MS
 
   for (let i = 0; i < profile.attempts; i++) {
+    if (await isCancelled(record.id)) return
     if (Date.now() >= hardDeadlineMs) {
       await failTask(record.id, type === 'image'
         ? 'Timeout: Polling exceeded 10 minutes'
@@ -454,9 +548,10 @@ async function pollTask(
       return
     }
     if (!(opts?.immediate && i === 0)) {
-      await new Promise(r => setTimeout(r, profile.intervalMs))
+      if (await sleepOrCancel(record.id, profile.intervalMs)) return
     }
     try {
+      if (await isCancelled(record.id)) return
       const { url, method, headers } = adapter.buildPollRequest(config, taskId)
       logTaskProgress(label, 'poll-request', {
         id: record.id,
@@ -481,6 +576,7 @@ async function pollTask(
       const pollResp: any = adapter.parsePollResponse(result)
 
       if (pollResp.status === 'completed') {
+        if (await isCancelled(record.id)) return
         if (type === 'image') {
           if (pollResp.imageUrl) {
             logTaskSuccess(label, 'poll-complete', { id: record.id, taskId, imageUrl: pollResp.imageUrl })
@@ -516,6 +612,7 @@ async function pollTask(
         return
       }
     } catch (err: any) {
+      if (isAbortError(err) || await isCancelled(record.id)) return
       const exhausted = i === profile.attempts - 1
         || (profile.maxDurationMs != null && Date.now() - startedAt >= profile.maxDurationMs)
       if (exhausted) {
@@ -583,8 +680,24 @@ async function scheduleResume(row: SysTaskRecord): Promise<'poll' | 'retry' | 'f
       taskId: vendorTaskId,
       provider: config.provider,
     })
-    startTaskProcessor(id, type, pollTask(row, config, vendorTaskId, { immediate: true }))
+    if (type === 'video') {
+      if (!activeVideoIds.has(id) && !activeProcessors.has(id)) {
+        activeVideoIds.add(id)
+        startTaskProcessor(id, type, pollTask(row, config, vendorTaskId, { immediate: true }).finally(() => {
+          activeVideoIds.delete(id)
+          void pumpVideoQueue()
+        }))
+      }
+    } else {
+      startTaskProcessor(id, type, pollTask(row, config, vendorTaskId, { immediate: true }))
+    }
     return 'poll'
+  }
+
+  if (type === 'video') {
+    logTaskStart(taskLabel(type), 'resume-queue', { id, provider: config.provider })
+    enqueueVideo(id)
+    return 'retry'
   }
 
   if (age > SUBMIT_RETRY_MAX_AGE_MS) {
@@ -597,9 +710,56 @@ async function scheduleResume(row: SysTaskRecord): Promise<'poll' | 'retry' | 'f
   return 'retry'
 }
 
+export async function cancelGenerationTask(id: number) {
+  if (!Number.isInteger(id) || id <= 0) return null
+  cancelledTaskIds.add(id)
+  const queueIdx = videoWaitQueue.indexOf(id)
+  if (queueIdx >= 0) videoWaitQueue.splice(queueIdx, 1)
+
+  const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+  if (!row) return null
+  if (TERMINAL_TASK_STATUSES.has(String(row.status))) {
+    await emitTaskEvent(id)
+    return row
+  }
+
+  await db.update(schema.sysTask)
+    .set({ status: 'cancelled', errorMsg: 'Cancelled by user', updatedAt: now(), completedAt: now() })
+    .where(eq(schema.sysTask.id, id))
+  logTaskProgress(taskLabel(row.type as TaskType), 'cancelled', { id, taskId: row.taskId })
+  await emitTaskEvent(id)
+
+  const vendorId = String(row.taskId || '').trim()
+  if (vendorId && row.type === 'video') {
+    try {
+      const config = await resolveConfigForTask(row)
+      const adapter = config ? getVideoAdapter(config.provider) as { buildCancelRequest?: (c: AIConfig, taskId: string) => { url: string; method: string; headers: Record<string, string>; body?: unknown } } : null
+      const req = adapter?.buildCancelRequest?.(config!, vendorId)
+      if (req) {
+        await fetch(req.url, {
+          method: req.method,
+          headers: req.headers,
+          body: req.body == null ? undefined : JSON.stringify(req.body),
+          signal: AbortSignal.timeout(8_000),
+        })
+      }
+    } catch (err: any) {
+      logTaskWarn('VideoTask', 'vendor-cancel', { id, error: err?.message })
+    }
+  }
+  const [updated] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+  void pumpVideoQueue()
+  return updated || row
+}
+
 /** After a process crash, keep polling vendor jobs and persist results. */
 export async function resumeInterruptedTasks(): Promise<{ resumed: number; retried: number; failed: number }> {
-  const rows = (await db.select().from(schema.sysTask).where(eq(schema.sysTask.status, 'processing'))) as SysTaskRecord[]
+  const all = (await db.select().from(schema.sysTask)) as SysTaskRecord[]
+  const rows = all.filter((row) => {
+    if (row.type === 'image') return row.status === 'processing'
+    if (row.type === 'video') return row.status === 'processing' || row.status === 'queued'
+    return false
+  })
 
   let resumed = 0
   let retried = 0
@@ -624,6 +784,7 @@ export async function resumeInterruptedTasks(): Promise<{ resumed: number; retri
 }
 
 async function handleImageComplete(record: SysTaskRecord, imageUrl: string) {
+  if (cancelledTaskIds.has(record.id)) return
   const localPath = await downloadFile(imageUrl, 'images')
   // 列表页缩略图（前端按命名约定推导地址，失败不影响主流程）
   await generateImageThumb(localPath)
@@ -639,6 +800,7 @@ async function handleImageComplete(record: SysTaskRecord, imageUrl: string) {
 }
 
 async function handleImageCompleteBase64(record: SysTaskRecord, base64Data: string, mimeType: string) {
+  if (cancelledTaskIds.has(record.id)) return
   const localPath = await saveBase64Image(base64Data, mimeType, 'images')
   await generateImageThumb(localPath)
 
@@ -679,6 +841,7 @@ async function handleVideoCompleteBase64(
   mimeType: string,
   duration: number | null | undefined,
 ) {
+  if (cancelledTaskIds.has(record.id)) return
   const localPath = await saveBase64Video(base64Data, mimeType, 'videos')
   await extractVideoPoster(localPath)
   await db.update(schema.sysTask)
@@ -696,6 +859,7 @@ async function handleVideoCompleteBase64(
 }
 
 async function handleVideoComplete(record: SysTaskRecord, videoUrl: string, duration: number | null | undefined) {
+  if (cancelledTaskIds.has(record.id)) return
   const localPath = await downloadFile(videoUrl, 'videos')
   // 海报帧供列表/封面展示，避免前端为显示首帧缓冲整个视频
   await extractVideoPoster(localPath)

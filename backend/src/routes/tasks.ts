@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { eq, and, isNull } from '../db/query.js'
 import { db, schema } from '../db/index.js'
 import { success, created, badRequest } from '../utils/response.js'
-import { generateImage, generateVideo } from '../services/generation.js'
+import { generateImage, generateVideo, cancelGenerationTask } from '../services/generation.js'
 import { logTaskError, logTaskPayload, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { loadOwnedDrama, loadOwnedStoryboard, shouldScopeToOwner, getOwnerUserId } from '../utils/ownership.js'
 import { toSnakeCase } from '../utils/transform.js'
@@ -138,6 +138,18 @@ app.get('/', async (c) => {
   }
 
   return success(c, rows.map(r => toSnakeCase(r)))
+})
+
+// POST /tasks/:id/cancel — stop polling, skip queue, best-effort vendor cancel
+app.post('/:id/cancel', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) return badRequest(c, 'invalid task id')
+  const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+  if (!row) return badRequest(c, 'task not found')
+  await assertTaskOwned(c, row)
+  const updated = await cancelGenerationTask(id)
+  logTaskSuccess('TaskAPI', 'cancel', { taskId: id, status: updated?.status })
+  return success(c, updated ? toSnakeCase(updated) : null)
 })
 
 // GET /tasks/:id — 轮询任务状态

@@ -243,6 +243,21 @@ export class GeminiVideoAdapter implements VideoProviderAdapter {
     }
   }
 
+  /** Best-effort stop for a background Omni interaction. Vendor may ignore this. */
+  buildCancelRequest(config: AIConfig, taskId: string): ProviderRequest {
+    const url = new URL(joinProviderUrl(config.baseUrl, '/v1beta', `${interactionPollPath(taskId)}/cancel`))
+    url.searchParams.set('key', config.apiKey)
+    return {
+      url: url.toString(),
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': config.apiKey,
+        'Api-Revision': INTERACTIONS_API_REVISION,
+      },
+      body: undefined,
+    }
+  }
+
   parsePollResponse(result: any): VideoPollResponse {
     const status = String(result?.status || result?.state || '').toLowerCase()
     const videoUrl = this.extractVideoUrl(result) || undefined
