@@ -155,6 +155,11 @@
               <BaseSelect v-model="form.aspect_ratio" :options="aspectRatioOptions" placeholder="选择画面比例" />
               <span class="field-hint">创建后固定，视频生成将统一使用该比例</span>
             </label>
+            <label class="field">
+              <span class="field-label">对白语言</span>
+              <BaseSelect v-model="form.dialogue_language" :options="dialogueLanguageOptions" placeholder="选择对白语言" />
+              <span class="field-hint">角色在生成影片里的口语；剧本仍用当前写作语言</span>
+            </label>
           </div>
           <div class="dialog-foot">
             <button type="button" class="btn" @click="showCreate = false">取消</button>
@@ -184,6 +189,7 @@ import { toast } from 'vue-sonner'
 import { Film, Clock } from 'lucide-vue-next'
 import { dramaAPI, stylePresetAPI } from '~/composables/useApi'
 import BaseSelect from '~/components/BaseSelect.vue'
+import { DIALOGUE_LANGUAGE_OPTIONS, normalizeDialogueLanguage } from '~/utils/dialogue-language'
 
 const dramas = ref([])
 const loading = ref(false)
@@ -194,7 +200,7 @@ const sortMode = ref('updated')
 const activeMenuId = ref(null)
 const dramaToDelete = ref(null)
 const deletingDrama = ref(false)
-const form = ref({ title: '', style: '', aspect_ratio: '16:9' })
+const form = ref({ title: '', style: '', aspect_ratio: '16:9', dialogue_language: 'cmn-TW' })
 const stylePresets = ref([])
 const styleSelectOptions = computed(() => stylePresets.value.map(p => ({ label: p.name, value: p.value })))
 const selectedStyleDesc = computed(() => stylePresets.value.find(p => p.value === form.value.style)?.description || '')
@@ -204,6 +210,7 @@ const aspectRatioOptions = [
   { label: '1:1 · 方形', value: '1:1' },
   { label: '自适应', value: 'adaptive' },
 ]
+const dialogueLanguageOptions = DIALOGUE_LANGUAGE_OPTIONS
 const filters = [
   { label: '全部', value: 'all' },
   { label: '待开始', value: 'draft' },
@@ -273,7 +280,10 @@ async function load() {
 async function create() {
   if (!form.value.title?.trim()) return
   try {
-    const d = await dramaAPI.create(form.value)
+    const d = await dramaAPI.create({
+      ...form.value,
+      dialogue_language: normalizeDialogueLanguage(form.value.dialogue_language),
+    })
     showCreate.value = false
     navigateTo(`/drama/${d.id}`)
   } catch (e) {

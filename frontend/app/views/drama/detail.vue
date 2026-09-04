@@ -25,6 +25,12 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.5"/><line x1="7" y1="8" x2="7" y2="16"/><line x1="10" y1="8" x2="10" y2="16"/><line x1="13" y1="8" x2="13" y2="16"/><line x1="16" y1="8" x2="16" y2="16"/></svg>
             {{ drama.episodes?.length || 0 }} 集
           </span>
+          <label class="meta-item" @click.stop>
+            对白语言
+            <select class="input" style="width:auto;padding:2px 8px;font-size:12px" :value="normalizeDialogueLanguage(drama.dialogue_language || drama.dialogueLanguage)" @change="setDialogueLanguage($event.target.value)">
+              <option v-for="opt in DIALOGUE_LANGUAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+          </label>
         </div>
       </div>
       <button class="btn btn-primary head-action" @click="openAddEpisode">
@@ -553,6 +559,7 @@
 import { toast } from 'vue-sonner'
 import { dramaAPI, episodeAPI, characterAPI, sceneAPI, propAPI, uploadAPI } from '~/composables/useApi'
 import BaseSelect from '~/components/BaseSelect.vue'
+import { DIALOGUE_LANGUAGE_OPTIONS, normalizeDialogueLanguage } from '~/utils/dialogue-language'
 
 const route = useRoute()
 const drama = ref(null)
@@ -627,6 +634,19 @@ async function load() {
   try {
     drama.value = await dramaAPI.get(dramaId)
   } catch (e) {
+    toast.error(e.message)
+  }
+}
+
+async function setDialogueLanguage(code) {
+  const next = normalizeDialogueLanguage(code)
+  const prev = drama.value?.dialogue_language || drama.value?.dialogueLanguage
+  if (!drama.value || next === normalizeDialogueLanguage(prev)) return
+  drama.value = { ...drama.value, dialogue_language: next, dialogueLanguage: next }
+  try {
+    await dramaAPI.update(dramaId, { dialogue_language: next })
+  } catch (e) {
+    drama.value = { ...drama.value, dialogue_language: prev, dialogueLanguage: prev }
     toast.error(e.message)
   }
 }

@@ -20,6 +20,20 @@ test('drama creation records a fixed aspect ratio for video generation', () => {
   assert.match(dramas, /if \(body\.aspect_ratio !== undefined\) updates\.aspectRatio = body\.aspect_ratio/)
 })
 
+test('drama creation stores spoken dialogue language independently of UI locale', () => {
+  const dramas = read('src/routes/dramas.ts')
+  const schema = read('src/db/schema.ts')
+  const prompts = read('src/services/video-prompts.ts')
+  const generation = read('src/services/generation.ts')
+
+  assert.match(schema, /dialogueLanguage/)
+  assert.match(dramas, /dialogueLanguage: normalizeDialogueLanguage/)
+  assert.match(dramas, /body\.dialogue_language \|\| body\.dialogueLanguage/)
+  assert.match(dramas, /updates\.dialogueLanguage = normalizeDialogueLanguage/)
+  assert.match(prompts, /dialogueLanguageInstruction\(spoken\)/)
+  assert.match(generation, /appendVoLanguageDirective\(prompt, await getDramaDialogueLanguage/)
+})
+
 test('style presets route is mounted and implements CRUD', () => {
   const entry = read('src/index.ts')
   const route = read('src/routes/stylePresets.ts')

@@ -22,6 +22,8 @@ test('video prompt batch service runs per-shot async agent loop', () => {
   // 进度跟踪与文本模型覆盖
   assert.match(svc, /current_storyboard_id/)
   assert.match(svc, /modelOverride: opts\.model/)
+  assert.match(svc, /dialogueLanguageInstruction\(spoken\)/)
+  assert.match(svc, /getDramaDialogueLanguage\(dramaId\)/)
 })
 
 test('episodes route exposes video prompt batch endpoints', () => {
@@ -29,7 +31,7 @@ test('episodes route exposes video prompt batch endpoints', () => {
 
   assert.match(route, /app\.post\('\/:id\/generate-video-prompts'/)
   assert.match(route, /app\.get\('\/:id\/video-prompts-status'/)
-  assert.match(route, /startVideoPromptBatch\(ep\.id, ep\.dramaId/)
+  assert.match(route, /startVideoPromptBatch\(\s*ep\.id,\s*ep\.dramaId/)
   assert.match(route, /body\.storyboard_ids/)
   assert.match(route, /already_running/)
 })

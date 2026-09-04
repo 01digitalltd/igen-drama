@@ -15,6 +15,7 @@ import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuc
 import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue } from './style-preset.js'
+import { appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
 import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt, stripVideoFaceGridPrompt } from './face-grid.js'
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration } from './storyboard-prompt.js'
@@ -145,6 +146,7 @@ export async function generateVideo(params: GenerateVideoParams): Promise<number
     provider: config.provider,
     model: params.model || config.model,
   })
+  prompt = appendVoLanguageDirective(prompt, await getDramaDialogueLanguage(params.dramaId))
 
   const id = await createTask('video', config, {
     storyboardId: params.storyboardId,

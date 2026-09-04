@@ -45,3 +45,10 @@ test('AI rewrite completion automatically extracts assets', () => {
     /await refresh\(\)\s*panel\.value = 'production'\s*prodTab\.value = 'assets'\s*doExtractAll\(\)/,
   )
 })
+
+test('video step can change project dialogue language', () => {
+  assert.match(page, /dramaDialogueLanguage/)
+  assert.match(page, /setDialogueLanguage/)
+  assert.match(page, /dialogueLanguageInstruction\(dramaDialogueLanguage\.value\)/)
+  assert.match(page, /dialogue_language: next/)
+})

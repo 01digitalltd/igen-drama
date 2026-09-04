@@ -4,6 +4,7 @@ import { db, getInsertId, schema } from '../db/index.js'
 import { success, badRequest, notFound, created, now } from '../utils/response.js'
 import { toSnakeCase, toSnakeCaseArray } from '../utils/transform.js'
 import { getOwnerTenantId, getOwnerUserId, loadOwnedDrama, ownerDramaWhere } from '../utils/ownership.js'
+import { defaultDialogueLanguageFromLocale, normalizeDialogueLanguage } from '../services/dialogue-language.js'
 
 const app = new Hono()
 
@@ -59,6 +60,9 @@ app.post('/', async (c) => {
     genre: body.genre,
     style: body.style,
     aspectRatio: body.aspect_ratio || '16:9',
+    dialogueLanguage: normalizeDialogueLanguage(
+      body.dialogue_language || body.dialogueLanguage || defaultDialogueLanguageFromLocale(body.locale),
+    ),
     tags: body.tags ? JSON.stringify(body.tags) : null,
     metadata: body.metadata,
     ownerUserId: getOwnerUserId(c),
@@ -122,6 +126,9 @@ app.put('/:id', async (c) => {
   if (body.genre !== undefined) updates.genre = body.genre
   if (body.style !== undefined) updates.style = body.style
   if (body.aspect_ratio !== undefined) updates.aspectRatio = body.aspect_ratio
+  if (body.dialogue_language !== undefined || body.dialogueLanguage !== undefined) {
+    updates.dialogueLanguage = normalizeDialogueLanguage(body.dialogue_language ?? body.dialogueLanguage)
+  }
   if (body.status !== undefined) updates.status = body.status
   if (body.tags !== undefined) updates.tags = JSON.stringify(body.tags)
   if (body.metadata !== undefined) updates.metadata = body.metadata

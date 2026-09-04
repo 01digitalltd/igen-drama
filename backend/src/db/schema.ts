@@ -27,6 +27,7 @@ export type DramaRow = {
   genre: string | null
   style: string | null
   aspectRatio: string | null
+  dialogueLanguage: string | null
   totalEpisodes: number | null
   totalDuration: number | null
   status: string
@@ -290,7 +291,7 @@ export type AssetRow = {
 }
 
 export const dramas = defineTable<DramaRow>('dramas', [
-  'id', 'title', 'description', 'genre', 'style', 'aspectRatio', 'totalEpisodes', 'totalDuration',
+  'id', 'title', 'description', 'genre', 'style', 'aspectRatio', 'dialogueLanguage', 'totalEpisodes', 'totalDuration',
   'status', 'thumbnail', 'tags', 'metadata', 'ownerUserId', 'ownerTenantId', 'createdAt', 'updatedAt', 'deletedAt',
 ])
 
