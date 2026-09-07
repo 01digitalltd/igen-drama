@@ -3,7 +3,7 @@
  * 创建(processing) → 适配器构建请求 → 同步完成或异步轮询 → 下载落盘 → 回写业务表
  */
 import { db, getInsertId, schema } from '../db/index.js'
-import { eq } from '../db/query.js'
+import { and, eq } from '../db/query.js'
 import { getActiveConfig, getActiveConfigId, getConfigById, isOfficialProvider } from './ai.js'
 import { now } from '../utils/response.js'
 import { downloadFile, generateImageThumb, readImageAsCompressedDataUrl, saveBase64Image, saveBase64Video } from '../utils/storage.js'
@@ -20,6 +20,7 @@ import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from './video-mo
 import { stripCharacterFaceGridPrompt, stripVideoFaceGridPrompt } from './face-grid.js'
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds } from './storyboard-prompt.js'
 import { assertClipSecondsFit, clipDurationBounds } from './video-clip-policy.js'
+import { pickLatestActiveTask } from '../utils/generation-task-status.js'
 
 type TaskType = 'image' | 'video'
 
@@ -125,7 +126,50 @@ export async function generateImage(params: GenerateImageParams): Promise<number
   return id
 }
 
+/** Same-process lock so two POSTs for one storyboard share one insert. */
+const videoCreateByStoryboard = new Map<number, Promise<number>>()
+
+async function findActiveVideoTaskForStoryboard(storyboardId: number) {
+  const rows = await db.select().from(schema.sysTask).where(and(
+    eq(schema.sysTask.type, 'video'),
+    eq(schema.sysTask.storyboardId, storyboardId),
+  ))
+  return pickLatestActiveTask(rows as Array<{ id: number; status: string | null; createdAt: string | null }>)
+}
+
 export async function generateVideo(params: GenerateVideoParams): Promise<number> {
+  const storyboardId = Number(params.storyboardId)
+  if (Number.isInteger(storyboardId) && storyboardId > 0) {
+    const inflight = videoCreateByStoryboard.get(storyboardId)
+    if (inflight) return inflight
+    const work = generateVideoUniq({ ...params, storyboardId })
+    videoCreateByStoryboard.set(storyboardId, work)
+    try {
+      return await work
+    } finally {
+      if (videoCreateByStoryboard.get(storyboardId) === work) {
+        videoCreateByStoryboard.delete(storyboardId)
+      }
+    }
+  }
+  return generateVideoUniq(params)
+}
+
+async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
+  const storyboardId = Number(params.storyboardId)
+  if (Number.isInteger(storyboardId) && storyboardId > 0) {
+    const existing = await findActiveVideoTaskForStoryboard(storyboardId)
+    if (existing) {
+      logTaskWarn('VideoTask', 'reuse-active', {
+        id: existing.id,
+        storyboardId,
+        status: existing.status,
+      })
+      if (String(existing.status) === 'queued') enqueueVideo(existing.id)
+      return existing.id
+    }
+  }
+
   const style = await getDramaStyleValue(params.dramaId)
   const videoOpts = isRealisticDramaStyle(style) ? { excludeProviders: ['volcengine'] } : undefined
 

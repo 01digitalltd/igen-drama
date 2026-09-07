@@ -1677,6 +1677,7 @@ const pendingCharImageIds = ref([])
 const pendingSceneImageIds = ref([])
 const pendingPropImageIds = ref([])
 const pendingVideoIds = ref([])
+const inflightVideoIds = ref([])
 const videoTaskIds = ref({})
 const failedVideoMessages = ref({})
 // 任务列表面板：顶栏按钮触发的右侧抽屉,按集聚合 sys_task + video_merges
@@ -1994,8 +1995,30 @@ function isPendingSceneImage(id) {
   return pendingSceneImageIds.value.includes(id)
 }
 
+function storyboardIdOfTask(t) {
+  const n = Number(t?.storyboard_id ?? t?.storyboardId)
+  return Number.isInteger(n) && n > 0 ? n : 0
+}
+
+function isActiveVideoTaskStatus(status) {
+  const s = String(status || '').toLowerCase()
+  return s === 'processing' || s === 'queued' || s === 'pending'
+}
+
+function hasActiveVideoTask(id) {
+  const n = Number(id)
+  if (!Number.isInteger(n) || n <= 0) return false
+  return genTasks.value.some(t =>
+    t.type === 'video' && storyboardIdOfTask(t) === n && isActiveVideoTaskStatus(t.status)
+  )
+}
+
 function isPendingVideo(id) {
-  return pendingVideoIds.value.includes(id)
+  const n = Number(id)
+  if (!Number.isInteger(n) || n <= 0) return false
+  if (inflightVideoIds.value.some(x => Number(x) === n)) return true
+  if (pendingVideoIds.value.some(x => Number(x) === n)) return true
+  return hasActiveVideoTask(n)
 }
 
 function videoFailMessage(id) {
@@ -2154,15 +2177,18 @@ async function loadGenTasks() {
 
     // 生成中/失败状态只存在内存里,页面刷新后丢失;从 sys_task 记录按分镜恢复,
     // 否则已失败的镜头刷新后会退化成"待生成"
-    const videoTasks = genTasks.value.filter(t => t.type === 'video' && t.storyboard_id)
+    const videoTasks = genTasks.value.filter(t => t.type === 'video' && storyboardIdOfTask(t))
     // 每个分镜只取最新一条任务(created_at 降序、id 兜底),旧任务不干预当前状态
     const latestBySb = new Map()
     for (const t of videoTasks) {
-      const prev = latestBySb.get(t.storyboard_id)
+      const sbId = storyboardIdOfTask(t)
+      const prev = latestBySb.get(sbId)
+      const created = t.created_at || t.createdAt || ''
+      const prevCreated = prev?.created_at || prev?.createdAt || ''
       if (!prev
-        || String(t.created_at || '') > String(prev.created_at || '')
-        || (String(t.created_at || '') === String(prev.created_at || '') && t.id > prev.id)) {
-        latestBySb.set(t.storyboard_id, t)
+        || String(created) > String(prevCreated)
+        || (String(created) === String(prevCreated) && t.id > prev.id)) {
+        latestBySb.set(sbId, t)
       }
     }
     // pending/failed 全量重建而非与现有值并集——否则刷新恢复的"生成中"在任务失败后
@@ -2170,17 +2196,19 @@ async function loadGenTasks() {
     const pending = new Set()
     const failed = {}
     for (const [sbId, t] of latestBySb) {
-      const active = t.status === 'processing' || t.status === 'queued' || t.status === 'pending'
-      if (active) {
+      if (isActiveVideoTaskStatus(t.status)) {
         pending.add(sbId)
         videoTaskIds.value[sbId] = t.id
         continue
       }
       if (hasVid(sbs.value.find(s => s.id === sbId))) continue
-      if (t.status === 'failed') failed[sbId] = t.error_msg || '生成失败'
+      if (t.status === 'failed') failed[sbId] = t.error_msg || t.errorMsg || '生成失败'
     }
     // 刚点击提交、任务记录尚未加载出来的本地状态保留,避免状态闪退
-    for (const id of pendingVideoIds.value) if (!latestBySb.has(id)) pending.add(id)
+    for (const id of [...pendingVideoIds.value, ...inflightVideoIds.value]) {
+      const n = Number(id)
+      if (Number.isInteger(n) && n > 0 && !latestBySb.has(n)) pending.add(n)
+    }
     for (const id of Object.keys(failedVideoMessages.value)) {
       if (!latestBySb.has(Number(id))) failed[id] = failedVideoMessages.value[id]
     }
@@ -2194,8 +2222,8 @@ function stopGenTasksPolling() {
 }
 
 const genTaskActiveCount = computed(() =>
-  genTasks.value.filter(t => t.status === 'processing').length +
-  genMerges.value.filter(m => m.status === 'processing' || m.status === 'pending').length
+  genTasks.value.filter(t => isActiveVideoTaskStatus(t.status)).length +
+  genMerges.value.filter(m => isActiveVideoTaskStatus(m.status)).length
 )
 const genTaskDoneCount = computed(() =>
   genTasks.value.filter(t => t.status === 'completed').length +
@@ -3433,6 +3461,10 @@ function removeRefMedia(kind, index) {
 }
 
 async function genVid(sb) {
+  if (isPendingVideo(sb.id)) {
+    toast.info('该分镜正在生成，请等待完成或先停止')
+    return
+  }
   const referenceImages = getShotReferenceImages(sb)
   const params = {
     storyboard_id: sb.id,
@@ -3455,22 +3487,24 @@ async function genVid(sb) {
     toast.error('需要至少一个参考素材或视频提示词')
     return
   }
-  if (isPendingVideo(sb.id)) return
+  inflightVideoIds.value = [...inflightVideoIds.value, sb.id]
+  pendingVideoIds.value = [...pendingVideoIds.value, sb.id]
   try {
     delete failedVideoMessages.value[sb.id]
-    pendingVideoIds.value.push(sb.id)
     const generation = await taskAPI.generate({ type: 'video', ...params })
     if (generation?.id) videoTaskIds.value[sb.id] = generation.id
     toast.success('已加入出片队列')
     await refresh()
     pollVideoGeneration(generation?.id, sb.id)
   } catch (e) {
-    pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== sb.id)
+    pendingVideoIds.value = pendingVideoIds.value.filter(item => Number(item) !== Number(sb.id))
     failedVideoMessages.value = {
       ...failedVideoMessages.value,
       [sb.id]: e.message || '视频生成失败',
     }
     toast.error(e.message)
+  } finally {
+    inflightVideoIds.value = inflightVideoIds.value.filter(item => Number(item) !== Number(sb.id))
   }
 }
 async function pollVideoGeneration(generationId, storyboardId) {
@@ -3478,7 +3512,7 @@ async function pollVideoGeneration(generationId, storyboardId) {
     watchAsyncResult(() => {
       const target = sbs.value.find(s => s.id === storyboardId)
       const done = !!(target?.video_url || target?.videoUrl)
-      if (done) pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
+      if (done) pendingVideoIds.value = pendingVideoIds.value.filter(item => Number(item) !== Number(storyboardId))
       return done
     }, 60, 4000)
     return
@@ -3490,18 +3524,18 @@ async function pollVideoGeneration(generationId, storyboardId) {
       await refresh()
       const status = String(res?.status || '')
       if (status === 'completed') {
-        pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
+        pendingVideoIds.value = pendingVideoIds.value.filter(item => Number(item) !== Number(storyboardId))
         delete failedVideoMessages.value[storyboardId]
         toast.success('视频生成完成')
         return
       }
       if (status === 'cancelled' || status === 'canceled') {
-        pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
+        pendingVideoIds.value = pendingVideoIds.value.filter(item => Number(item) !== Number(storyboardId))
         toast.info('已停止')
         return
       }
       if (status === 'failed') {
-        pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
+        pendingVideoIds.value = pendingVideoIds.value.filter(item => Number(item) !== Number(storyboardId))
         failedVideoMessages.value = {
           ...failedVideoMessages.value,
           [storyboardId]: res?.error_msg || res?.errorMsg || '视频生成失败',
@@ -3511,7 +3545,7 @@ async function pollVideoGeneration(generationId, storyboardId) {
       }
     } catch {}
   }
-  pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
+  pendingVideoIds.value = pendingVideoIds.value.filter(item => Number(item) !== Number(storyboardId))
   failedVideoMessages.value = {
     ...failedVideoMessages.value,
     [storyboardId]: '视频生成超时',
@@ -3523,7 +3557,7 @@ async function cancelVid(sb) {
   if (!taskId) return
   try {
     await taskAPI.cancel(taskId)
-    pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== sb.id)
+    pendingVideoIds.value = pendingVideoIds.value.filter(item => Number(item) !== Number(sb.id))
     toast.info('已停止')
   } catch (e) {
     toast.error(e.message || '停止失败')
@@ -3555,7 +3589,7 @@ function batchVideos() {
     watchAsyncResult(() => pendingIds.every(id => {
       const target = sbs.value.find(s => s.id === id)
       const done = !!getVideoUrl(target)
-      if (done) pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== id)
+      if (done) pendingVideoIds.value = pendingVideoIds.value.filter(item => Number(item) !== Number(id))
       return done
     }), 80, 4000)
   }
