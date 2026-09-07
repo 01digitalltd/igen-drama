@@ -1,3 +1,5 @@
+import { clipDurationBounds } from './video-clip-policy.js'
+
 /**
  * Video generation prefers a dedicated video_prompt. Storyboard breakdown
  * writes description (and atmosphere) instead, so empty video_prompt must
@@ -30,21 +32,13 @@ export function parseVideoPromptDurationSeconds(prompt?: string | null): number 
   return maxEnd > 0 ? maxEnd : null
 }
 
-function videoDurationBounds(provider?: string | null, model?: string | null) {
-  const p = String(provider || '').toLowerCase()
-  const m = String(model || '').toLowerCase()
-  if (p === 'gemini' || m.includes('omni')) return { min: 3, max: 10 }
-  if (p === 'minimax' || m.includes('minimax')) return { min: 4, max: 15 }
-  return { min: 4, max: 15 }
-}
-
 export function resolveVideoGenerationDuration(opts: {
   prompt?: string | null
   shotDuration?: number | null
   provider?: string | null
   model?: string | null
 }): number {
-  const bounds = videoDurationBounds(opts.provider, opts.model)
+  const bounds = clipDurationBounds(opts.provider, opts.model)
   const parsed = parseVideoPromptDurationSeconds(opts.prompt)
   const raw = parsed ?? Number(opts.shotDuration)
   const n = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 10

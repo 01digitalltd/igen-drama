@@ -13,6 +13,7 @@ import { subscribeEpisodeEvents } from '../services/episode-events.js'
 import { getVideoPromptBatchStatus, startVideoPromptBatch } from '../services/video-prompts.js'
 import { loadOwnedDrama, loadOwnedEpisode } from '../utils/ownership.js'
 import { getRequestLocale } from '../middleware/request-locale.js'
+import { collectShotOverflow, loadEpisodeClipPolicy } from '../services/episode-clip-policy.js'
 
 const app = new Hono()
 
@@ -56,6 +57,9 @@ app.post('/', async (c) => {
     videoConfigId,
     // 视频分辨率在创建集时固定（480p/720p），后续可通过 PUT 修改
     resolution: body.resolution === '480p' ? '480p' : '720p',
+    targetDurationSeconds: Number.isFinite(Number(body.target_duration_seconds)) && Number(body.target_duration_seconds) > 0
+      ? Math.round(Number(body.target_duration_seconds))
+      : undefined,
     createdAt: ts,
     updatedAt: ts,
   })
@@ -78,7 +82,7 @@ app.put('/:id', async (c) => {
   await loadOwnedEpisode(c, id)
   const body = await c.req.json()
 
-  const allowed = ['content', 'script_content', 'title', 'description', 'status', 'resolution', 'video_config_id']
+  const allowed = ['content', 'script_content', 'title', 'description', 'status', 'resolution', 'video_config_id', 'target_duration_seconds']
   const updates: Record<string, any> = {}
   for (const key of allowed) {
     if (key in body) updates[key] = body[key]
@@ -117,9 +121,27 @@ app.put('/:id', async (c) => {
   if ('status' in updates) drizzleUpdates.status = updates.status
   if ('resolution' in updates) drizzleUpdates.resolution = updates.resolution
   if (nextVideoConfigId != null) drizzleUpdates.videoConfigId = nextVideoConfigId
+  if ('target_duration_seconds' in updates) {
+    const seconds = Number(updates.target_duration_seconds)
+    if (updates.target_duration_seconds == null || updates.target_duration_seconds === '') {
+      drizzleUpdates.targetDurationSeconds = null
+    } else if (!Number.isFinite(seconds) || seconds < 1) {
+      return badRequest(c, 'target_duration_seconds 无效')
+    } else {
+      drizzleUpdates.targetDurationSeconds = Math.round(seconds)
+    }
+  }
 
   await db.update(schema.episodes).set(drizzleUpdates).where(eq(schema.episodes.id, id))
-  return success(c)
+  const [fresh] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, id))
+  const policy = await loadEpisodeClipPolicy(id)
+  const overflow = policy ? await collectShotOverflow(id, policy.bounds) : { durationIds: [], promptIds: [] }
+  return success(c, {
+    ...(fresh ? toSnakeCase(fresh) : {}),
+    overflow_shot_ids: overflow.durationIds,
+    overflow_prompt_ids: overflow.promptIds,
+    clip_policy: policy?.bounds || null,
+  })
 })
 
 // DELETE /episodes/:id - Soft delete episode（其分镜/生成记录保留但不可达）

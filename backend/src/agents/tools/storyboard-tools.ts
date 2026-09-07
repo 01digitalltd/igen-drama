@@ -10,6 +10,8 @@ import { eq } from '../../db/query.js'
 import { now } from '../../utils/response.js'
 import { logTaskProgress, logTaskSuccess } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
+import { clampShotDurationForModel } from '../../services/video-clip-policy.js'
+import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
 
 async function syncStoryboardCharacters(storyboardId: number, characterIds: number[]) {
   await db.delete(schema.storyboardCharacters)
@@ -198,6 +200,7 @@ const readStoryboardContext = createTool({
         }
       }))
 
+    const clip = await loadEpisodeClipPolicy(episodeId)
     const payload = {
       episode: {
         id: ep.id,
@@ -210,6 +213,7 @@ const readStoryboardContext = createTool({
       scenes,
       props,
       existing_storyboards: existingStoryboardPayload,
+      video_generation: clip?.videoGeneration || null,
     }
     logTaskSuccess('StoryboardTool', 'read-context', {
       episodeId,
@@ -257,6 +261,9 @@ const saveStoryboards = createTool({
     if ('error' in ids) return ids
     const { episodeId, dramaId } = ids
     const ts = now()
+    const clip = await loadEpisodeClipPolicy(episodeId)
+    const bounds = clip?.bounds
+    const durationWarnings: string[] = []
     logTaskProgress('StoryboardTool', 'save-begin', {
       episodeId,
       dramaId,
@@ -285,6 +292,11 @@ const saveStoryboards = createTool({
 
     for (const sb of storyboards) {
       await validateStoryboardBindings(episodeId, dramaId, sb.scene_id, sb.character_ids, sb.prop_ids)
+      const rawDuration = sb.duration || 10
+      const duration = bounds ? clampShotDurationForModel(rawDuration, bounds, bounds.typical) : rawDuration
+      if (bounds && duration !== rawDuration) {
+        durationWarnings.push(`shot ${sb.shot_number}: ${rawDuration}s → ${duration}s (max ${bounds.max}s)`)
+      }
       const existingId = shotToId.get(sb.shot_number)
       if (existingId !== undefined) {
         await db.update(schema.storyboards).set({
@@ -295,7 +307,7 @@ const saveStoryboards = createTool({
           atmosphere: sb.atmosphere, imagePrompt: sb.image_prompt,
           videoPrompt: sb.video_prompt, bgmPrompt: sb.bgm_prompt,
           soundEffect: sb.sound_effect,
-          sceneId: sb.scene_id, duration: sb.duration || 10,
+          sceneId: sb.scene_id, duration,
           updatedAt: ts,
         }).where(eq(schema.storyboards.id, existingId))
         await syncStoryboardCharacters(existingId, sb.character_ids || [])
@@ -311,7 +323,7 @@ const saveStoryboards = createTool({
           atmosphere: sb.atmosphere, imagePrompt: sb.image_prompt,
           videoPrompt: sb.video_prompt, bgmPrompt: sb.bgm_prompt,
           soundEffect: sb.sound_effect,
-          sceneId: sb.scene_id, duration: sb.duration || 10,
+          sceneId: sb.scene_id, duration,
           createdAt: ts, updatedAt: ts,
         })
         const newId = getInsertId(res)
@@ -337,7 +349,12 @@ const saveStoryboards = createTool({
       count: storyboards.length,
       totalDuration,
     })
-    return { message: `Saved ${storyboards.length} storyboards`, count: storyboards.length, total_duration: totalDuration }
+    return {
+      message: `Saved ${storyboards.length} storyboards`,
+      count: storyboards.length,
+      total_duration: totalDuration,
+      duration_warnings: durationWarnings,
+    }
   },
 })
 
@@ -421,7 +438,12 @@ const updateStoryboard = createTool({
     if ('sound_effect' in fields) updates.soundEffect = fields.sound_effect
     if ('description' in fields) updates.description = fields.description
     if ('scene_id' in fields) updates.sceneId = fields.scene_id
-    if ('duration' in fields) updates.duration = fields.duration
+    if ('duration' in fields) {
+      const clip = await loadEpisodeClipPolicy(episodeId)
+      updates.duration = clip?.bounds
+        ? clampShotDurationForModel(fields.duration, clip.bounds, clip.bounds.typical)
+        : fields.duration
+    }
     await db.update(schema.storyboards).set(updates).where(eq(schema.storyboards.id, storyboard_id))
     if ('character_ids' in fields) await syncStoryboardCharacters(storyboard_id, fields.character_ids || [])
     if ('prop_ids' in fields) await syncStoryboardProps(storyboard_id, fields.prop_ids || [])

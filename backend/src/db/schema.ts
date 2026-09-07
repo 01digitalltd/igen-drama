@@ -56,6 +56,7 @@ export type EpisodeRow = {
   imageConfigId: number | null
   videoConfigId: number | null
   resolution: string | null
+  targetDurationSeconds: number | null
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -297,7 +298,8 @@ export const dramas = defineTable<DramaRow>('dramas', [
 
 export const episodes = defineTable<EpisodeRow>('episodes', [
   'id', 'dramaId', 'episodeNumber', 'title', 'content', 'scriptContent', 'description', 'duration',
-  'status', 'videoUrl', 'thumbnail', 'imageConfigId', 'videoConfigId', 'resolution', 'createdAt', 'updatedAt', 'deletedAt',
+  'status', 'videoUrl', 'thumbnail', 'imageConfigId', 'videoConfigId', 'resolution', 'targetDurationSeconds',
+  'createdAt', 'updatedAt', 'deletedAt',
 ])
 
 export const characters = defineTable<CharacterRow>('characters', [

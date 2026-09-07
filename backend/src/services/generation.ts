@@ -18,7 +18,8 @@ import { getDramaStyleValue } from './style-preset.js'
 import { appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
 import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt, stripVideoFaceGridPrompt } from './face-grid.js'
-import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration } from './storyboard-prompt.js'
+import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds } from './storyboard-prompt.js'
+import { assertClipSecondsFit, clipDurationBounds } from './video-clip-policy.js'
 
 type TaskType = 'image' | 'video'
 
@@ -154,6 +155,10 @@ export async function generateVideo(params: GenerateVideoParams): Promise<number
     model: params.model || config.model,
   })
   prompt = appendVoLanguageDirective(prompt, await getDramaDialogueLanguage(params.dramaId))
+
+  const bounds = clipDurationBounds(config.provider, params.model || config.model)
+  assertClipSecondsFit(parseVideoPromptDurationSeconds(prompt), bounds, 'prompt')
+  assertClipSecondsFit(shotDuration, bounds, 'shot')
 
   const id = await createTask('video', config, {
     storyboardId: params.storyboardId,

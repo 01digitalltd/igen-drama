@@ -26,6 +26,13 @@ test('video prompt batch service runs per-shot async agent loop', () => {
   assert.match(svc, /getDramaDialogueLanguage\(dramaId\)/)
 })
 
+test('storyboard context injects video_generation clip bounds', () => {
+  const tools = read('src/agents/tools/storyboard-tools.ts')
+  assert.match(tools, /video_generation/)
+  assert.match(tools, /clampShotDurationForModel/)
+  assert.match(tools, /duration_warnings/)
+})
+
 test('episodes route exposes video prompt batch endpoints', () => {
   const route = read('src/routes/episodes.ts')
 

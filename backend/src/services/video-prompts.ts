@@ -10,6 +10,7 @@ import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess } from '../
 import { withContentLanguage } from '../utils/content-language.js'
 import { dialogueLanguageInstruction, getDramaDialogueLanguage } from './dialogue-language.js'
 import { publishEpisodeEvent } from './episode-events.js'
+import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
 
 export interface VideoPromptBatchStatus {
   status: 'running' | 'done' | 'error'
@@ -55,6 +56,8 @@ export async function startVideoPromptBatch(
   }
 
   const spoken = await getDramaDialogueLanguage(dramaId)
+  const clip = await loadEpisodeClipPolicy(episodeId)
+  const bounds = clip?.bounds
 
   const task: VideoPromptBatchStatus = {
     status: 'running',
@@ -84,8 +87,8 @@ export async function startVideoPromptBatch(
         await agent.generate([{
           role: 'user',
           content: [
-            withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})生成视频提示词(video_prompt)。视频模型:${videoLabel},请根据该模型的特性和时长限制生成。
-请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】子镜头与台词/旁白)、氛围及时长，据此生成 video_prompt(按 3 秒分段换行、用 @角色名/@场景名/@道具名 引用参考素材；段落内允许多镜头切镜，段与段可以是不同景别/角度/对象，但不跨场景，切镜点对齐分镜 description 的【镜头N】结构),然后调用 update_storyboard 保存到分镜 ID:${sb.id}。update_storyboard 参数只传 storyboard_id 和 video_prompt 两个键,不要回传该分镜的其他任何字段,不要重新拆分整集。`, opts.locale),
+            withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})生成视频提示词(video_prompt)。视频模型:${videoLabel}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${sb.duration || bounds?.typical || 10}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${Math.min(Number(sb.duration) || bounds?.max || 15, bounds?.max || 15)}s。
+请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】子镜头与台词/旁白)、氛围、时长及 video_generation 约束，据此生成 video_prompt(用 @角色名/@场景名/@道具名 引用参考素材；段落内允许多镜头切镜，段与段可以是不同景别/角度/对象，但不跨场景，切镜点对齐分镜 description 的【镜头N】结构),然后调用 update_storyboard 保存到分镜 ID:${sb.id}。update_storyboard 参数只传 storyboard_id 和 video_prompt 两个键,不要回传该分镜的其他任何字段,不要重新拆分整集。`, opts.locale),
             dialogueLanguageInstruction(spoken),
           ].join('\n\n'),
         }], { maxSteps: 8, requestContext })

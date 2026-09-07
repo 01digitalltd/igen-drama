@@ -5,6 +5,8 @@ import { success, created, now, badRequest } from '../utils/response.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { logTaskPayload, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { loadOwnedEpisode, loadOwnedStoryboard } from '../utils/ownership.js'
+import { clampShotDurationForModel } from '../services/video-clip-policy.js'
+import { loadEpisodeClipPolicy } from '../services/episode-clip-policy.js'
 
 const app = new Hono()
 
@@ -91,13 +93,17 @@ app.post('/', async (c) => {
   })
   logTaskPayload('StoryboardAPI', 'create body', body)
   await validateStoryboardBindings(body.episode_id, body.scene_id, body.character_ids, body.prop_ids)
+  const clip = await loadEpisodeClipPolicy(Number(body.episode_id))
+  const duration = clip?.bounds
+    ? clampShotDurationForModel(body.duration || clip.bounds.typical, clip.bounds, clip.bounds.typical)
+    : (body.duration || 10)
   const res = await db.insert(schema.storyboards).values({
     episodeId: body.episode_id,
     storyboardNumber: body.storyboard_number || 1,
     title: body.title,
     description: body.description,
     sceneId: body.scene_id,
-    duration: body.duration || 10,
+    duration,
     createdAt: ts,
     updatedAt: ts,
   })
@@ -144,6 +150,12 @@ app.put('/:id', async (c) => {
   const updates: Record<string, any> = { updatedAt: now() }
   for (const [snakeKey, camelKey] of Object.entries(fieldMap)) {
     if (snakeKey in body) updates[camelKey] = body[snakeKey]
+  }
+  if ('duration' in updates) {
+    const clip = await loadEpisodeClipPolicy(storyboard.episodeId)
+    if (clip?.bounds) {
+      updates.duration = clampShotDurationForModel(updates.duration, clip.bounds, clip.bounds.typical)
+    }
   }
 
   await validateStoryboardBindings(
