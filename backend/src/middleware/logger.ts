@@ -21,18 +21,23 @@ function formatTime(): string {
   return new Date().toLocaleTimeString('zh-CN', { hour12: false })
 }
 
+function isHealthProbe(path: string): boolean {
+  return path === '/health' || path.endsWith('/health')
+}
+
 /**
  * 全局日志中间件 — 打印请求方法/路径/状态/耗时/请求体
+ * 成功的 health probe（k8s/docker）不记 access log，避免刷屏。
  */
 export const requestLogger: MiddlewareHandler = async (c, next) => {
   const method = c.req.method
   const path = c.req.path
   const start = performance.now()
+  const quiet = isHealthProbe(path)
 
-  // 打印请求
   const time = formatTime()
   let bodyInfo = ''
-  if (['POST', 'PUT', 'PATCH'].includes(method)) {
+  if (!quiet && ['POST', 'PUT', 'PATCH'].includes(method)) {
     try {
       const clone = c.req.raw.clone()
       const text = await clone.text()
@@ -43,12 +48,18 @@ export const requestLogger: MiddlewareHandler = async (c, next) => {
     } catch {}
   }
 
-  console.log(`${colors.dim}${time}${colors.reset} ${colors.cyan}${method}${colors.reset} ${path}${bodyInfo}`)
+  if (!quiet) {
+    console.log(`${colors.dim}${time}${colors.reset} ${colors.cyan}${method}${colors.reset} ${path}${bodyInfo}`)
+  }
 
   await next()
 
-  const ms = (performance.now() - start).toFixed(0)
   const status = c.res.status
+  if (quiet && status < 400) {
+    return
+  }
+
+  const ms = (performance.now() - start).toFixed(0)
   const sc = statusColor(status)
   console.log(`${colors.dim}${time}${colors.reset} ${colors.cyan}${method}${colors.reset} ${path} ${sc}${status}${colors.reset} ${colors.dim}${ms}ms${colors.reset}`)
 }
