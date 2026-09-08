@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration } from '../src/services/storyboard-prompt.ts'
+import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs } from '../src/services/storyboard-prompt.ts'
 
 test('prefers dedicated video_prompt over storyboard description', () => {
   assert.equal(
@@ -57,5 +57,23 @@ test('generation duration follows prompt timeline and clamps to the model', () =
   assert.equal(
     resolveVideoGenerationDuration({ prompt: '', shotDuration: 9, provider: 'minimax' }),
     9,
+  )
+})
+
+test('Omni image_refs follow scene then character then prop order', () => {
+  assert.deepEqual(
+    buildShotImageRefs({
+      scene: { location: '咖啡厅', image_url: 'static/cafe.png' },
+      characters: [
+        { name: '小明', image_url: 'static/ming.png' },
+        { name: '路人', image_url: '' },
+      ],
+      props: [{ name: '信', image_url: 'static/letter.png' }],
+    }),
+    [
+      { index: 0, tag: '<IMAGE_REF_0>', kind: 'scene', name: '咖啡厅' },
+      { index: 1, tag: '<IMAGE_REF_1>', kind: 'character', name: '小明' },
+      { index: 2, tag: '<IMAGE_REF_2>', kind: 'prop', name: '信' },
+    ],
   )
 })

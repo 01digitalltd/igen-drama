@@ -26,6 +26,8 @@ test('video prompt batch service runs per-shot async agent loop', () => {
   assert.match(svc, /getDramaDialogueLanguage\(dramaId\)/)
   assert.match(svc, /prompt_skill/)
   assert.match(svc, /video-prompt\/omni/)
+  assert.match(svc, /<IMAGE_REF_N>/)
+  assert.match(svc, /image_refs/)
 })
 
 test('storyboard context injects video_generation clip bounds', () => {
@@ -33,6 +35,8 @@ test('storyboard context injects video_generation clip bounds', () => {
   assert.match(tools, /video_generation/)
   assert.match(tools, /clampShotDurationForModel/)
   assert.match(tools, /duration_warnings/)
+  assert.match(tools, /image_refs/)
+  assert.match(tools, /buildShotImageRefs/)
 })
 
 test('episodes route exposes video prompt batch endpoints', () => {

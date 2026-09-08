@@ -28,13 +28,15 @@ test('prompt_generator video prompt format uses @name references instead of XML 
   assert.doesNotMatch(skill, /<location>/)
   assert.doesNotMatch(skill, /<role>/)
 
-  // Omni SKILL.md：落库仍用 @名字，时间轴用 [0-3s]，必写音频
-  assert.match(omni, /@场景名/)
-  assert.match(omni, /@角色名/)
+  // Omni SKILL.md：落库直接写官方简单标记 <IMAGE_REF_N>
+  assert.match(omni, /<IMAGE_REF_0>/)
+  assert.match(omni, /<IMAGE_REF_N>/)
   assert.match(omni, /\[0-3s\]/)
   assert.match(omni, /无对白/)
-  assert.match(omni, /<IMAGE_REF_N>/)
+  assert.match(omni, /简单标记/)
+  assert.match(omni, /image_refs/)
   assert.doesNotMatch(omni, /<location>/)
   assert.doesNotMatch(omni, /<role>/)
   assert.match(omni, /不要写成 Seedance/)
+  assert.match(omni, /不要写 `\[# Sources\]`/)
 })

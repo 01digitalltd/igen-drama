@@ -108,19 +108,9 @@ export function rewriteOmniPromptRefs(prompt: string) {
   })
 }
 
-function omniReferencePrefix(imageCount: number) {
-  if (imageCount <= 0) return ''
-  const refs = Array.from({ length: imageCount }, (_, i) => `<IMAGE_REF_${i}>@Image${i + 1}`).join(' ')
-  return `[# References ${refs}]`
-}
-
-export function withOmniReferenceGuide(prompt: string, task: string, imageCount = 0) {
-  let text = rewriteOmniPromptRefs(prompt)
+export function withOmniReferenceGuide(prompt: string, task: string) {
+  const text = rewriteOmniPromptRefs(prompt)
   if (task !== 'reference_to_video') return text
-  if (!text.includes('[# References') && imageCount > 0) {
-    const prefix = omniReferencePrefix(imageCount)
-    text = text ? `${prefix}\n${text}` : prefix
-  }
   if (text.includes('should not be used as literal initial frames')) return text
   return text ? `${text}\n\n${REFERENCE_GUIDE}` : REFERENCE_GUIDE
 }
@@ -187,7 +177,7 @@ export class GeminiVideoAdapter implements VideoProviderAdapter {
     const task = chooseOmniVideoTask(imageSources.length, {
       literalFirstFrame: Boolean(firstFrame || lastFrame) && refImages.length === 0,
     })
-    const text = withOmniReferenceGuide(prompt, task, imageSources.length)
+    const text = withOmniReferenceGuide(prompt, task)
 
     const input: any[] = []
     if (text) input.push({ type: 'text', text })

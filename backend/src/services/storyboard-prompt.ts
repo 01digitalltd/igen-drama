@@ -32,6 +32,46 @@ export function parseVideoPromptDurationSeconds(prompt?: string | null): number 
   return maxEnd > 0 ? maxEnd : null
 }
 
+export type ShotImageRef = {
+  index: number
+  tag: string
+  kind: 'scene' | 'character' | 'prop'
+  name: string
+}
+
+const OMNI_REF_LIMIT = 10
+
+/** Same order as generation: scene still, then character stills, then prop stills. */
+export function buildShotImageRefs(opts: {
+  scene?: { location?: string | null; imageUrl?: string | null; image_url?: string | null } | null
+  characters?: Array<{ name?: string | null; imageUrl?: string | null; image_url?: string | null }>
+  props?: Array<{ name?: string | null; imageUrl?: string | null; image_url?: string | null }>
+}): ShotImageRef[] {
+  const ordered: ShotImageRef[] = []
+  const seen = new Set<string>()
+  const push = (kind: ShotImageRef['kind'], name: string, url?: string | null) => {
+    const image = String(url || '').trim()
+    if (!image || seen.has(image) || ordered.length >= OMNI_REF_LIMIT) return
+    seen.add(image)
+    const index = ordered.length
+    ordered.push({
+      index,
+      tag: `<IMAGE_REF_${index}>`,
+      kind,
+      name: String(name || '').trim(),
+    })
+  }
+  const scene = opts.scene
+  push('scene', scene?.location || '', scene?.imageUrl || scene?.image_url)
+  for (const character of opts.characters || []) {
+    push('character', character.name || '', character.imageUrl || character.image_url)
+  }
+  for (const prop of opts.props || []) {
+    push('prop', prop.name || '', prop.imageUrl || prop.image_url)
+  }
+  return ordered
+}
+
 export function resolveVideoGenerationDuration(opts: {
   prompt?: string | null
   shotDuration?: number | null

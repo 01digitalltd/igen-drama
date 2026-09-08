@@ -12,6 +12,7 @@ import { logTaskProgress, logTaskSuccess } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
 import { clampShotDurationForModel } from '../../services/video-clip-policy.js'
 import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
+import { buildShotImageRefs } from '../../services/storyboard-prompt.js'
 
 async function syncStoryboardCharacters(storyboardId: number, characterIds: number[]) {
   await db.delete(schema.storyboardCharacters)
@@ -178,6 +179,10 @@ const readStoryboardContext = createTool({
         image_url: p.imageUrl || '',
       }))
 
+    const charsById = new Map(characters.map(c => [c.id, c]))
+    const scenesById = new Map(scenes.map(s => [s.id, s]))
+    const propsById = new Map(props.map(p => [p.id, p]))
+
     const existingStoryboardPayload = await Promise.all(existingStoryboards
       .filter(sb => !sb.deletedAt)
       .map(async (sb) => {
@@ -185,18 +190,26 @@ const readStoryboardContext = createTool({
           .where(eq(schema.storyboardCharacters.storyboardId, sb.id))
         const sbPropLinks = await db.select().from(schema.storyboardProps)
           .where(eq(schema.storyboardProps.storyboardId, sb.id))
+        const characterIds = links.map(link => link.characterId)
+        const propIds = sbPropLinks.map(link => link.propId)
+        const scene = sb.sceneId != null ? scenesById.get(sb.sceneId) : null
         return {
           id: sb.id,
           shot_number: sb.storyboardNumber,
           title: sb.title || '',
           scene_id: sb.sceneId,
-          character_ids: links.map(link => link.characterId),
-          prop_ids: sbPropLinks.map(link => link.propId),
+          character_ids: characterIds,
+          prop_ids: propIds,
           shot_type: sb.shotType || '',
           duration: sb.duration || 0,
           description: sb.description || '',
           atmosphere: sb.atmosphere || '',
           video_prompt: sb.videoPrompt || '',
+          image_refs: buildShotImageRefs({
+            scene: scene ? { location: scene.location, image_url: scene.image_url } : null,
+            characters: characterIds.map(id => charsById.get(id)).filter((c): c is typeof characters[number] => !!c),
+            props: propIds.map(id => propsById.get(id)).filter((p): p is typeof props[number] => !!p),
+          }),
         }
       }))
 

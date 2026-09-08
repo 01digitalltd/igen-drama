@@ -89,8 +89,8 @@ export async function startVideoPromptBatch(
           role: 'user',
           content: [
             withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})生成视频提示词(video_prompt)。视频模型:${videoLabel}。prompt_skill:${clip?.videoGeneration?.prompt_skill || 'seedance'}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${sb.duration || bounds?.typical || 10}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${Math.min(Number(sb.duration) || bounds?.max || 15, bounds?.max || 15)}s。
-${clip?.videoGeneration?.prompt_skill === 'omni' ? '当前是 Gemini Omni：遵守 Skill video-prompt/omni，时间轴写成 [0-3s]，每段写音频（有对白则写对白；无对白写「无对白」）。' : '当前是 Seedance/其他模型：遵守 Skill video-prompt，时间轴写成 0-3秒：。'}
-请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】子镜头与台词/旁白)、氛围、时长及 video_generation 约束，据此生成 video_prompt(用 @角色名/@场景名/@道具名 引用参考素材；段落内允许多镜头切镜，段与段可以是不同景别/角度/对象，但不跨场景，切镜点对齐分镜 description 的【镜头N】结构),然后调用 update_storyboard 保存到分镜 ID:${sb.id}。update_storyboard 参数只传 storyboard_id 和 video_prompt 两个键,不要回传该分镜的其他任何字段,不要重新拆分整集。`, opts.locale),
+${clip?.videoGeneration?.prompt_skill === 'omni' ? '当前是 Gemini Omni：遵守 Skill video-prompt/omni，时间轴写成 [0-3s]，用该分镜 image_refs 的 <IMAGE_REF_N> 简单标记绑定参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。' : '当前是 Seedance/其他模型：遵守 Skill video-prompt，时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'}
+请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】子镜头与台词/旁白)、氛围、时长、image_refs 及 video_generation 约束，据此生成 video_prompt（段落内允许多镜头切镜，但不跨场景，切镜点对齐分镜 description 的【镜头N】结构）,然后调用 update_storyboard 保存到分镜 ID:${sb.id}。update_storyboard 参数只传 storyboard_id 和 video_prompt 两个键,不要回传该分镜的其他任何字段,不要重新拆分整集。`, opts.locale),
             dialogueLanguageInstruction(spoken),
           ].join('\n\n'),
         }], { maxSteps: 8, requestContext })
