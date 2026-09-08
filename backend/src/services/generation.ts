@@ -23,7 +23,7 @@ import {
   isCharacterMediaRef,
   overlayOrangeGridOnRef,
 } from './character-grid.js'
-import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds } from './storyboard-prompt.js'
+import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs } from './storyboard-prompt.js'
 import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
 import { pickLatestActiveTask } from '../utils/generation-task-status.js'
 import { isRetryableProviderStatus, parseProviderErrorText } from '../utils/provider-error.js'
@@ -428,8 +428,12 @@ async function processTask(id: number, config: AIConfig) {
       const characterKeys = overlayCharacterGrid
         ? await characterStillKeysForStoryboard(record.storyboardId)
         : []
+      const clientRefUrls = Array.isArray(params.referenceImageUrls) ? params.referenceImageUrls : []
+      const boundRefUrls = record.storyboardId
+        ? await storyboardBoundStillUrls(record.storyboardId)
+        : []
       const { urls: resolvedReferenceImageUrls, overlaidCount } = await normalizeVideoReferenceUrlsWithCharacterGrid(
-        params.referenceImageUrls,
+        mergeVideoReferenceUrls(boundRefUrls, clientRefUrls),
         characterKeys,
         (ref, error) => logTaskWarn('VideoTask', 'character-grid-failed', { id, ref: redactUrl(ref), error }),
       )
@@ -441,7 +445,12 @@ async function processTask(id: number, config: AIConfig) {
         const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
         if (sb) prompt = resolveStoryboardVideoPrompt(sb)
       }
-      const videoPrompt = composeVideoPromptAfterCharacterGrid(prompt, overlaidCount)
+      const videoPrompt = (() => {
+        const composed = composeVideoPromptAfterCharacterGrid(prompt, overlaidCount)
+        return isOmniVideoConfig(config.provider, record.model)
+          ? composed
+          : rewriteSeedancePromptRefs(composed)
+      })()
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
@@ -1031,6 +1040,51 @@ async function resolveVideoDramaStyle(record: { dramaId?: unknown; storyboardId?
     }
   }
   return getDramaStyleValue(dramaId || null)
+}
+
+async function storyboardBoundStillUrls(storyboardId: unknown): Promise<string[]> {
+  const id = Number(storyboardId)
+  if (!Number.isInteger(id) || id <= 0) return []
+  const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id))
+  if (!sb) return []
+  const urls: string[] = []
+  const push = (value?: string | null) => {
+    const raw = String(value || '').trim()
+    if (!raw || urls.includes(raw) || urls.length >= 9) return
+    urls.push(raw)
+  }
+  if (sb.sceneId) {
+    const [scene] = await db.select().from(schema.scenes).where(eq(schema.scenes.id, sb.sceneId))
+    if (scene && !scene.deletedAt) push(scene.imageUrl || scene.localPath)
+  }
+  const charLinks = await db.select().from(schema.storyboardCharacters)
+    .where(eq(schema.storyboardCharacters.storyboardId, id))
+  for (const link of charLinks) {
+    const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, link.characterId))
+    if (!char || char.deletedAt) continue
+    push(char.imageUrl || char.localPath)
+  }
+  const propLinks = await db.select().from(schema.storyboardProps)
+    .where(eq(schema.storyboardProps.storyboardId, id))
+  for (const link of propLinks) {
+    const [prop] = await db.select().from(schema.props).where(eq(schema.props.id, link.propId))
+    if (!prop || prop.deletedAt) continue
+    push(prop.imageUrl || prop.localPath)
+  }
+  return urls
+}
+
+function mergeVideoReferenceUrls(bound: string[], extras: string[]) {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of [...bound, ...extras]) {
+    const raw = String(item || '').trim()
+    if (!raw || seen.has(raw)) continue
+    seen.add(raw)
+    out.push(raw)
+    if (out.length >= 9) break
+  }
+  return out
 }
 
 async function characterStillKeysForStoryboard(storyboardId: unknown): Promise<string[]> {

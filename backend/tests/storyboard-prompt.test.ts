@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs } from '../src/services/storyboard-prompt.ts'
+import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs, rewriteSeedancePromptRefs } from '../src/services/storyboard-prompt.ts'
 
 test('prefers dedicated video_prompt over storyboard description', () => {
   assert.equal(
@@ -75,5 +75,12 @@ test('Omni image_refs follow scene then character then prop order', () => {
       { index: 1, tag: '<IMAGE_REF_1>', kind: 'character', name: '小明' },
       { index: 2, tag: '<IMAGE_REF_2>', kind: 'prop', name: '信' },
     ],
+  )
+})
+
+test('rewrites Omni IMAGE_REF tags to MiniMax @图片N', () => {
+  assert.equal(
+    rewriteSeedancePromptRefs('[0-3s] <IMAGE_REF_0> 攝影棚，<IMAGE_REF_1> 主持人。'),
+    '[0-3s] @图片1 攝影棚，@图片2 主持人。',
   )
 })

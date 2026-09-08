@@ -459,7 +459,7 @@
                   <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                   {{ sbs.length ? '重新拆分' : '开始拆分' }}
                 </button>
-                <button class="btn btn-sm" :disabled="videoPromptBatch.running || !sbs.length" @click="batchVideoPrompts">
+                <button class="btn btn-sm" :disabled="videoPromptBatch.running || !sbs.length" @click="batchVideoPrompts(selectedSbIds.length ? selectedSbIds : sbs.map(s => s.id))">
                   <Loader2 v-if="videoPromptBatch.running" :size="11" class="animate-spin" />
                   <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                   {{ videoPromptBatch.running ? `提示词 ${videoPromptBatch.completed}/${videoPromptBatch.total}` : (selectedSbIds.length ? `生成所选提示词(${selectedSbIds.length})` : '批量视频提示词') }}
@@ -699,7 +699,7 @@
                     <option v-for="opt in DIALOGUE_LANGUAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
                   </select>
                 </label>
-                <button class="btn btn-sm" :disabled="videoPromptBatch.running || !sbs.length" @click="batchVideoPrompts">
+                <button class="btn btn-sm" :disabled="videoPromptBatch.running || !sbs.length" @click="batchVideoPrompts(selectedSbIds.length ? selectedSbIds : sbs.map(s => s.id))">
                   <Loader2 v-if="videoPromptBatch.running" :size="11" class="animate-spin" />
                   <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                   {{ videoPromptBatch.running ? `提示词 ${videoPromptBatch.completed}/${videoPromptBatch.total}` : (selectedSbIds.length ? `生成所选提示词(${selectedSbIds.length})` : '批量视频提示词') }}
@@ -2217,7 +2217,7 @@ async function loadGenTasks() {
         continue
       }
       if (hasVid(sbs.value.find(s => s.id === sbId))) continue
-      if (t.status === 'failed') failed[sbId] = t.error_msg || t.errorMsg || '生成失败'
+      if (t.status === 'failed') failed[sbId] = humanizeVideoTaskError(t.error_msg || t.errorMsg || '生成失败')
     }
     // 刚点击提交、任务记录尚未加载出来的本地状态保留,避免状态闪退
     for (const id of [...pendingVideoIds.value, ...inflightVideoIds.value]) {
@@ -2279,7 +2279,7 @@ const genTaskRows = computed(() => {
     provider: t.provider || '',
     model: t.model || '',
     status: t.status || 'processing',
-    errorMsg: t.error_msg || '',
+    errorMsg: humanizeVideoTaskError(t.error_msg || ''),
     previewUrl: t.local_path || t.result_url || '',
     prompt: t.prompt || '',
     createdAt: t.created_at || '',
@@ -2858,10 +2858,12 @@ function generateSelectedVideoPrompts() {
   exitSbSelectMode()
 }
 
-async function batchVideoPrompts() {
+async function batchVideoPrompts(storyboardIds) {
   if (videoPromptBatch.value.running || !epId.value) return
   if (!sbs.value.length) { toast.warning('请先拆分分镜'); return }
-  const ids = selectedSbIds.value.length ? [...selectedSbIds.value] : undefined
+  const ids = Array.isArray(storyboardIds)
+    ? (storyboardIds.length ? storyboardIds : undefined)
+    : (selectedSbIds.value.length ? [...selectedSbIds.value] : undefined)
   try {
     const res = await episodeAPI.generateVideoPrompts(epId.value, chatModelOverride(), chatConfigId(), ids)
     if (!res?.total) {
@@ -2878,6 +2880,23 @@ async function batchVideoPrompts() {
     toast.error(e.message)
   }
 }
+
+watch(videoModel, async (next, prev) => {
+  if (!prev || !next || next === prev || !epId.value) return
+  const configId = ownerConfigId(videoModelOptions.value, next)
+  if (configId && configId !== lockedVideoConfigId.value) {
+    try {
+      await episodeAPI.update(epId.value, { video_config_id: configId })
+      if (episode.value) {
+        episode.value = { ...episode.value, video_config_id: configId, videoConfigId: configId }
+      }
+    } catch (e) {
+      toast.error(e.message)
+      return
+    }
+  }
+  if (sbs.value.length) await batchVideoPrompts(sbs.value.map((sb) => sb.id))
+})
 
 function pollVideoPromptBatch(attempts = 240) {
   const tick = async (left) => {
@@ -3164,12 +3183,12 @@ function getShotReferenceImages(sb) {
     refs.push(value)
   }
   const scene = getStoryboardScene(sb)
-  pushRef(scene?.image_url || scene?.imageUrl)
+  pushRef(scene?.image_url || scene?.imageUrl || scene?.local_path || scene?.localPath)
   for (const char of getStoryboardCharacters(sb)) {
-    pushRef(char?.image_url || char?.imageUrl)
+    pushRef(char?.image_url || char?.imageUrl || char?.local_path || char?.localPath)
   }
   for (const prop of getStoryboardProps(sb)) {
-    pushRef(prop?.image_url || prop?.imageUrl)
+    pushRef(prop?.image_url || prop?.imageUrl || prop?.local_path || prop?.localPath)
   }
   // 手动上传的参考图片追加到尾部（总计 ≤9）
   for (const url of videoRefImageUrls.value) pushRef(url)
@@ -3334,12 +3353,12 @@ function getShotReferenceIndexMap(sb) {
     ordered.push({ name, imageUrl: url })
   }
   const scene = getStoryboardScene(sb)
-  push(scene?.location || '', scene?.image_url || scene?.imageUrl)
+  push(scene?.location || '', scene?.image_url || scene?.imageUrl || scene?.local_path || scene?.localPath)
   for (const char of getStoryboardCharacters(sb)) {
-    push(char.name || '', char?.image_url || char?.imageUrl)
+    push(char.name || '', char?.image_url || char?.imageUrl || char?.local_path || char?.localPath)
   }
   for (const prop of getStoryboardProps(sb)) {
-    push(prop.name || '', prop?.image_url || prop?.imageUrl)
+    push(prop.name || '', prop?.image_url || prop?.imageUrl || prop?.local_path || prop?.localPath)
   }
   const nameToIndex = {}
   ordered.forEach((a, i) => { if (a.name && !(a.name in nameToIndex)) nameToIndex[a.name] = i + 1 })
@@ -3364,13 +3383,19 @@ function resolveVideoPromptRefs(sb) {
   const dedicated = (sb.video_prompt || sb.videoPrompt || '').trim()
   const description = (sb.description || '').trim()
   const atmosphere = (sb.atmosphere || '').trim()
-  const prompt = dedicated || (description && atmosphere ? `${description}\n\n${atmosphere}` : (description || atmosphere))
+  const { provider, model } = currentVideoProviderModel()
+  const omni = isOmniVideoModel(provider, model)
+  let prompt = dedicated || (description && atmosphere ? `${description}\n\n${atmosphere}` : (description || atmosphere))
+  if (omni) {
+    prompt = prompt.replace(/@图片(\d+)([^\s@]*)/g, (_m, n, name) => `<IMAGE_REF_${Math.max(1, Number(n) || 1) - 1}>${name || ''}`)
+  } else {
+    prompt = prompt.replace(/<IMAGE_REF_(\d+)>/g, (_m, n) => `@图片${Number(n) + 1}`)
+  }
   const map = getShotReferenceIndexMap(sb)
   const names = Object.keys(map).sort((a, b) => b.length - a.length)
   if (!names.length) return prompt
-  const { provider, model } = currentVideoProviderModel()
-  const omni = isOmniVideoModel(provider, model)
   return prompt.replace(/@([^\s@]+)/g, (m, raw) => {
+    if (/^图片\d/.test(raw)) return m
     for (const name of names) {
       if (raw.startsWith(name)) {
         const rest = raw.slice(name.length)
@@ -3398,7 +3423,10 @@ function videoDurationBounds(provider, model) {
   const p = String(provider || '').toLowerCase()
   const m = String(model || '').toLowerCase()
   if (p === 'gemini' || m.includes('omni')) return { min: 3, max: 10 }
-  if (p === 'minimax' || m.includes('minimax')) return { min: 4, max: 15 }
+  if (p === 'minimax' || m.includes('minimax')) {
+    if (m.includes('h3-max')) return { min: 5, max: 15 }
+    return { min: 4, max: 15 }
+  }
   return { min: 4, max: 15 }
 }
 
@@ -3576,10 +3604,22 @@ async function pollVideoGeneration(generationId, storyboardId) {
   notifyShotVideoFailure(storyboardId, '视频生成超时')
 }
 
+function humanizeVideoTaskError(message) {
+  const raw = String(message || '').trim()
+  if (
+    /prohibited content guidelines/i.test(raw)
+    || raw.includes('内容安全拦截')
+    || raw.includes('內容安全攔截')
+  ) {
+    return 'Gemini 內容安全攔截：只要成片會出現人物（含純文字短劇），Omni 常會一律拒絕，與有沒有角色定妝圖無關。請改用 MiniMax，或向 Google 開通成人像生成。'
+  }
+  return raw
+}
+
 function notifyShotVideoFailure(storyboardId, message) {
   failedVideoMessages.value = {
     ...failedVideoMessages.value,
-    [storyboardId]: message || '视频生成失败',
+    [storyboardId]: humanizeVideoTaskError(message || '视频生成失败'),
   }
 }
 async function cancelVid(sb) {

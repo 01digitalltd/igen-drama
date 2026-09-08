@@ -64,6 +64,7 @@ export function clipDurationBounds(provider?: string | null, model?: string | nu
     return { min: 3, max: 10, typical: 8, promptSegment: 3 }
   }
   if (p === 'minimax' || m.includes('minimax')) {
+    if (m.includes('h3-max')) return { min: 5, max: 15, typical: 12, promptSegment: 3 }
     return { min: 4, max: 15, typical: 12, promptSegment: 3 }
   }
   return { min: 4, max: 15, typical: 12, promptSegment: 3 }

@@ -13,9 +13,10 @@ test('Gemini poll 400 safety block is a readable message, not a timeout', () => 
       code: 'invalid_request',
     },
   }))
-  assert.match(message, /prohibited content guidelines/)
-  assert.match(message, /内容安全拦截/)
+  assert.match(message, /內容安全攔截/)
   assert.match(message, /人物/)
+  assert.doesNotMatch(message, /Request blocked/)
+  assert.doesNotMatch(message, /内容安全拦截/)
   assert.equal(isRetryableProviderStatus(400), false)
   assert.equal(isRetryableProviderStatus(404), false)
   assert.equal(isRetryableProviderStatus(429), true)

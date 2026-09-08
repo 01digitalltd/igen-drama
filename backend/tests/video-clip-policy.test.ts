@@ -19,6 +19,8 @@ test('clipDurationBounds matches vendor clip limits', () => {
     min: 3, max: 10, typical: 8, promptSegment: 3,
   })
   assert.equal(clipDurationBounds('minimax', 'MiniMax-H3').max, 15)
+  assert.equal(clipDurationBounds('minimax', 'MiniMax-H3').min, 4)
+  assert.equal(clipDurationBounds('minimax', 'MiniMax-H3-Max').min, 5)
   assert.equal(clipDurationBounds('volcengine', 'dreamina-seedance-2-0-260128').typical, 12)
 })
 

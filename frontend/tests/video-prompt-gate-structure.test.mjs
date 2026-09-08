@@ -14,6 +14,17 @@ test('storyboard breakdown auto-starts video prompt batch after refresh', () => 
   assert.match(page, /sbs\.value\.every\(hasVideoPrompt\)/)
 })
 
+test('manual video prompt button regenerates selected or all shots', () => {
+  assert.match(page, /batchVideoPrompts\(selectedSbIds\.length \? selectedSbIds : sbs\.map\(s => s\.id\)\)/)
+  assert.match(page, /async function batchVideoPrompts\(storyboardIds\)/)
+})
+
+test('changing the video model regenerates every shot prompt', () => {
+  assert.match(page, /watch\(videoModel, async \(next, prev\) =>/)
+  assert.match(page, /video_config_id: configId/)
+  assert.match(page, /batchVideoPrompts\(sbs\.value\.map\(\(sb\) => sb\.id\)\)/)
+})
+
 test('video generation is blocked until every shot has a video prompt', () => {
   assert.match(page, /key === 'prod:videos' && !allVideoPromptsReady\.value/)
   assert.match(page, /prodTab\.value === 'storyboard'[\s\S]*!allVideoPromptsReady\.value/)
@@ -30,6 +41,8 @@ test('agent completion callback is awaited so prompt batch sees fresh shots', ()
 test('shot video failure stays on the card instead of duplicating the toast', () => {
   assert.match(page, /class="video-task-error"/)
   assert.match(page, /function notifyShotVideoFailure/)
+  assert.match(page, /function humanizeVideoTaskError/)
+  assert.match(page, /內容安全攔截/)
   const notifyFn = page.match(/function notifyShotVideoFailure[\s\S]*?\n\}/)?.[0] || ''
   assert.match(notifyFn, /failedVideoMessages\.value =/)
   assert.doesNotMatch(notifyFn, /toast\.error/)

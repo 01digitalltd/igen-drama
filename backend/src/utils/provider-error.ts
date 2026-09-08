@@ -3,11 +3,20 @@
  * MiniMax `{ type: "error", error: { message } }`, or a plain string.
  * Poll must fail fast on 4xx instead of retrying until timeout.
  */
+export const GEMINI_OMNI_PERSON_BLOCK_ZH_HANT =
+  'Gemini 內容安全攔截：只要成片會出現人物（含純文字短劇），Omni 常會一律拒絕，與有沒有角色定妝圖無關。請改用 MiniMax，或向 Google 開通成人像生成。'
+
+export function isGeminiOmniPersonBlock(message: string) {
+  const text = String(message || '')
+  return /prohibited content guidelines/i.test(text)
+    || text.includes('内容安全拦截')
+    || text.includes('內容安全攔截')
+}
+
 export function annotateGeminiSafetyBlock(message: string) {
   const text = String(message || '').trim()
-  if (!/prohibited content guidelines/i.test(text)) return text
-  if (text.includes('内容安全')) return text
-  return `${text} Gemini 内容安全拦截：只要成片会出现人物（含纯文字短剧），Omni 预览常一律拒绝，与有没有角色定妆图无关。请改用 MiniMax，或向 Google 开通成人像生成。`
+  if (!isGeminiOmniPersonBlock(text)) return text
+  return GEMINI_OMNI_PERSON_BLOCK_ZH_HANT
 }
 
 export function parseProviderErrorText(

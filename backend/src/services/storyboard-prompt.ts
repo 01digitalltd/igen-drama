@@ -32,6 +32,10 @@ export function parseVideoPromptDurationSeconds(prompt?: string | null): number 
   return maxEnd > 0 ? maxEnd : null
 }
 
+export function rewriteSeedancePromptRefs(prompt: string) {
+  return String(prompt || '').replace(/<IMAGE_REF_(\d+)>/g, (_m, n) => `@图片${Number(n) + 1}`)
+}
+
 export type ShotImageRef = {
   index: number
   tag: string
