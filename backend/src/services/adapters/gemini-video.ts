@@ -21,6 +21,7 @@ import type {
 } from './types.js'
 import { joinProviderUrl } from './url.js'
 import { parseDataUrl } from '../../utils/storage.js'
+import { annotateGeminiSafetyBlock } from '../../utils/provider-error.js'
 
 const INTERACTIONS_API_REVISION = '2026-05-20'
 export const DEFAULT_OMNI_VIDEO_MODEL = 'gemini-omni-flash-preview'
@@ -147,8 +148,8 @@ function interactionPollPath(taskId: string) {
 
 function geminiErrorMessage(result: any, fallback: string) {
   const err = result?.error
-  if (typeof err === 'string' && err.trim()) return err
-  if (err?.message) return String(err.message)
+  if (typeof err === 'string' && err.trim()) return annotateGeminiSafetyBlock(err)
+  if (err?.message) return annotateGeminiSafetyBlock(String(err.message))
   return fallback
 }
 

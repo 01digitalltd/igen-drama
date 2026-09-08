@@ -49,6 +49,6 @@ test('stored video grid-removal instructions are stripped before generation', ()
 
 test('orange 6x6 removal is kept so generation can inject it after white-grid cleanup', () => {
   const injected =
-    '0-3秒：@小明抬头。\n去掉角色参考图上的橙色 6×6 网格，把被网格切开的五官拼回完整眉眼鼻口耳，成片不得残留橙色格线。\nRemove the orange 6x6 grid on character reference image(s). Reassemble split facial features. Do not show grid lines. Keep everything else the same.'
+    '0-3秒：@小明抬头。\n去掉角色参考图上的橙色 6×6 辅助线，成片不要出现网格，保持人物外貌、服装与场景不变。\nRemove the orange 6x6 helper lines on character reference image(s). Do not show any grid. Keep appearance, clothing and scene the same.'
   assert.equal(stripVideoFaceGridPrompt(injected), injected)
 })

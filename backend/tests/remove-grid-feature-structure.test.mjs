@@ -53,7 +53,7 @@ test('realistic video submit overlays an orange grid; character still prompts st
   assert.match(generation, /characterStillKeysForStoryboard/)
   assert.doesNotMatch(charSkill, /橙色 6×6|白色 6×6/)
   assert.doesNotMatch(videoSkill, /6×6 网格/)
-  assert.match(omniSkill, /橙色 6×6 网格并注入除网格指令/)
+  assert.match(omniSkill, /清洁定妆图/)
   assert.match(omniSkill, /不要把除网格写进/)
 
   const enqueue = generation.slice(generation.indexOf('async function generateVideoUniq'))

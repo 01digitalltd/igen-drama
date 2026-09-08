@@ -12,9 +12,9 @@ export const ORANGE_GRID_RECIPE = 'v1'
 export const VENDOR_IMAGE_MAX = 768
 
 export const VIDEO_ORANGE_GRID_REMOVAL_ZH =
-  '去掉角色参考图上的橙色 6×6 网格，把被网格切开的五官拼回完整眉眼鼻口耳，成片不得残留橙色格线。'
+  '去掉角色参考图上的橙色 6×6 辅助线，成片不要出现网格，保持人物外貌、服装与场景不变。'
 export const VIDEO_ORANGE_GRID_REMOVAL_EN =
-  'Remove the orange 6x6 grid on character reference image(s). Reassemble split facial features. Do not show grid lines. Keep everything else the same.'
+  'Remove the orange 6x6 helper lines on character reference image(s). Do not show any grid. Keep appearance, clothing and scene the same.'
 
 const gridCache = new Map<string, string>()
 

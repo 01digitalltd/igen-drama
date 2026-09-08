@@ -24,7 +24,7 @@ import {
   overlayOrangeGridOnRef,
 } from './character-grid.js'
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds } from './storyboard-prompt.js'
-import { assertClipSecondsFit, clipDurationBounds } from './video-clip-policy.js'
+import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
 import { pickLatestActiveTask } from '../utils/generation-task-status.js'
 import { isRetryableProviderStatus, parseProviderErrorText } from '../utils/provider-error.js'
 
@@ -422,7 +422,10 @@ async function processTask(id: number, config: AIConfig) {
       const resolvedImageUrl = await normalizeVideoReferenceUrl(params.imageUrl)
       const resolvedFirstFrameUrl = await normalizeVideoReferenceUrl(params.firstFrameUrl)
       const resolvedLastFrameUrl = await normalizeVideoReferenceUrl(params.lastFrameUrl)
-      const characterKeys = isRealisticDramaStyle(await resolveVideoDramaStyle(record)) && record.storyboardId
+      const overlayCharacterGrid = isRealisticDramaStyle(await resolveVideoDramaStyle(record))
+        && record.storyboardId
+        && !isOmniVideoConfig(config.provider, record.model)
+      const characterKeys = overlayCharacterGrid
         ? await characterStillKeysForStoryboard(record.storyboardId)
         : []
       const { urls: resolvedReferenceImageUrls, overlaidCount } = await normalizeVideoReferenceUrlsWithCharacterGrid(

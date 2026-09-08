@@ -964,7 +964,7 @@
                       v-if="videoRefAudioUrls.length && !getShotReferenceImages(selectedSb).length && !videoRefVideoUrls.length"
                       class="video-ref-media-hint"
                     >参考音频需至少 1 个参考图片或视频</div>
-                    <p v-if="isRealisticDrama" class="dim" style="font-size:11px;margin-top:6px">角色参考会加橙色网格以锁定五官，成片会去掉。</p>
+                    <p v-if="isRealisticDrama" class="dim" style="font-size:11px;margin-top:6px">MiniMax 会给角色参考加橙色网格以锁定五官；Gemini Omni 使用清洁定妆图，避免内容安全拦截。</p>
                   </section>
 
                   <section class="video-inspector-section">

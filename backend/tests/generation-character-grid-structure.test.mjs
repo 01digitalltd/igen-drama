@@ -16,6 +16,8 @@ test('video processTask overlays character stills only for realistic dramas', ()
   const helper = generation.slice(helperStart, helperStart + 1800)
 
   assert.match(video, /isRealisticDramaStyle\(await resolveVideoDramaStyle\(record\)\)/)
+  assert.match(video, /isOmniVideoConfig\(config\.provider, record\.model\)/)
+  assert.match(video, /overlayCharacterGrid/)
   assert.match(video, /characterStillKeysForStoryboard/)
   assert.match(video, /normalizeVideoReferenceUrlsWithCharacterGrid/)
   assert.match(video, /composeVideoPromptAfterCharacterGrid\(prompt, overlaidCount\)/)

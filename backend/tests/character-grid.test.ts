@@ -101,6 +101,7 @@ test('withOrangeGridRemovalPrompt appends zh/en once', () => {
   const next = withOrangeGridRemovalPrompt('0-3秒：抬头。')
   assert.match(next, /橙色 6×6/)
   assert.match(next, /orange 6x6/i)
+  assert.doesNotMatch(next, /切开|五官拼回|split facial|Reassemble/i)
   assert.equal(withOrangeGridRemovalPrompt(next), next)
 })
 
