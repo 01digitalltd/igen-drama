@@ -3566,8 +3566,6 @@ function notifyShotVideoFailure(storyboardId, message) {
     ...failedVideoMessages.value,
     [storyboardId]: message || '视频生成失败',
   }
-  // Card already shows the vendor message; keep the toast short so it is not duplicated.
-  toast.error('镜头生成失败')
 }
 async function cancelVid(sb) {
   const taskId = videoTaskIds.value[sb.id]

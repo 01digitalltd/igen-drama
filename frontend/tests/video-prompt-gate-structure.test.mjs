@@ -30,8 +30,11 @@ test('agent completion callback is awaited so prompt batch sees fresh shots', ()
 test('shot video failure stays on the card instead of duplicating the toast', () => {
   assert.match(page, /class="video-task-error"/)
   assert.match(page, /function notifyShotVideoFailure/)
-  assert.match(page, /toast\.error\('镜头生成失败'\)/)
+  const notifyFn = page.match(/function notifyShotVideoFailure[\s\S]*?\n\}/)?.[0] || ''
+  assert.match(notifyFn, /failedVideoMessages\.value =/)
+  assert.doesNotMatch(notifyFn, /toast\.error/)
   assert.doesNotMatch(page, /toast\.error\(failedVideoMessages\.value\[storyboardId\]\)/)
+  assert.doesNotMatch(page, /toast\.error\('镜头生成失败'\)/)
 })
 
 test('video generation duration follows the prompt timeline, not a separate input', () => {
