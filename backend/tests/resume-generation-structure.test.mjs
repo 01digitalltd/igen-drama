@@ -19,7 +19,7 @@ test('startup resumes in-flight generation instead of failing all processing tas
   assert.match(generation, /resume-poll/)
   assert.match(generation, /resume-queue/)
   assert.match(generation, /status === 'queued'/)
-  assert.match(generation, /VIDEO_MAX_CONCURRENT = 1/)
+  assert.match(generation, /splitVideoQueueByConcurrency/)
   assert.match(generation, /export async function cancelGenerationTask/)
   assert.match(generation, /allowInactive: true/)
   assert.match(generation, /configId: configId \|\| undefined/)

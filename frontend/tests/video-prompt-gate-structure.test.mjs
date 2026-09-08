@@ -64,16 +64,18 @@ test('Omni generation rewrites @name refs to IMAGE_REF tags', () => {
   assert.match(page, /video-prompt\/omni/)
 })
 
-test('jumping from raw content to AI rewrite starts the rewriter automatically', () => {
-  assert.match(page, /scriptStep\.value = 1\s*doRewrite\(\)/)
-  assert.match(page, /key === 'script:rewrite' && fromRaw && localRaw\.value\.trim\(\)\) doRewrite\(\)/)
-})
-
-test('AI rewrite completion automatically extracts assets', () => {
+test('jumping from raw content to AI rewrite starts the rewriter only when the script is empty', () => {
+  assert.match(page, /scriptStep\.value = 1\s*if \(!\(localScript\.value \|\| scriptContent\.value \|\| ''\)\.trim\(\)\) doRewrite\(\)/)
   assert.match(
     page,
-    /await refresh\(\)\s*panel\.value = 'production'\s*prodTab\.value = 'assets'\s*doExtractAll\(\)/,
+    /key === 'script:rewrite' && fromRaw && localRaw\.value\.trim\(\) && !\(localScript\.value \|\| scriptContent\.value \|\| ''\)\.trim\(\)\) doRewrite\(\)/,
   )
+})
+
+test('AI rewrite completion goes to assets without extracting', () => {
+  const rewriteFn = page.match(/function doRewrite\(\) \{[\s\S]*?\n\}/)?.[0] || ''
+  assert.match(rewriteFn, /prodTab\.value = 'assets'/)
+  assert.doesNotMatch(rewriteFn, /doExtractAll/)
 })
 
 test('video step can change project dialogue language', () => {

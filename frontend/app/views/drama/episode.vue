@@ -2396,7 +2396,7 @@ function goNextStep() {
   if (scriptStep.value === 0 && localRaw.value.trim()) {
     saveRaw()
     scriptStep.value = 1
-    doRewrite()
+    if (!(localScript.value || scriptContent.value || '').trim()) doRewrite()
     return
   }
   if (scriptStep.value === 1 && canGoNext.value) {
@@ -2579,7 +2579,7 @@ function goSubStep(key) {
       'script:rewrite': 1,
     }
     scriptStep.value = stepMap[key] ?? 0
-    if (key === 'script:rewrite' && fromRaw && localRaw.value.trim()) doRewrite()
+    if (key === 'script:rewrite' && fromRaw && localRaw.value.trim() && !(localScript.value || scriptContent.value || '').trim()) doRewrite()
     return
   }
   if (key.startsWith('prod:')) {
@@ -2744,7 +2744,6 @@ function doRewrite() {
     await refresh()
     panel.value = 'production'
     prodTab.value = 'assets'
-    doExtractAll()
   }, chatModelOverride(), chatConfigId())
 }
 function skipRewrite() {

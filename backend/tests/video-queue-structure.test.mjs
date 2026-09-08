@@ -5,11 +5,12 @@ import assert from 'node:assert/strict'
 const root = new URL('..', import.meta.url)
 const read = (path) => readFileSync(new URL(path, root), 'utf8')
 
-test('video tasks enqueue with concurrency 1 and can be cancelled', () => {
+test('video tasks enqueue with MiniMax parallelism and can be cancelled', () => {
   const generation = read('src/services/generation.ts')
   const tasks = read('src/routes/tasks.ts')
 
-  assert.match(generation, /VIDEO_MAX_CONCURRENT = 1/)
+  assert.match(generation, /splitVideoQueueByConcurrency/)
+  assert.match(generation, /activeVideoProviders/)
   assert.match(generation, /status: type === 'video' \? 'queued' : 'processing'/)
   assert.match(generation, /function enqueueVideo/)
   assert.match(generation, /async function pumpVideoQueue/)

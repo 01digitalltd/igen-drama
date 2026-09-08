@@ -27,6 +27,7 @@ import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVide
 import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
 import { pickLatestActiveTask } from '../utils/generation-task-status.js'
 import { isRetryableProviderStatus, parseProviderErrorText } from '../utils/provider-error.js'
+import { splitVideoQueueByConcurrency } from './video-queue.js'
 
 type TaskType = 'image' | 'video'
 
@@ -49,8 +50,8 @@ const activeProcessors = new Set<number>()
 const cancelledTaskIds = new Set<number>()
 const videoWaitQueue: number[] = []
 const activeVideoIds = new Set<number>()
-/** One Gemini/MiniMax clip at a time; extra POSTs wait as status=queued. */
-const VIDEO_MAX_CONCURRENT = 1
+const activeVideoProviders = new Map<number, string>()
+/** Extra POSTs wait as status=queued. MiniMax runs several at once; Gemini/Seedance stay serial. */
 const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'error', 'success', 'done', 'cancelled', 'canceled'])
 let pumpingVideoQueue = false
 
@@ -289,17 +290,24 @@ function enqueueVideo(id: number) {
   void pumpVideoQueue()
 }
 
-function videoRunningCount() {
-  return activeVideoIds.size
+function runningByProviderMap() {
+  const map = new Map<string, number>()
+  for (const provider of activeVideoProviders.values()) {
+    const key = String(provider || '').toLowerCase()
+    map.set(key, (map.get(key) || 0) + 1)
+  }
+  return map
 }
 
 async function pumpVideoQueue() {
   if (pumpingVideoQueue) return
   pumpingVideoQueue = true
+  let started = 0
+  let shouldRepump = false
   try {
-    while (videoRunningCount() < VIDEO_MAX_CONCURRENT && videoWaitQueue.length) {
-      const id = videoWaitQueue.shift()
-      if (id == null) break
+    const ids = videoWaitQueue.splice(0, videoWaitQueue.length)
+    const queued: Array<{ id: number; provider: string; config: AIConfig }> = []
+    for (const id of ids) {
       if (cancelledTaskIds.has(id) || activeVideoIds.has(id) || activeProcessors.has(id)) continue
       try {
         const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
@@ -309,26 +317,34 @@ async function pumpVideoQueue() {
           await failTask(id, '找不到可用的视频 AI 配置')
           continue
         }
-        logTaskProgress('VideoTask', 'pump', { id, provider: config.provider })
-        startVideoProcessor(id, config)
+        queued.push({ id, provider: config.provider, config })
       } catch (err: any) {
         logTaskError('VideoTask', 'pump', { id, error: err?.message })
         await failTask(id, err?.message || '视频任务启动失败')
       }
     }
+    const { start, defer } = splitVideoQueueByConcurrency(queued, runningByProviderMap())
+    for (const job of start) {
+      logTaskProgress('VideoTask', 'pump', { id: job.id, provider: job.provider })
+      startVideoProcessor(job.id, job.config)
+      started++
+    }
+    const arrivedDuringPump = videoWaitQueue.length > 0
+    for (const job of defer) videoWaitQueue.push(job.id)
+    shouldRepump = (started > 0 || arrivedDuringPump) && videoWaitQueue.length > 0
   } finally {
     pumpingVideoQueue = false
-    if (videoWaitQueue.length && videoRunningCount() < VIDEO_MAX_CONCURRENT) {
-      void pumpVideoQueue()
-    }
+    if (shouldRepump) void pumpVideoQueue()
   }
 }
 
 function startVideoProcessor(id: number, config: AIConfig) {
   if (activeProcessors.has(id) || activeVideoIds.has(id)) return
   activeVideoIds.add(id)
+  activeVideoProviders.set(id, config.provider)
   startTaskProcessor(id, 'video', processTask(id, config).finally(() => {
     activeVideoIds.delete(id)
+    activeVideoProviders.delete(id)
     void pumpVideoQueue()
   }))
 }
