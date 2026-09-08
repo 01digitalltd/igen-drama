@@ -77,7 +77,7 @@ async function ensureGeminiVideoConfig() {
 
   let apiKey = readEnv('DRAMA_VIDEO', 'API_KEY')
   let baseUrl = readEnv('DRAMA_VIDEO', 'BASE_URL') || 'https://generativelanguage.googleapis.com'
-  const model = readEnv('DRAMA_VIDEO', 'MODEL') || 'gemini-omni-flash-preview'
+  const model = readEnv('DRAMA_VIDEO', 'MODEL') || 'gemini-omni-1.1-flash'
 
   if (!apiKey) {
     const donors = ((await db.select().from(schema.aiServiceConfigs)) as Array<{

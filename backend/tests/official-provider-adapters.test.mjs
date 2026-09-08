@@ -180,7 +180,7 @@ test('new image and video models use their current API shapes', () => {
   assert.doesNotMatch(geminiImage, /\$\{taskId\}`\)/)
   assert.doesNotMatch(geminiImage, /Authorization': `Bearer/)
   assert.match(registry, /GeminiVideoAdapter/)
-  assert.match(geminiVideo, /gemini-omni-flash-preview/)
+  assert.match(geminiVideo, /gemini-omni-1\.1-flash/)
   assert.match(geminiVideo, /\/interactions/)
   assert.match(geminiVideo, /background:\s*true/)
   assert.match(geminiVideo, /reference_to_video/)

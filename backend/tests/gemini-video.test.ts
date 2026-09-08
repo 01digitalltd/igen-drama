@@ -1,11 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  DEFAULT_OMNI_VIDEO_MODEL,
   GeminiVideoAdapter,
   chooseOmniVideoTask,
   isOmniVideoModel,
   normalizeOmniAspectRatio,
   normalizeOmniDurationSeconds,
+  normalizeOmniResolution,
   rewriteOmniPromptRefs,
   toOmniImageInput,
   withOmniReferenceGuide,
@@ -16,10 +18,11 @@ const config = {
   provider: 'gemini',
   baseUrl: 'https://generativelanguage.googleapis.com',
   apiKey: 'test-key',
-  model: 'gemini-omni-flash-preview',
+  model: 'gemini-omni-1.1-flash',
 }
 
 test('Omni model detection and duration/aspect clamps', () => {
+  assert.equal(DEFAULT_OMNI_VIDEO_MODEL, 'gemini-omni-1.1-flash')
   assert.equal(isOmniVideoModel('gemini-omni-flash-preview'), true)
   assert.equal(isOmniVideoModel('gemini-omni-1.1-flash'), true)
   assert.equal(isOmniVideoModel('gemini-3.1-flash-image'), false)
@@ -27,6 +30,9 @@ test('Omni model detection and duration/aspect clamps', () => {
   assert.equal(normalizeOmniDurationSeconds(2), 3)
   assert.equal(normalizeOmniAspectRatio('9:16'), '9:16')
   assert.equal(normalizeOmniAspectRatio('adaptive'), '16:9')
+  assert.equal(normalizeOmniResolution('1080p'), '1080p')
+  assert.equal(normalizeOmniResolution('480p'), '720p')
+  assert.equal(normalizeOmniResolution('4K'), '4k')
   assert.equal(chooseOmniVideoTask(0), 'text_to_video')
   assert.equal(chooseOmniVideoTask(1), 'reference_to_video')
   assert.equal(chooseOmniVideoTask(1, { literalFirstFrame: true }), 'image_to_video')
@@ -65,16 +71,18 @@ test('buildGenerateRequest uses Interactions API with background poll', () => {
   assert.match(req.url, /\/v1beta\/interactions/)
   assert.match(req.url, /key=test-key/)
   assert.equal(req.headers['x-goog-api-key'], 'test-key')
-  assert.equal(req.body.model, 'gemini-omni-flash-preview')
+  assert.equal(req.body.model, 'gemini-omni-1.1-flash')
   assert.equal(req.body.background, true)
   assert.equal(req.body.generation_config.video_config.task, 'reference_to_video')
-  assert.equal(req.body.generation_config.video_config.person_generation, 'allow_adult')
-  assert.equal(req.body.parameters.personGeneration, 'allow_adult')
+  assert.equal(req.body.parameters, undefined)
   assert.equal(req.body.response_format.duration, '10s')
   assert.equal(req.body.response_format.aspect_ratio, '9:16')
-  assert.equal(req.body.input[0].type, 'text')
-  assert.match(req.body.input[0].text, /should not be used as literal initial frames/)
-  assert.doesNotMatch(req.body.input[0].text, /\[# References/)
+  assert.equal(req.body.response_format.resolution, '720p')
+  assert.equal(req.body.input[0].type, 'image')
+  const promptPart = req.body.input[req.body.input.length - 1]
+  assert.equal(promptPart.type, 'text')
+  assert.match(promptPart.text, /should not be used as literal initial frames/)
+  assert.doesNotMatch(promptPart.text, /\[# References/)
   assert.equal(req.body.input.filter((item: { type: string }) => item.type === 'image').length, 2)
 })
 
@@ -98,7 +106,22 @@ test('a dedicated first frame without refs stays image_to_video', () => {
     duration: 5,
   })
   assert.equal(req.body.generation_config.video_config.task, 'image_to_video')
-  assert.doesNotMatch(String(req.body.input[0].text), /literal initial frames/)
+  const promptPart = req.body.input[req.body.input.length - 1]
+  assert.equal(promptPart.type, 'text')
+  assert.doesNotMatch(String(promptPart.text), /literal initial frames/)
+})
+
+test('text-only Omni requests omit task and pass resolution', () => {
+  const req = adapter.buildGenerateRequest(config, {
+    id: 4,
+    prompt: 'A marble rolling on a track, continuous smooth shot.',
+    duration: 8,
+    aspectRatio: '16:9',
+    resolution: '1080p',
+  })
+  assert.equal(req.body.generation_config, undefined)
+  assert.equal(typeof req.body.input, 'string')
+  assert.equal(req.body.response_format.resolution, '1080p')
 })
 
 test('parseGenerateResponse polls in-progress interactions and reads REST video bytes', () => {

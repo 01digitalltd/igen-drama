@@ -1,15 +1,18 @@
 /**
- * Gemini Omni Flash video adapter.
+ * Gemini Omni Flash video adapter (gemini-omni-1.1-flash).
  *
  * Omni uses the Interactions API (POST /v1beta/interactions), not Veo
- * generate_videos / generateContent. Drama shots map to:
- * - text_to_video when there are no images
+ * generate_videos / generateContent. Official examples put images before
+ * text in `input`. `video_config.task` is only sent when images are present
+ * (text-only relies on prompting). Drama shots map to:
+ * - no images → omit task (text to video)
  * - image_to_video only for a dedicated first/last frame with no refs
  * - reference_to_video for character/scene stills, including a single image
  *
  * Video generation is started with background=true and polled via
  * GET /v1beta/interactions/{id}. REST returns video bytes on
  * steps[].content[] (type=video); some proxies also fill output_video.
+ * `output_video` is SDK-only; REST reads `steps`.
  */
 import type {
   VideoProviderAdapter,
@@ -24,7 +27,7 @@ import { parseDataUrl } from '../../utils/storage.js'
 import { annotateGeminiSafetyBlock } from '../../utils/provider-error.js'
 
 const INTERACTIONS_API_REVISION = '2026-05-20'
-export const DEFAULT_OMNI_VIDEO_MODEL = 'gemini-omni-flash-preview'
+export const DEFAULT_OMNI_VIDEO_MODEL = 'gemini-omni-1.1-flash'
 const REF_IMAGE_LIMIT = 10
 const IN_PROGRESS_STATUSES = new Set([
   'in_progress',
@@ -87,6 +90,16 @@ export function normalizeOmniAspectRatio(aspectRatio?: string | null) {
   const raw = String(aspectRatio || '').trim()
   if (raw === '9:16' || raw === '16:9') return raw
   return '16:9'
+}
+
+/** Omni VideoResponseFormat.resolution: 360p | 720p | 1080p | 4k. */
+export function normalizeOmniResolution(resolution?: string | null) {
+  const raw = String(resolution || '').trim().toLowerCase()
+  if (raw === '360p') return '360p'
+  if (raw === '1080p') return '1080p'
+  if (raw === '4k' || raw === '2160p') return '4k'
+  if (raw === '2k' || raw === '1440p') return '1080p'
+  return '720p'
 }
 
 const REFERENCE_GUIDE =
@@ -159,7 +172,7 @@ export class GeminiVideoAdapter implements VideoProviderAdapter {
   buildGenerateRequest(config: AIConfig, record: VideoGenerationRecord): ProviderRequest {
     const model = record.model || config.model || DEFAULT_OMNI_VIDEO_MODEL
     if (!isOmniVideoModel(model)) {
-      throw new Error(`仅支持 Gemini Omni 视频模型（gemini-omni-flash-preview），当前: ${model}`)
+      throw new Error(`仅支持 Gemini Omni 视频模型（gemini-omni-1.1-flash），当前: ${model}`)
     }
 
     const prompt = (record.prompt || '').trim()
@@ -180,31 +193,26 @@ export class GeminiVideoAdapter implements VideoProviderAdapter {
     })
     const text = withOmniReferenceGuide(prompt, task)
 
-    const input: any[] = []
+    // Official examples: images first, then the text prompt.
+    const input: any[] = [...imageSources]
     if (text) input.push({ type: 'text', text })
-    input.push(...imageSources)
 
     const durationSec = normalizeOmniDurationSeconds(record.duration)
-    const body = {
+    const body: Record<string, unknown> = {
       model,
       input: input.length === 1 && input[0].type === 'text' ? text : input,
       background: true,
-      generation_config: {
-        video_config: {
-          task,
-          // Official adult-person setting. Drama clips describe people even
-          // without character stills; omitting this often yields PROHIBITED_CONTENT.
-          person_generation: 'allow_adult',
-        },
-      },
-      parameters: {
-        personGeneration: 'allow_adult',
-      },
       response_format: {
         type: 'video',
         aspect_ratio: normalizeOmniAspectRatio(record.aspectRatio),
+        resolution: normalizeOmniResolution(record.resolution),
         duration: `${durationSec}s`,
       },
+    }
+    // Official tip: only set task when prompting is not enough. Text-only
+    // examples omit it; image/reference shots still need the explicit mode.
+    if (task !== 'text_to_video') {
+      body.generation_config = { video_config: { task } }
     }
 
     const url = new URL(joinProviderUrl(config.baseUrl, '/v1beta', '/interactions'))

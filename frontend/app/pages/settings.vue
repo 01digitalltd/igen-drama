@@ -483,7 +483,7 @@ const providerPresets = {
     openai: { label: 'OpenAI 官方', baseUrl: 'https://api.openai.com', models: ['gpt-image-2'] },
   },
   video: {
-    gemini: { label: 'Gemini Omni 官方', baseUrl: 'https://generativelanguage.googleapis.com', models: ['gemini-omni-flash-preview'] },
+    gemini: { label: 'Gemini Omni 官方', baseUrl: 'https://generativelanguage.googleapis.com', models: ['gemini-omni-1.1-flash', 'gemini-omni-flash-preview'] },
     volcengine: { label: 'Seedance 2.0 官方', baseUrl: 'https://ark.cn-beijing.volces.com', models: ['doubao-seedance-2-0-fast-260128', 'doubao-seedance-2-0-260128', 'doubao-seedance-2-0-mini-260615'] },
     minimax: { label: 'MiniMax H3 官方', baseUrl: 'https://api.minimax.io', models: ['MiniMax-H3'] },
   },
@@ -493,7 +493,7 @@ const huobaoQuickConfigs = [
   { service_type: 'text', provider: 'openai', name: '火宝文本服务 · OpenAI', base_url: 'https://api.chatfire.site', model: ['deepseek-v4-pro', 'deepseek-v4-flash', 'gpt-5.6-terra'], priority: 101 },
   { service_type: 'image', provider: 'openai', name: '火宝图片服务 · OpenAI', base_url: 'https://api.chatfire.site', model: ['gpt-image-2'], priority: 99 },
   { service_type: 'image', provider: 'gemini', name: '火宝图片服务 · Gemini', base_url: 'https://api.chatfire.site', model: ['gemini-3-pro-image', 'gemini-3.1-flash-image'], priority: 97 },
-  { service_type: 'video', provider: 'gemini', name: '火宝视频服务 · Gemini Omni', base_url: 'https://api.chatfire.site', model: ['gemini-omni-flash-preview'], priority: 99 },
+  { service_type: 'video', provider: 'gemini', name: '火宝视频服务 · Gemini Omni', base_url: 'https://api.chatfire.site', model: ['gemini-omni-1.1-flash', 'gemini-omni-flash-preview'], priority: 99 },
   { service_type: 'video', provider: 'volcengine', name: '火宝视频服务 · Seedance', base_url: 'https://api.chatfire.site/volcengine', model: ['doubao-seedance-2-0-fast-260128', 'doubao-seedance-2-0-260128', 'doubao-seedance-2-0-mini-260615'], priority: 98 },
   { service_type: 'video', provider: 'minimax', name: '火宝视频服务 · MiniMax', base_url: 'https://api.chatfire.site/minimax', model: ['MiniMax-H3'], priority: 96 },
 ]

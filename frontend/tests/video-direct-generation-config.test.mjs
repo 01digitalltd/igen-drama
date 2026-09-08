@@ -10,6 +10,7 @@ test('video presets default to Gemini Omni and keep Seedance 2.0 available', () 
   const combined = `${settingsPage}\n${aiConfigRoute}\n${volcengineAdapter}`
   assert.doesNotMatch(combined, /doubao-seedance-1-5-pro-251215/)
   assert.match(settingsPage, /Gemini Omni/)
+  assert.match(settingsPage, /gemini-omni-1\.1-flash/)
   assert.match(settingsPage, /gemini-omni-flash-preview/)
   assert.match(settingsPage, /Seedance 2\.0/)
   assert.match(settingsPage, /doubao-seedance-2-0-260128/)
