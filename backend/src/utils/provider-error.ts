@@ -6,8 +6,8 @@
 export function annotateGeminiSafetyBlock(message: string) {
   const text = String(message || '').trim()
   if (!/prohibited content guidelines/i.test(text)) return text
-  if (text.includes('橙色网格') || text.includes('内容安全')) return text
-  return `${text} Gemini 内容安全拦截：写实人脸或参考图上的网格线常被误判。请改用清洁定妆图后重试，或改用 MiniMax。`
+  if (text.includes('内容安全')) return text
+  return `${text} Gemini 内容安全拦截：只要成片会出现人物（含纯文字短剧），Omni 预览常一律拒绝，与有没有角色定妆图无关。请改用 MiniMax，或向 Google 开通成人像生成。`
 }
 
 export function parseProviderErrorText(

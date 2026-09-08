@@ -192,7 +192,13 @@ export class GeminiVideoAdapter implements VideoProviderAdapter {
       generation_config: {
         video_config: {
           task,
+          // Official adult-person setting. Drama clips describe people even
+          // without character stills; omitting this often yields PROHIBITED_CONTENT.
+          person_generation: 'allow_adult',
         },
+      },
+      parameters: {
+        personGeneration: 'allow_adult',
       },
       response_format: {
         type: 'video',

@@ -68,6 +68,8 @@ test('buildGenerateRequest uses Interactions API with background poll', () => {
   assert.equal(req.body.model, 'gemini-omni-flash-preview')
   assert.equal(req.body.background, true)
   assert.equal(req.body.generation_config.video_config.task, 'reference_to_video')
+  assert.equal(req.body.generation_config.video_config.person_generation, 'allow_adult')
+  assert.equal(req.body.parameters.personGeneration, 'allow_adult')
   assert.equal(req.body.response_format.duration, '10s')
   assert.equal(req.body.response_format.aspect_ratio, '9:16')
   assert.equal(req.body.input[0].type, 'text')
