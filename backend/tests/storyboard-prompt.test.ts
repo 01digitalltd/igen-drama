@@ -37,6 +37,10 @@ test('reads total seconds from video_prompt timeline ranges', () => {
     9,
   )
   assert.equal(parseVideoPromptDurationSeconds('0-3s: walk\n3-6s: turn'), 6)
+  assert.equal(
+    parseVideoPromptDurationSeconds('[0-3s] @咖啡厅。\n[3-9s] 切回中景。无对白。'),
+    9,
+  )
   assert.equal(parseVideoPromptDurationSeconds('角色走向窗边'), null)
 })
 

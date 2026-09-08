@@ -1,11 +1,20 @@
 ---
 name: video-prompt
-description: 视频提示词规范 — 根据分镜段落内容生成按时间分段、段内可切镜的视频生成提示词
+description: Seedance / MiniMax 视频提示词规范 — 根据分镜段落内容生成按时间分段、段内可切镜的视频生成提示词
 ---
 
 # 视频提示词（分镜段落 → video_prompt）
 
 根据单个分镜段落的 description（含【镜头N】子镜头结构与台词/旁白）/ atmosphere / duration，以及 `read_storyboard_context.video_generation` 的时长上限，生成驱动 AI 视频生成的 `video_prompt`。**一个分镜段落 = 一次视频生成任务，时长不得超过 `duration_max`，内部允许切镜**：段与段之间可以是不同镜头（换景别/角度/对象），用硬切衔接；但**全程不跨场景**、不闪回。
+
+## 模型分流
+
+先看 `video_generation.prompt_skill`（或 provider/model）：
+
+- **`omni`**（Gemini Omni / gemini-omni-*）：忽略下方 Seedance 行首格式，改遵守 **Skill: prompt-generator/video-prompt/omni**
+- **其他**（Seedance 2.0、MiniMax H3）：遵守本文件（`0-3秒：` 格式）
+
+两种模型都适用：`@角色名` / `@场景名` / `@道具名` 引用、不跨场景、不创作 description 之外的台词、只更新 `video_prompt`。
 
 ## 格式
 

@@ -6,6 +6,7 @@ import {
   isOmniVideoModel,
   normalizeOmniAspectRatio,
   normalizeOmniDurationSeconds,
+  rewriteOmniPromptRefs,
   toOmniImageInput,
   withOmniReferenceGuide,
 } from '../src/services/adapters/gemini-video.ts'
@@ -33,6 +34,11 @@ test('Omni model detection and duration/aspect clamps', () => {
   assert.match(
     withOmniReferenceGuide('抬头。', 'reference_to_video'),
     /should not be used as literal initial frames/,
+  )
+  assert.equal(rewriteOmniPromptRefs('0-3秒：@图片1小明抬头。'), '0-3秒：<IMAGE_REF_0>小明抬头。')
+  assert.match(
+    withOmniReferenceGuide('0-3秒：@图片1小明抬头。', 'reference_to_video', 2),
+    /\[# References <IMAGE_REF_0>@Image1 <IMAGE_REF_1>@Image2\]/,
   )
 })
 
@@ -66,6 +72,7 @@ test('buildGenerateRequest uses Interactions API with background poll', () => {
   assert.equal(req.body.response_format.aspect_ratio, '9:16')
   assert.equal(req.body.input[0].type, 'text')
   assert.match(req.body.input[0].text, /should not be used as literal initial frames/)
+  assert.match(req.body.input[0].text, /\[# References <IMAGE_REF_0>@Image1 <IMAGE_REF_1>@Image2\]/)
   assert.equal(req.body.input.filter((item: { type: string }) => item.type === 'image').length, 2)
 })
 

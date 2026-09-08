@@ -100,10 +100,29 @@ export function chooseOmniVideoTask(
   return 'reference_to_video'
 }
 
-export function withOmniReferenceGuide(prompt: string, task: string) {
-  if (task !== 'reference_to_video') return prompt
-  if (prompt.includes('should not be used as literal initial frames')) return prompt
-  return prompt ? `${prompt}\n\n${REFERENCE_GUIDE}` : REFERENCE_GUIDE
+/** Seedance `@图片N名字` (1-based) → Omni `<IMAGE_REF_N>` (0-based). */
+export function rewriteOmniPromptRefs(prompt: string) {
+  return String(prompt || '').replace(/@图片(\d+)([^\s@]*)/g, (_m, n, name) => {
+    const idx = Math.max(1, Number(n) || 1) - 1
+    return `<IMAGE_REF_${idx}>${name || ''}`
+  })
+}
+
+function omniReferencePrefix(imageCount: number) {
+  if (imageCount <= 0) return ''
+  const refs = Array.from({ length: imageCount }, (_, i) => `<IMAGE_REF_${i}>@Image${i + 1}`).join(' ')
+  return `[# References ${refs}]`
+}
+
+export function withOmniReferenceGuide(prompt: string, task: string, imageCount = 0) {
+  let text = rewriteOmniPromptRefs(prompt)
+  if (task !== 'reference_to_video') return text
+  if (!text.includes('[# References') && imageCount > 0) {
+    const prefix = omniReferencePrefix(imageCount)
+    text = text ? `${prefix}\n${text}` : prefix
+  }
+  if (text.includes('should not be used as literal initial frames')) return text
+  return text ? `${text}\n\n${REFERENCE_GUIDE}` : REFERENCE_GUIDE
 }
 
 function collectVideoParts(node: any, depth = 0, out: any[] = []) {
@@ -168,7 +187,7 @@ export class GeminiVideoAdapter implements VideoProviderAdapter {
     const task = chooseOmniVideoTask(imageSources.length, {
       literalFirstFrame: Boolean(firstFrame || lastFrame) && refImages.length === 0,
     })
-    const text = withOmniReferenceGuide(prompt, task)
+    const text = withOmniReferenceGuide(prompt, task, imageSources.length)
 
     const input: any[] = []
     if (text) input.push({ type: 'text', text })

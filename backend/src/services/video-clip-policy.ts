@@ -25,10 +25,21 @@ export function firstConfigModel(raw: unknown): string {
   return ''
 }
 
+export function isOmniVideoConfig(provider?: string | null, model?: string | null) {
+  const p = String(provider || '').toLowerCase()
+  const m = String(model || '').toLowerCase()
+  return p === 'gemini' || m.includes('omni')
+}
+
+/** Which video-prompt SKILL the agent should follow for this clip. */
+export function promptSkillForVideo(provider?: string | null, model?: string | null): 'omni' | 'seedance' {
+  return isOmniVideoConfig(provider, model) ? 'omni' : 'seedance'
+}
+
 export function clipDurationBounds(provider?: string | null, model?: string | null): ClipDurationPolicy {
   const p = String(provider || '').toLowerCase()
   const m = String(model || '').toLowerCase()
-  if (p === 'gemini' || m.includes('omni')) {
+  if (isOmniVideoConfig(p, m)) {
     return { min: 3, max: 10, typical: 8, promptSegment: 3 }
   }
   if (p === 'minimax' || m.includes('minimax')) {
@@ -109,6 +120,7 @@ export function toAgentVideoGeneration(opts: {
     duration_max: opts.bounds.max,
     typical_shot: opts.bounds.typical,
     prompt_segment: opts.bounds.promptSegment,
+    prompt_skill: promptSkillForVideo(opts.provider, opts.model),
     target_duration_seconds: opts.targetDurationSeconds || null,
     estimated_shot_count: counts,
     dialogue_chars_per_second: DIALOGUE_CHARS_PER_SECOND,

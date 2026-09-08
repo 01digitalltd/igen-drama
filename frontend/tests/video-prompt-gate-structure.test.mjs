@@ -27,11 +27,25 @@ test('agent completion callback is awaited so prompt batch sees fresh shots', ()
   assert.match(useAgent, /await onDone\?\.\(\)/)
 })
 
+test('shot video failure stays on the card instead of duplicating the toast', () => {
+  assert.match(page, /class="video-task-error"/)
+  assert.match(page, /function notifyShotVideoFailure/)
+  assert.match(page, /toast\.error\('镜头生成失败'\)/)
+  assert.doesNotMatch(page, /toast\.error\(failedVideoMessages\.value\[storyboardId\]\)/)
+})
+
 test('video generation duration follows the prompt timeline, not a separate input', () => {
   assert.match(page, /function parseVideoPromptDurationSeconds/)
   assert.match(page, /duration: shotVideoGenerationDuration\(sb\)/)
   assert.doesNotMatch(page, /v-model\.number="videoDuration"/)
   assert.match(page, /依提示词时间轴/)
+})
+
+test('Omni generation rewrites @name refs to IMAGE_REF tags', () => {
+  assert.match(page, /function isOmniVideoModel/)
+  assert.match(page, /<IMAGE_REF_\$\{map\[name\] - 1\}>/)
+  assert.match(page, /@图片\$\{map\[name\]\}/)
+  assert.match(page, /video-prompt\/omni/)
 })
 
 test('jumping from raw content to AI rewrite starts the rewriter automatically', () => {

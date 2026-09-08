@@ -9,6 +9,8 @@ import {
   durationExceedsMax,
   estimatedShotCount,
   firstConfigModel,
+  promptSkillForVideo,
+  toAgentVideoGeneration,
 } from '../src/services/video-clip-policy.ts'
 
 test('clipDurationBounds matches vendor clip limits', () => {
@@ -46,4 +48,19 @@ test('assertClipSecondsFit blocks prompt/shot overflow', () => {
   assert.throws(() => assertClipSecondsFit(15, omni, 'prompt'), /15s/)
   assert.ok(durationExceedsMax(15, 10))
   assert.equal(durationExceedsMax(10, 10), false)
+})
+
+test('prompt_skill routes Gemini Omni away from Seedance format', () => {
+  assert.equal(promptSkillForVideo('gemini', 'gemini-omni-flash-preview'), 'omni')
+  assert.equal(promptSkillForVideo('gemini', 'gemini-omni-1.1-flash'), 'omni')
+  assert.equal(promptSkillForVideo('volcengine', 'doubao-seedance-2-0-fast-260128'), 'seedance')
+  assert.equal(promptSkillForVideo('minimax', 'MiniMax-H3'), 'seedance')
+  assert.equal(
+    toAgentVideoGeneration({
+      provider: 'gemini',
+      model: 'gemini-omni-flash-preview',
+      bounds: clipDurationBounds('gemini', 'omni'),
+    }).prompt_skill,
+    'omni',
+  )
 })

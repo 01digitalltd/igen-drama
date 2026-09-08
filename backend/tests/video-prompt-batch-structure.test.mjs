@@ -24,6 +24,8 @@ test('video prompt batch service runs per-shot async agent loop', () => {
   assert.match(svc, /modelOverride: opts\.model/)
   assert.match(svc, /dialogueLanguageInstruction\(spoken\)/)
   assert.match(svc, /getDramaDialogueLanguage\(dramaId\)/)
+  assert.match(svc, /prompt_skill/)
+  assert.match(svc, /video-prompt\/omni/)
 })
 
 test('storyboard context injects video_generation clip bounds', () => {

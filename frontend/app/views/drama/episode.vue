@@ -2920,7 +2920,12 @@ async function genVideoPrompt(sb) {
   if (!sb || videoPromptGeneratingIds.value.includes(sb.id)) return
   const idx = sbs.value.indexOf(sb) + 1
   const cfg = videoConfigs.value.find(c => c.id === lockedVideoConfigId.value)
-  const label = cfg ? `${cfg.name} (${cfg.provider})` : '默认'
+  const { provider, model } = currentVideoProviderModel()
+  const label = cfg ? `${cfg.name} (${cfg.provider}/${model || ''})` : '默认'
+  const omni = isOmniVideoModel(provider, model)
+  const skillHint = omni
+    ? '当前是 Gemini Omni：遵守 Skill video-prompt/omni，时间轴写成 [0-3s]，每段写音频（有对白则写对白；无对白写「无对白」）。'
+    : '当前是 Seedance/其他模型：遵守 Skill video-prompt，时间轴写成 0-3秒：。'
   const charNames = getStoryboardCharacters(sb).map(c => c.name).join('、') || '无'
   const propNames = getStoryboardProps(sb).map(p => p.name).join('、') || '无'
   videoPromptGeneratingIds.value.push(sb.id)
@@ -2928,11 +2933,11 @@ async function genVideoPrompt(sb) {
     await api.post(`/agent/prompt_generator/chat`, {
       message: `${dialogueLanguageInstruction(dramaDialogueLanguage.value)}
 
-请为分镜 #${idx}(ID:${sb.id})生成视频提示词(video_prompt)。视频模型:${label},请根据该模型的特性和时长限制生成。
+请为分镜 #${idx}(ID:${sb.id})生成视频提示词(video_prompt)。视频模型:${label}。${skillHint}
 
 该分镜信息:时长 ${sb.duration || 10}s;场景:${getSceneName(sb) || '未绑定'};角色:${charNames};道具:${propNames}。
 
-请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】子镜头与台词/旁白)、氛围及时长,据此生成 video_prompt(按 3 秒分段换行、用 @角色名/@场景名/@道具名 引用参考素材；段落内允许多镜头切镜,但不跨场景,切镜点对齐 description 的【镜头N】结构),然后调用 update_storyboard 保存到分镜 ID:${sb.id}。只更新 video_prompt 字段,不要改动其他字段,不要重新拆分整集。`,
+请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】子镜头与台词/旁白)、氛围及时长及 video_generation,据此生成 video_prompt(用 @角色名/@场景名/@道具名 引用参考素材；段落内允许多镜头切镜,但不跨场景,切镜点对齐 description 的【镜头N】结构),然后调用 update_storyboard 保存到分镜 ID:${sb.id}。只更新 video_prompt 字段,不要改动其他字段,不要重新拆分整集。`,
       drama_id: dramaId,
       episode_id: epId.value,
       model: chatModelOverride() || undefined,
@@ -3326,7 +3331,20 @@ function getShotReferenceIndexMap(sb) {
   return nameToIndex
 }
 
-// 将视频提示词里的 @名字 替换为 @图片N名字（N 为参考图序号，1 起），生成时使用
+function isOmniVideoModel(provider, model) {
+  const p = String(provider || '').toLowerCase()
+  const m = String(model || '').toLowerCase()
+  return p === 'gemini' || m.includes('omni')
+}
+
+function currentVideoProviderModel() {
+  const opt = videoModelOptions.value.find(o => o.key === videoModel.value)
+    || videoModelOptions.value.find(o => o.configId === lockedVideoConfigId.value)
+    || videoConfigs.value.find(c => c.id === lockedVideoConfigId.value)
+  return { provider: opt?.provider, model: opt?.model || bareModelName(videoModel.value) }
+}
+
+// 将视频提示词里的 @名字 替换为参考图标记：Seedance=@图片N名字（1 起）；Omni=<IMAGE_REF_N>（0 起）
 function resolveVideoPromptRefs(sb) {
   const dedicated = (sb.video_prompt || sb.videoPrompt || '').trim()
   const description = (sb.description || '').trim()
@@ -3335,10 +3353,14 @@ function resolveVideoPromptRefs(sb) {
   const map = getShotReferenceIndexMap(sb)
   const names = Object.keys(map).sort((a, b) => b.length - a.length)
   if (!names.length) return prompt
+  const { provider, model } = currentVideoProviderModel()
+  const omni = isOmniVideoModel(provider, model)
   return prompt.replace(/@([^\s@]+)/g, (m, raw) => {
     for (const name of names) {
       if (raw.startsWith(name)) {
-        return `@图片${map[name]}${name}${raw.slice(name.length)}`
+        const rest = raw.slice(name.length)
+        if (omni) return `<IMAGE_REF_${map[name] - 1}>${name}${rest}`
+        return `@图片${map[name]}${name}${rest}`
       }
     }
     return m
@@ -3366,10 +3388,8 @@ function videoDurationBounds(provider, model) {
 }
 
 function currentVideoDurationBounds() {
-  const opt = videoModelOptions.value.find(o => o.key === videoModel.value)
-    || videoModelOptions.value.find(o => o.configId === lockedVideoConfigId.value)
-    || videoConfigs.value.find(c => c.id === lockedVideoConfigId.value)
-  return videoDurationBounds(opt?.provider, opt?.model || bareModelName(videoModel.value))
+  const { provider, model } = currentVideoProviderModel()
+  return videoDurationBounds(provider, model)
 }
 
 function promptDurationSeconds(sb) {
@@ -3498,11 +3518,7 @@ async function genVid(sb) {
     pollVideoGeneration(generation?.id, sb.id)
   } catch (e) {
     pendingVideoIds.value = pendingVideoIds.value.filter(item => Number(item) !== Number(sb.id))
-    failedVideoMessages.value = {
-      ...failedVideoMessages.value,
-      [sb.id]: e.message || '视频生成失败',
-    }
-    toast.error(e.message)
+    notifyShotVideoFailure(sb.id, e.message || '视频生成失败')
   } finally {
     inflightVideoIds.value = inflightVideoIds.value.filter(item => Number(item) !== Number(sb.id))
   }
@@ -3536,21 +3552,22 @@ async function pollVideoGeneration(generationId, storyboardId) {
       }
       if (status === 'failed') {
         pendingVideoIds.value = pendingVideoIds.value.filter(item => Number(item) !== Number(storyboardId))
-        failedVideoMessages.value = {
-          ...failedVideoMessages.value,
-          [storyboardId]: res?.error_msg || res?.errorMsg || '视频生成失败',
-        }
-        toast.error(failedVideoMessages.value[storyboardId])
+        notifyShotVideoFailure(storyboardId, res?.error_msg || res?.errorMsg || '视频生成失败')
         return
       }
     } catch {}
   }
   pendingVideoIds.value = pendingVideoIds.value.filter(item => Number(item) !== Number(storyboardId))
+  notifyShotVideoFailure(storyboardId, '视频生成超时')
+}
+
+function notifyShotVideoFailure(storyboardId, message) {
   failedVideoMessages.value = {
     ...failedVideoMessages.value,
-    [storyboardId]: '视频生成超时',
+    [storyboardId]: message || '视频生成失败',
   }
-  toast.error('视频生成超时')
+  // Card already shows the vendor message; keep the toast short so it is not duplicated.
+  toast.error('镜头生成失败')
 }
 async function cancelVid(sb) {
   const taskId = videoTaskIds.value[sb.id]
