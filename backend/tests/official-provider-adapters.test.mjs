@@ -194,5 +194,5 @@ test('new image and video models use their current API shapes', () => {
   assert.match(minimaxVideo, /MiniMax-H3/)
   assert.match(minimaxVideo, /\/v2',\s*'\/video_generation'/)
   assert.match(configSeed, /ensureMinimaxVideoConfig/)
-  assert.match(configSeed, /MINIMAX_API_KEY/)
+  assert.match(configSeed, /MINIMAX_VIDEO_API_KEY/)
 })

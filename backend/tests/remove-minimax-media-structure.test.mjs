@@ -20,14 +20,15 @@ test('MiniMax image adapter stays removed; H3 video adapter is kept', () => {
   assert.equal(exists('backend/src/services/adapters/minimax-video.ts'), true)
 })
 
-test('startup keeps MiniMax video configs and seeds H3 from the TTS key', () => {
+test('startup keeps MiniMax video configs and seeds H3 from MINIMAX_VIDEO_API_KEY', () => {
   const seed = read('backend/src/db/seed.ts')
   const configSeed = read('backend/src/services/config-seed.ts')
 
   assert.doesNotMatch(seed, /deleteMany\(\{ provider: 'minimax' \}\)/)
   assert.match(configSeed, /ensureMinimaxVideoConfig/)
-  assert.match(configSeed, /MINIMAX_API_KEY/)
-  assert.match(configSeed, /MINIMAX_TTS_BASE_URL/)
+  assert.match(configSeed, /MINIMAX_VIDEO_API_KEY/)
+  assert.doesNotMatch(configSeed, /process\.env\.MINIMAX_API_KEY/)
+  assert.doesNotMatch(configSeed, /MINIMAX_TTS_BASE_URL/)
   assert.match(configSeed, /MiniMax-H3/)
   assert.match(configSeed, /api\.minimax\.io/)
 })

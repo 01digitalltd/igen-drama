@@ -119,32 +119,46 @@ async function ensureGeminiVideoConfig() {
 }
 
 /**
- * MiniMax H3 video reuses the TTS MiniMax key (MINIMAX_API_KEY) on api.minimax.io.
- * Inserts a secondary video config unless one is already active.
+ * MiniMax H3 video uses MINIMAX_VIDEO_API_KEY on api.minimax.io.
+ * Do not reuse the TTS MINIMAX_API_KEY.
  * When DRAMA_VIDEO_PROVIDER=minimax it is seeded at higher priority so it becomes the default.
  */
 async function ensureMinimaxVideoConfig() {
   const videos = ((await db.select().from(schema.aiServiceConfigs)
-    .where(eq(schema.aiServiceConfigs.serviceType, 'video'))) as Array<{ provider?: string | null; isActive?: unknown }>)
-  if (videos.some((row) => row.provider === 'minimax' && row.isActive)) return
+    .where(eq(schema.aiServiceConfigs.serviceType, 'video'))) as Array<{
+      id?: number
+      provider?: string | null
+      isActive?: unknown
+      apiKey?: string | null
+    }>)
+  const existing = videos.find((row) => row.provider === 'minimax' && row.isActive)
 
   const provider = (readEnv('DRAMA_VIDEO', 'PROVIDER') || 'gemini').toLowerCase()
   const apiKey = (
-    process.env.MINIMAX_API_KEY
-    || process.env.DRAMA_MINIMAX_API_KEY
+    process.env.MINIMAX_VIDEO_API_KEY
+    || process.env.DRAMA_MINIMAX_VIDEO_API_KEY
     || (provider === 'minimax' ? readEnv('DRAMA_VIDEO', 'API_KEY') : '')
     || ''
   ).trim()
   const baseUrl = (
     process.env.MINIMAX_VIDEO_BASE_URL
-    || process.env.MINIMAX_TTS_BASE_URL
     || (provider === 'minimax' ? readEnv('DRAMA_VIDEO', 'BASE_URL') : '')
     || 'https://api.minimax.io'
   ).trim()
   const model = (provider === 'minimax' ? readEnv('DRAMA_VIDEO', 'MODEL') : '') || 'MiniMax-H3'
 
+  if (existing) {
+    if (apiKey && existing.apiKey !== apiKey && existing.id != null) {
+      await db.update(schema.aiServiceConfigs)
+        .set({ apiKey, updatedAt: now() })
+        .where(eq(schema.aiServiceConfigs.id, existing.id))
+      console.log('[config-seed] updated video config api key (minimax)')
+    }
+    return
+  }
+
   if (!apiKey) {
-    console.warn('[config-seed] skip minimax video: set MINIMAX_API_KEY (same key as TTS)')
+    console.warn('[config-seed] skip minimax video: set MINIMAX_VIDEO_API_KEY (H3 video key, not TTS)')
     return
   }
 
