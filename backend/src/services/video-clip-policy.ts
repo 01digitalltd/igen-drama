@@ -10,19 +10,40 @@ export type ClipDurationPolicy = {
 export const DIALOGUE_CHARS_PER_SECOND = 4.5
 export const DIALOGUE_ACTING_PADDING_SECONDS = 2
 
-export function firstConfigModel(raw: unknown): string {
-  if (!raw) return ''
-  if (Array.isArray(raw)) return String(raw[0] || '').trim()
+export const GEMINI_OMNI_VIDEO_MODELS = ['gemini-omni-1.1-flash', 'gemini-omni-flash-preview'] as const
+
+export function parseConfigModels(raw: unknown): string[] {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.map((item) => String(item || '').trim()).filter(Boolean)
   if (typeof raw === 'string') {
     try {
       const parsed = JSON.parse(raw) as unknown
-      if (Array.isArray(parsed)) return String(parsed[0] || '').trim()
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item || '').trim()).filter(Boolean)
     } catch {
       /* raw model id */
     }
-    return raw.trim()
+    return raw.trim() ? [raw.trim()] : []
   }
-  return ''
+  return []
+}
+
+export function firstConfigModel(raw: unknown): string {
+  return parseConfigModels(raw)[0] || ''
+}
+
+/** Always offer Omni 1.1 on Gemini video configs, even if DB still lists preview only. */
+export function expandGeminiOmniVideoModels(provider?: string | null, models: string[] = []): string[] {
+  const p = String(provider || '').toLowerCase()
+  const list = models.map((item) => String(item || '').trim()).filter(Boolean)
+  if (p !== 'gemini' && !list.some((item) => item.toLowerCase().includes('omni'))) return list
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of [...GEMINI_OMNI_VIDEO_MODELS, ...list]) {
+    if (seen.has(item)) continue
+    seen.add(item)
+    out.push(item)
+  }
+  return out
 }
 
 export function isOmniVideoConfig(provider?: string | null, model?: string | null) {

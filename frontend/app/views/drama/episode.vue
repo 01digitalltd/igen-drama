@@ -2116,12 +2116,26 @@ function configModels(cfg) {
 }
 // 汇总该类型全部启用配置的模型（按 厂商+模型 去重，按优先级排序），选中模型时连同所属配置一起调用
 // 选中值使用 'provider/model' 复合键：同名模型可能来自不同厂商（如中转站与官方），必须区分
-function collectModelOptions(cfgs) {
+function expandGeminiOmniVideoModels(provider, models) {
+  const p = String(provider || '').toLowerCase()
+  const list = (models || []).map((item) => String(item || '').trim()).filter(Boolean)
+  if (p !== 'gemini' && !list.some((item) => item.toLowerCase().includes('omni'))) return list
+  const seen = new Set()
+  const out = []
+  for (const item of ['gemini-omni-1.1-flash', 'gemini-omni-flash-preview', ...list]) {
+    if (seen.has(item)) continue
+    seen.add(item)
+    out.push(item)
+  }
+  return out
+}
+function collectModelOptions(cfgs, { expandOmni } = {}) {
   const seen = new Set()
   const out = []
   const sorted = [...cfgs].filter(c => c.is_active).sort((a, b) => (b.priority || 0) - (a.priority || 0))
   for (const c of sorted) {
-    for (const m of configModels(c)) {
+    const models = expandOmni ? expandGeminiOmniVideoModels(c.provider, configModels(c)) : configModels(c)
+    for (const m of models) {
       const key = `${c.provider}/${m}`
       if (seen.has(key)) continue
       seen.add(key)
@@ -2145,7 +2159,7 @@ function hasMultiConfigs(options) {
 const textModelOptions = computed(() => collectModelOptions(textConfigs.value))
 const imageModelOptions = computed(() => collectModelOptions(imageConfigs.value))
 const videoModelOptions = computed(() => {
-  const all = collectModelOptions(videoConfigs.value)
+  const all = collectModelOptions(videoConfigs.value, { expandOmni: true })
   if (!isRealisticDrama.value) return all
   return all.filter(o => !isSeedanceVideoModel(o.provider, o.model))
 })

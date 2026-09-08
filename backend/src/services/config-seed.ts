@@ -6,6 +6,7 @@ import { db, schema } from '../db/index.js'
 import { eq } from '../db/query.js'
 import { now } from '../utils/response.js'
 import { officialProviders, type ServiceType } from './ai.js'
+import { expandGeminiOmniVideoModels, parseConfigModels } from './video-clip-policy.js'
 
 interface SeedSpec {
   serviceType: ServiceType
@@ -72,8 +73,24 @@ async function ensureGeminiVideoConfig() {
   if (provider !== 'gemini') return
 
   const videos = ((await db.select().from(schema.aiServiceConfigs)
-    .where(eq(schema.aiServiceConfigs.serviceType, 'video'))) as Array<{ provider?: string | null; isActive?: unknown }>)
-  if (videos.some((row) => row.provider === 'gemini' && row.isActive)) return
+    .where(eq(schema.aiServiceConfigs.serviceType, 'video'))) as Array<{
+      id?: number
+      provider?: string | null
+      isActive?: unknown
+      model?: unknown
+    }>)
+  const existing = videos.find((row) => row.provider === 'gemini' && row.isActive)
+  if (existing) {
+    const current = parseConfigModels(existing.model)
+    const merged = expandGeminiOmniVideoModels('gemini', current)
+    if (existing.id != null && JSON.stringify(merged) !== JSON.stringify(current)) {
+      await db.update(schema.aiServiceConfigs)
+        .set({ model: JSON.stringify(merged), updatedAt: now() })
+        .where(eq(schema.aiServiceConfigs.id, existing.id))
+      console.log('[config-seed] updated video models (gemini omni 1.1)')
+    }
+    return
+  }
 
   let apiKey = readEnv('DRAMA_VIDEO', 'API_KEY')
   let baseUrl = readEnv('DRAMA_VIDEO', 'BASE_URL') || 'https://generativelanguage.googleapis.com'

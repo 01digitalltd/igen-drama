@@ -8,6 +8,7 @@ import {
   dialogueFloorSeconds,
   durationExceedsMax,
   estimatedShotCount,
+  expandGeminiOmniVideoModels,
   firstConfigModel,
   promptSkillForVideo,
   toAgentVideoGeneration,
@@ -40,6 +41,14 @@ test('estimated shot count follows typical clip length ±20%', () => {
 test('firstConfigModel reads JSON arrays and raw ids', () => {
   assert.equal(firstConfigModel('["gemini-omni-flash-preview"]'), 'gemini-omni-flash-preview')
   assert.equal(firstConfigModel('MiniMax-H3'), 'MiniMax-H3')
+})
+
+test('Gemini video configs also offer Omni 1.1 even if DB only lists preview', () => {
+  assert.deepEqual(
+    expandGeminiOmniVideoModels('gemini', ['gemini-omni-flash-preview']),
+    ['gemini-omni-1.1-flash', 'gemini-omni-flash-preview'],
+  )
+  assert.deepEqual(expandGeminiOmniVideoModels('minimax', ['MiniMax-H3']), ['MiniMax-H3'])
 })
 
 test('assertClipSecondsFit blocks prompt/shot overflow', () => {

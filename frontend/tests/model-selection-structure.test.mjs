@@ -17,7 +17,9 @@ test('workbench offers model selectors for rewrite, image and video generation',
   assert.match(page, /v-model="videoModel"/)
   assert.doesNotMatch(page, /<select v-model="chatModel"/)
   // 选项汇总该类型全部启用配置的模型（去重、按优先级），API 返回的 model 可能已是数组
-  assert.match(page, /function collectModelOptions\(cfgs\)/)
+  assert.match(page, /function collectModelOptions\(cfgs/)
+  assert.match(page, /expandOmni: true/)
+  assert.match(page, /gemini-omni-1\.1-flash/)
   assert.match(page, /if \(Array\.isArray\(raw\)\) return raw\.filter\(Boolean\)/)
   assert.match(page, /collectModelOptions\(textConfigs\.value\)/)
   assert.match(page, /collectModelOptions\(imageConfigs\.value\)/)
