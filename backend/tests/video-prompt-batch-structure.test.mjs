@@ -19,6 +19,12 @@ test('video prompt batch service runs per-shot async agent loop', () => {
   assert.match(svc, /read_storyboard_context/)
   assert.match(svc, /update_storyboard/)
   assert.match(svc, /fresh\?\.videoPrompt/)
+  assert.match(svc, /VIDEO_PROMPT_ATTEMPTS/)
+  assert.match(svc, /batch-shot-retry/)
+  assert.match(svc, /looksLikeVideoPrompt/)
+  assert.match(svc, /from '\.\/video-prompt-text\.js'/)
+  assert.match(svc, /persistShotVideoPrompt/)
+  assert.match(svc, /mustRewrite/)
   // 进度跟踪与文本模型覆盖
   assert.match(svc, /current_storyboard_id/)
   assert.match(svc, /modelOverride: opts\.model/)
@@ -37,6 +43,10 @@ test('storyboard context injects video_generation clip bounds', () => {
   assert.match(tools, /duration_warnings/)
   assert.match(tools, /image_refs/)
   assert.match(tools, /buildShotImageRefs/)
+  assert.match(tools, /max_total_seconds/)
+  assert.match(tools, /save-over-budget/)
+  assert.match(tools, /fitShotDurationsToBudget/)
+  assert.match(tools, /acceptShotsWithinCount/)
 })
 
 test('episodes route exposes video prompt batch endpoints', () => {

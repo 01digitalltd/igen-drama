@@ -8,6 +8,9 @@ import {
   dialogueFloorSeconds,
   durationExceedsMax,
   estimatedShotCount,
+  episodeDurationBudget,
+  acceptShotsWithinCount,
+  fitShotDurationsToBudget,
   expandGeminiOmniVideoModels,
   firstConfigModel,
   promptSkillForVideo,
@@ -38,6 +41,34 @@ test('dialogue floor cannot exceed the model max', () => {
 
 test('estimated shot count follows typical clip length ±20%', () => {
   assert.deepEqual(estimatedShotCount(80, 10), { typical: 8, min: 6, max: 10 })
+})
+
+test('episode duration budget caps MiniMax 30s to a few shots that can still fit', () => {
+  const bounds = clipDurationBounds('minimax', 'MiniMax-H3')
+  const budget = episodeDurationBudget(30, bounds)
+  assert.equal(budget.target_seconds, 30)
+  assert.equal(budget.max_total_seconds, 30)
+  assert.deepEqual(budget.estimated_shot_count, { typical: 3, min: 2, max: 4 })
+  assert.equal(budget.suggested_shot_duration, 10)
+  assert.ok(budget.estimated_shot_count.max * bounds.min <= 30)
+})
+
+test('fitShotDurationsToBudget scales 3x12s MiniMax shots down to 30s', () => {
+  const bounds = clipDurationBounds('minimax', 'MiniMax-H3')
+  assert.deepEqual(fitShotDurationsToBudget([12, 12, 12], 30, bounds), [10, 10, 10])
+})
+
+test('acceptShotsWithinCount keeps updates and rejects extra shot numbers', () => {
+  const incoming = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ shot_number: n }))
+  const first = acceptShotsWithinCount([], incoming, 3)
+  assert.deepEqual(first.accepted.map((s) => s.shot_number), [1, 2, 3])
+  assert.deepEqual(first.rejected.map((s) => s.shot_number), [4, 5, 6, 7, 8])
+  const extra = acceptShotsWithinCount([1, 2, 3], [{ shot_number: 4 }], 3)
+  assert.equal(extra.accepted.length, 0)
+  assert.deepEqual(extra.rejected.map((s) => s.shot_number), [4])
+  const upsert = acceptShotsWithinCount([1, 2], [{ shot_number: 2 }, { shot_number: 3 }, { shot_number: 4 }], 3)
+  assert.deepEqual(upsert.accepted.map((s) => s.shot_number), [2, 3])
+  assert.deepEqual(upsert.rejected.map((s) => s.shot_number), [4])
 })
 
 test('firstConfigModel reads JSON arrays and raw ids', () => {
@@ -73,5 +104,23 @@ test('prompt_skill routes Gemini Omni away from Seedance format', () => {
       bounds: clipDurationBounds('gemini', 'omni'),
     }).prompt_skill,
     'omni',
+  )
+  assert.equal(
+    toAgentVideoGeneration({
+      provider: 'minimax',
+      model: 'MiniMax-H3',
+      bounds: clipDurationBounds('minimax', 'MiniMax-H3'),
+      targetDurationSeconds: 30,
+    }).max_total_seconds,
+    30,
+  )
+  assert.equal(
+    toAgentVideoGeneration({
+      provider: 'minimax',
+      model: 'MiniMax-H3',
+      bounds: clipDurationBounds('minimax', 'MiniMax-H3'),
+      targetDurationSeconds: 30,
+    }).suggested_shot_duration,
+    10,
   )
 })

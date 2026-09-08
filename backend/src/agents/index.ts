@@ -79,9 +79,9 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 
 工作流程：
 1. 调用 read_storyboard_context 读取剧本、角色列表、场景列表、道具列表
-2. 先识别剧本的叙事节拍（如【开场】【触发】【高潮】【收尾】等标记或叙事转折点），节拍边界强制切段；再将每个节拍拆为 1 到多个分镜段落，总体保持剧情完整连续
+2. 先识别剧本的叙事节拍（如【开场】【触发】【高潮】【收尾】等标记或叙事转折点）；再将节拍压进有限的分镜段落（用【镜头N】承载），总体保持剧情完整连续，且不得超过 video_generation 的段数与总时长上限
 3. 为每个段落补全生产字段（拆分时不需要生成 video_prompt，该字段由提示词 Agent 在视频生成阶段生成）
-4. 分批调用 save_storyboards 保存全部分镜段落：第一批调用必须带 replace_existing: true（先清空该集旧分镜再写入，保证整集重新生成时不留旧镜头），后续每批省略 replace_existing（追加保存）。每批最多 8 个段落，shot_number 必须按顺序递增；全部段落保存完成前不要结束（不要只保存部分段落就停止）
+4. 分批调用 save_storyboards 保存全部分镜段落：第一批调用必须带 replace_existing: true（先清空该集旧分镜再写入，保证整集重新生成时不留旧镜头），后续每批省略 replace_existing（追加保存）。每批最多 8 个段落，且不得超过 video_generation.estimated_shot_count.max；shot_number 必须按顺序递增；全部段落保存完成前不要结束（不要只保存部分段落就停止）。若工具返回 error 说超出段数/总时长，压缩后再提交，不要继续追加。
 
 硬约束（必须遵守）：
 - 不要输出任何规划、分析、推理或解释性文本，不要复述剧本，不要写「我正在…」「首先我需要…」这类话——思考留在模型内部，输出只允许工具调用
@@ -97,9 +97,10 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 - atmosphere：氛围、光线、色调、环境感受
 
 时长规则（硬约束，全部以 read_storyboard_context.video_generation 为准）：
-- 总量锚定：若 video_generation.target_duration_seconds 有值则用它；否则目标总时长 = 剧本字数 ÷ 500字/分钟。段落数 ≈ 目标总时长 ÷ typical_shot 秒，允许 ±20% 浮动
-- 节奏分层：过渡段靠近 duration_min；叙事段靠近 typical_shot；爆点段不超过 duration_max。子镜头节奏在上限内放慢
-- 台词下限：段落时长 ≥ 段内台词与旁白总字数（写在 description 中的部分）÷ dialogue_chars_per_second + acting_padding_seconds，且不得超过 duration_max。装不下的台词拆到下一个段落
+- 总量锚定：若 video_generation.target_duration_seconds 有值，它是硬上限——全部分镜 duration 之和不得超过 max_total_seconds，段落数必须落在 estimated_shot_count.min–max（建议 typical），每段优先用 suggested_shot_duration。宁可把多个节拍压进同一段落的【镜头N】子镜头，也不要多拆段落。没有目标秒数时，才用剧本字数 ÷ 500字/分钟估算
+- 节奏分层：过渡段靠近 duration_min；叙事段靠近 typical_shot 或 suggested_shot_duration；爆点段不超过 duration_max。子镜头节奏在上限内放慢
+- 台词下限：段落时长 ≥ 段内台词与旁白总字数（写在 description 中的部分）÷ dialogue_chars_per_second + acting_padding_seconds，且不得超过 duration_max。装不下的台词拆到下一个段落；若拆完会超过段数上限，把台词压进现有段落并缩短对白
+- 达到 estimated_shot_count.max 后必须停止保存，不要再追加批次
 
 额外要求：
 - 优先复用 read_storyboard_context 返回的 scene_id，不要凭空创造新场景

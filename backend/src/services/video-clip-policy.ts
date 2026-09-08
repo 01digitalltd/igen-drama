@@ -96,6 +96,82 @@ export function estimatedShotCount(targetSeconds: number, typical: number) {
   }
 }
 
+export type EpisodeDurationBudget = {
+  target_seconds: number
+  max_total_seconds: number
+  estimated_shot_count: { typical: number; min: number; max: number }
+  suggested_shot_duration: number
+}
+
+/** Hard episode budget: shot count cannot exceed what still fits at model min clip length. */
+export function episodeDurationBudget(targetSeconds: number, bounds: ClipDurationPolicy): EpisodeDurationBudget {
+  const target = Math.max(bounds.min, Math.round(Number(targetSeconds) || 0))
+  const raw = estimatedShotCount(target, bounds.typical)
+  const maxFit = Math.max(1, Math.floor(target / bounds.min))
+  const max = Math.min(raw.max, maxFit)
+  const typical = Math.min(Math.max(1, raw.typical), max)
+  const min = Math.min(raw.min, typical)
+  const suggested = clampShotDurationForModel(
+    Math.max(bounds.min, Math.floor(target / typical)),
+    bounds,
+    bounds.typical,
+  )
+  return {
+    target_seconds: target,
+    max_total_seconds: target,
+    estimated_shot_count: { typical, min, max },
+    suggested_shot_duration: suggested,
+  }
+}
+
+export function fitShotDurationsToBudget(
+  durations: number[],
+  budget: number,
+  bounds: ClipDurationPolicy,
+) {
+  const next = durations.map((item) => clampShotDurationForModel(item, bounds, bounds.typical))
+  let sum = next.reduce((total, item) => total + item, 0)
+  const cap = Math.max(bounds.min, Math.round(Number(budget) || 0))
+  while (sum > cap) {
+    let idx = -1
+    let best = bounds.min
+    for (let i = 0; i < next.length; i++) {
+      if (next[i] > best) {
+        best = next[i]
+        idx = i
+      }
+    }
+    if (idx < 0) break
+    next[idx] -= 1
+    sum -= 1
+  }
+  return next
+}
+
+export function acceptShotsWithinCount<T extends { shot_number: number }>(
+  existingShotNumbers: Iterable<number>,
+  incoming: T[],
+  maxShots: number,
+): { accepted: T[]; rejected: T[] } {
+  const numbers = new Set(
+    [...existingShotNumbers].filter((n) => Number.isFinite(n)),
+  )
+  const accepted: T[] = []
+  const rejected: T[] = []
+  const ordered = [...incoming].sort((a, b) => a.shot_number - b.shot_number)
+  const cap = Math.max(1, Math.round(Number(maxShots) || 0))
+  for (const sb of ordered) {
+    const updating = numbers.has(sb.shot_number)
+    if (updating || numbers.size < cap) {
+      accepted.push(sb)
+      numbers.add(sb.shot_number)
+    } else {
+      rejected.push(sb)
+    }
+  }
+  return { accepted, rejected }
+}
+
 export function dialogueFloorSeconds(charCount: number) {
   const n = Math.max(0, Number(charCount) || 0)
   return Math.ceil(n / DIALOGUE_CHARS_PER_SECOND) + DIALOGUE_ACTING_PADDING_SECONDS
@@ -131,8 +207,8 @@ export function toAgentVideoGeneration(opts: {
   bounds: ClipDurationPolicy
   targetDurationSeconds?: number | null
 }) {
-  const counts = opts.targetDurationSeconds
-    ? estimatedShotCount(opts.targetDurationSeconds, opts.bounds.typical)
+  const budget = opts.targetDurationSeconds
+    ? episodeDurationBudget(opts.targetDurationSeconds, opts.bounds)
     : null
   return {
     provider: opts.provider || '',
@@ -143,8 +219,10 @@ export function toAgentVideoGeneration(opts: {
     typical_shot: opts.bounds.typical,
     prompt_segment: opts.bounds.promptSegment,
     prompt_skill: promptSkillForVideo(opts.provider, opts.model),
-    target_duration_seconds: opts.targetDurationSeconds || null,
-    estimated_shot_count: counts,
+    target_duration_seconds: budget?.target_seconds || null,
+    max_total_seconds: budget?.max_total_seconds || null,
+    estimated_shot_count: budget?.estimated_shot_count || null,
+    suggested_shot_duration: budget?.suggested_shot_duration || opts.bounds.typical,
     dialogue_chars_per_second: DIALOGUE_CHARS_PER_SECOND,
     acting_padding_seconds: DIALOGUE_ACTING_PADDING_SECONDS,
   }

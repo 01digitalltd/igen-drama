@@ -8,10 +8,10 @@ import { z } from 'zod'
 import { db, getInsertId, schema } from '../../db/index.js'
 import { eq } from '../../db/query.js'
 import { now } from '../../utils/response.js'
-import { logTaskProgress, logTaskSuccess } from '../../utils/task-logger.js'
-import { getDramaId, getEpisodeId } from '../context.js'
-import { clampShotDurationForModel } from '../../services/video-clip-policy.js'
+import { clampShotDurationForModel, acceptShotsWithinCount, fitShotDurationsToBudget } from '../../services/video-clip-policy.js'
 import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
+import { logTaskProgress, logTaskSuccess, logTaskWarn } from '../../utils/task-logger.js'
+import { getDramaId, getEpisodeId } from '../context.js'
 import { buildShotImageRefs } from '../../services/storyboard-prompt.js'
 
 async function syncStoryboardCharacters(storyboardId: number, characterIds: number[]) {
@@ -214,6 +214,10 @@ const readStoryboardContext = createTool({
       }))
 
     const clip = await loadEpisodeClipPolicy(episodeId)
+    const savedLive = existingStoryboardPayload
+    const savedTotal = savedLive.reduce((sum, sb) => sum + (sb.duration || 0), 0)
+    const maxShots = clip?.videoGeneration?.estimated_shot_count?.max || null
+    const targetSeconds = clip?.videoGeneration?.target_duration_seconds || null
     const payload = {
       episode: {
         id: ep.id,
@@ -226,7 +230,15 @@ const readStoryboardContext = createTool({
       scenes,
       props,
       existing_storyboards: existingStoryboardPayload,
-      video_generation: clip?.videoGeneration || null,
+      video_generation: clip?.videoGeneration
+        ? {
+          ...clip.videoGeneration,
+          saved_shot_count: savedLive.length,
+          saved_total_duration: savedTotal,
+          remaining_shots: maxShots != null ? Math.max(0, maxShots - savedLive.length) : null,
+          remaining_seconds: targetSeconds != null ? Math.max(0, targetSeconds - savedTotal) : null,
+        }
+        : null,
     }
     logTaskSuccess('StoryboardTool', 'read-context', {
       episodeId,
@@ -264,7 +276,7 @@ const storyboardFields = z.object({
 
 const saveStoryboards = createTool({
   id: 'save_storyboards',
-  description: 'Save storyboards for this episode. Call in batches of at most 8 storyboards: the first batch must set replace_existing: true (clears all old storyboards for the episode, then writes), every following batch omits replace_existing (appends). Rows are upserted by shot_number, so overlapping batches and retries never create duplicates.',
+  description: 'Save storyboards for this episode. Call in batches of at most 8 storyboards: the first batch must set replace_existing: true (clears all old storyboards for the episode, then writes), every following batch omits replace_existing (appends). When video_generation.target_duration_seconds is set, do not submit more than estimated_shot_count.max shots and keep the sum of duration ≤ max_total_seconds; extra shots are rejected. Rows are upserted by shot_number, so overlapping batches and retries never create duplicates.',
   inputSchema: z.object({
     replace_existing: z.boolean().optional(),
     storyboards: z.array(storyboardFields),
@@ -277,6 +289,9 @@ const saveStoryboards = createTool({
     const clip = await loadEpisodeClipPolicy(episodeId)
     const bounds = clip?.bounds
     const durationWarnings: string[] = []
+    const maxShots = clip?.videoGeneration?.estimated_shot_count?.max || null
+    const targetSeconds = clip?.targetDurationSeconds || null
+    const uniqueIncoming = new Set(storyboards.map(sb => sb.shot_number)).size
     logTaskProgress('StoryboardTool', 'save-begin', {
       episodeId,
       dramaId,
@@ -284,6 +299,53 @@ const saveStoryboards = createTool({
       count: storyboards.length,
       shotNumbers: storyboards.map(sb => sb.shot_number).join(','),
     })
+    if (replace_existing === true && maxShots && uniqueIncoming > maxShots) {
+      const suggested = clip?.videoGeneration?.suggested_shot_duration
+      const message = `本集目标 ${targetSeconds} 秒，最多 ${maxShots} 个分镜（建议每段 ${suggested} 秒）。本次提交了 ${uniqueIncoming} 个。请把全剧压缩进不超过 ${maxShots} 个段落（用【镜头N】承载节拍），然后重新调用 save_storyboards，第一批 replace_existing: true。总 duration 之和不得超过 ${targetSeconds} 秒。`
+      logTaskWarn('StoryboardTool', 'save-over-budget', {
+        episodeId,
+        submitted: uniqueIncoming,
+        maxShots,
+        targetSeconds,
+      })
+      return {
+        error: message,
+        max_shots: maxShots,
+        max_total_seconds: targetSeconds,
+        submitted: uniqueIncoming,
+      }
+    }
+
+    let pending = storyboards
+    if (replace_existing !== true && maxShots) {
+      const existingShotNumbers = (await db.select().from(schema.storyboards)
+        .where(eq(schema.storyboards.episodeId, episodeId)))
+        .filter(sb => !sb.deletedAt)
+        .map(sb => sb.storyboardNumber)
+      const filtered = acceptShotsWithinCount(existingShotNumbers, storyboards, maxShots)
+      pending = filtered.accepted
+      if (filtered.rejected.length) {
+        durationWarnings.push(
+          `rejected shots ${filtered.rejected.map(sb => sb.shot_number).join(',')}: episode budget is ${maxShots} shots / ${targetSeconds}s`,
+        )
+        logTaskWarn('StoryboardTool', 'save-reject-extra', {
+          episodeId,
+          rejected: filtered.rejected.map(sb => sb.shot_number).join(','),
+          maxShots,
+          targetSeconds,
+        })
+      }
+      if (!pending.length) {
+        return {
+          error: `本集已达 ${maxShots} 个分镜上限（目标 ${targetSeconds} 秒），不要再追加。若需重拆，第一批带 replace_existing: true 并只提交不超过 ${maxShots} 个段落。`,
+          max_shots: maxShots,
+          max_total_seconds: targetSeconds,
+          count: 0,
+          rejected: filtered.rejected.map(sb => sb.shot_number),
+        }
+      }
+    }
+
     if (replace_existing === true) {
       const existingStoryboardRows = await db.select().from(schema.storyboards)
         .where(eq(schema.storyboards.episodeId, episodeId))
@@ -303,7 +365,7 @@ const saveStoryboards = createTool({
       existingRows.filter(sb => !sb.deletedAt).map(sb => [sb.storyboardNumber, sb.id]),
     )
 
-    for (const sb of storyboards) {
+    for (const sb of pending) {
       await validateStoryboardBindings(episodeId, dramaId, sb.scene_id, sb.character_ids, sb.prop_ids)
       const rawDuration = sb.duration || 10
       const duration = bounds ? clampShotDurationForModel(rawDuration, bounds, bounds.typical) : rawDuration
@@ -349,9 +411,23 @@ const saveStoryboards = createTool({
     // 整集时长 = 当前全部存活分镜时长之和（分批保存时不能再按单批累加）
     const allRows = await db.select().from(schema.storyboards)
       .where(eq(schema.storyboards.episodeId, episodeId))
-    const totalDuration = allRows
-      .filter(sb => !sb.deletedAt)
-      .reduce((sum, sb) => sum + (sb.duration || 0), 0)
+    const liveRows = allRows.filter(sb => !sb.deletedAt)
+    let totalDuration = liveRows.reduce((sum, sb) => sum + (sb.duration || 0), 0)
+    if (bounds && targetSeconds && liveRows.length && totalDuration > targetSeconds) {
+      const fitted = fitShotDurationsToBudget(
+        liveRows.map(sb => sb.duration || bounds.typical),
+        targetSeconds,
+        bounds,
+      )
+      for (let i = 0; i < liveRows.length; i++) {
+        if (fitted[i] === liveRows[i].duration) continue
+        await db.update(schema.storyboards)
+          .set({ duration: fitted[i], updatedAt: ts })
+          .where(eq(schema.storyboards.id, liveRows[i].id))
+        durationWarnings.push(`shot ${liveRows[i].storyboardNumber}: ${liveRows[i].duration}s → ${fitted[i]}s (episode budget ${targetSeconds}s)`)
+      }
+      totalDuration = fitted.reduce((sum, item) => sum + item, 0)
+    }
 
     await db.update(schema.episodes)
       .set({ duration: Math.ceil(totalDuration / 60), updatedAt: ts })
@@ -359,13 +435,16 @@ const saveStoryboards = createTool({
 
     logTaskSuccess('StoryboardTool', 'save-complete', {
       episodeId,
-      count: storyboards.length,
+      count: pending.length,
       totalDuration,
+      targetSeconds,
     })
     return {
-      message: `Saved ${storyboards.length} storyboards`,
-      count: storyboards.length,
+      message: `Saved ${pending.length} storyboards`,
+      count: pending.length,
       total_duration: totalDuration,
+      remaining_seconds: targetSeconds != null ? Math.max(0, targetSeconds - totalDuration) : null,
+      max_shots: maxShots,
       duration_warnings: durationWarnings,
     }
   },
