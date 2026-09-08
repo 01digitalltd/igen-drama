@@ -1,7 +1,8 @@
 /**
- * Strip leftover live-action face-grid instructions from stored prompts.
- * Character stills used to overlay a 6x6 white grid; video prompts asked to
- * remove it. Generation no longer injects either — this only cleans old text.
+ * Strip leftover live-action *white* 6x6 face-grid instructions from stored prompts.
+ * Character still generation must not bake a grid into the asset prompt.
+ * Video generation still overlays an orange 6x6 at submit time and injects a
+ * separate removal sentence *after* this strip — do not match that orange copy.
  */
 
 function tidyPrompt(text: string) {

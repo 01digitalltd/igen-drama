@@ -42,6 +42,7 @@ test('prompt agent instructions reference per-asset skills; skill files define t
   assert.match(charSkill, /正面、90 度侧面、背面/)
   assert.match(charSkill, /三个视图的脸、发型和服装完全一致/)
   assert.doesNotMatch(charSkill, /白色 6×6 网格/)
+  assert.doesNotMatch(charSkill, /橙色 6×6/)
   assert.doesNotMatch(charSkill, /五官分拆/)
   assert.match(charSkill, /纯中文/)
   assert.match(sceneSkill, /固定机位广角镜头/)

@@ -17,7 +17,12 @@ import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue } from './style-preset.js'
 import { appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
 import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from './video-model-policy.js'
-import { stripCharacterFaceGridPrompt, stripVideoFaceGridPrompt } from './face-grid.js'
+import { stripCharacterFaceGridPrompt } from './face-grid.js'
+import {
+  composeVideoPromptAfterCharacterGrid,
+  isCharacterMediaRef,
+  overlayOrangeGridOnRef,
+} from './character-grid.js'
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds } from './storyboard-prompt.js'
 import { assertClipSecondsFit, clipDurationBounds } from './video-clip-policy.js'
 import { pickLatestActiveTask } from '../utils/generation-task-status.js'
@@ -417,7 +422,14 @@ async function processTask(id: number, config: AIConfig) {
       const resolvedImageUrl = await normalizeVideoReferenceUrl(params.imageUrl)
       const resolvedFirstFrameUrl = await normalizeVideoReferenceUrl(params.firstFrameUrl)
       const resolvedLastFrameUrl = await normalizeVideoReferenceUrl(params.lastFrameUrl)
-      const resolvedReferenceImageUrls = await normalizeVideoReferenceUrls(params.referenceImageUrls)
+      const characterKeys = isRealisticDramaStyle(await resolveVideoDramaStyle(record)) && record.storyboardId
+        ? await characterStillKeysForStoryboard(record.storyboardId)
+        : []
+      const { urls: resolvedReferenceImageUrls, overlaidCount } = await normalizeVideoReferenceUrlsWithCharacterGrid(
+        params.referenceImageUrls,
+        characterKeys,
+        (ref, error) => logTaskWarn('VideoTask', 'character-grid-failed', { id, ref: redactUrl(ref), error }),
+      )
       // 参考视频/音频文件较大，不适合 dataURL 内联，需解析为公网可访问 URL
       const resolvedReferenceVideoUrls = await resolvePublicMediaUrls(params.referenceVideoUrls, 'video')
       const resolvedReferenceAudioUrls = await resolvePublicMediaUrls(params.referenceAudioUrls, 'audio')
@@ -426,7 +438,7 @@ async function processTask(id: number, config: AIConfig) {
         const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
         if (sb) prompt = resolveStoryboardVideoPrompt(sb)
       }
-      const videoPrompt = stripVideoFaceGridPrompt(prompt)
+      const videoPrompt = composeVideoPromptAfterCharacterGrid(prompt, overlaidCount)
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
@@ -1006,12 +1018,62 @@ async function normalizeVideoReferenceUrl(value: string | null | undefined): Pro
   return raw
 }
 
+async function resolveVideoDramaStyle(record: { dramaId?: unknown; storyboardId?: unknown }) {
+  let dramaId = Number(record.dramaId) || 0
+  if (!dramaId && record.storyboardId) {
+    const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, Number(record.storyboardId)))
+    if (sb) {
+      const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(sb.episodeId)))
+      dramaId = Number(ep?.dramaId) || 0
+    }
+  }
+  return getDramaStyleValue(dramaId || null)
+}
+
+async function characterStillKeysForStoryboard(storyboardId: unknown): Promise<string[]> {
+  const id = Number(storyboardId)
+  if (!Number.isInteger(id) || id <= 0) return []
+  const links = await db.select().from(schema.storyboardCharacters)
+    .where(eq(schema.storyboardCharacters.storyboardId, id))
+  const ids = [...new Set(links.map((row) => Number(row.characterId)).filter((n) => Number.isInteger(n) && n > 0))]
+  const keys: string[] = []
+  for (const characterId of ids) {
+    const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, characterId))
+    if (!char || char.deletedAt) continue
+    if (char.imageUrl) keys.push(String(char.imageUrl))
+    if (char.localPath && char.localPath !== char.imageUrl) keys.push(String(char.localPath))
+  }
+  return keys
+}
+
+async function normalizeVideoReferenceUrlsWithCharacterGrid(
+  refs: string[] | null | undefined,
+  characterKeys: string[],
+  onWarn: (ref: string, error: string) => void,
+): Promise<{ urls: string[]; overlaidCount: number }> {
+  if (!Array.isArray(refs) || !refs.length) return { urls: [], overlaidCount: 0 }
+  const unique = Array.from(new Set(refs.map((item) => String(item || '').trim()).filter(Boolean)))
+  let overlaidCount = 0
+  const urls: string[] = []
+  for (const item of unique) {
+    if (characterKeys.length && isCharacterMediaRef(item, characterKeys)) {
+      try {
+        urls.push(await overlayOrangeGridOnRef(item))
+        overlaidCount += 1
+        continue
+      } catch (err) {
+        onWarn(item, (err as Error).message)
+      }
+    }
+    const normalized = await normalizeVideoReferenceUrl(item)
+    if (normalized) urls.push(normalized)
+  }
+  return { urls, overlaidCount }
+}
+
 async function normalizeVideoReferenceUrls(refs: string[] | null | undefined): Promise<string[]> {
-  if (!Array.isArray(refs) || !refs.length) return []
-  const normalized = await Promise.all(
-    Array.from(new Set(refs.map((item) => String(item || '').trim()).filter(Boolean))).map((item) => normalizeVideoReferenceUrl(item)),
-  )
-  return normalized.filter((item): item is string => !!item)
+  const { urls } = await normalizeVideoReferenceUrlsWithCharacterGrid(refs, [], () => {})
+  return urls
 }
 
 /**

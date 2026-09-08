@@ -37,3 +37,27 @@ test('image prompt agent keeps role and scene prompts but removes grid prompt mo
   assert.doesNotMatch(skill, /宫格图/)
   assert.doesNotMatch(skill, /grid layout/)
 })
+
+test('realistic video submit overlays an orange grid; character still prompts stay clean', () => {
+  const generation = read('src/services/generation.ts')
+  const characterGrid = read('src/services/character-grid.ts')
+  const charSkill = read('workspace/skills/prompt-generator/character-prompt/SKILL.md')
+  const videoSkill = read('workspace/skills/prompt-generator/video-prompt/SKILL.md')
+  const omniSkill = read('workspace/skills/prompt-generator/video-prompt/omni/SKILL.md')
+
+  assert.match(characterGrid, /overlayOrangeGrid/)
+  assert.match(characterGrid, /#FF6A00/)
+  assert.match(generation, /isRealisticDramaStyle/)
+  assert.match(generation, /overlayOrangeGridOnRef/)
+  assert.match(generation, /composeVideoPromptAfterCharacterGrid/)
+  assert.match(generation, /characterStillKeysForStoryboard/)
+  assert.doesNotMatch(charSkill, /橙色 6×6|白色 6×6/)
+  assert.doesNotMatch(videoSkill, /6×6 网格/)
+  assert.match(omniSkill, /橙色 6×6 网格并注入除网格指令/)
+  assert.match(omniSkill, /不要把除网格写进/)
+
+  const enqueue = generation.slice(generation.indexOf('async function generateVideoUniq'))
+  const createAt = enqueue.indexOf('const id = await createTask')
+  assert.ok(createAt > 0)
+  assert.doesNotMatch(enqueue.slice(0, createAt), /overlayOrangeGridOnRef|composeVideoPromptAfterCharacterGrid/)
+})
