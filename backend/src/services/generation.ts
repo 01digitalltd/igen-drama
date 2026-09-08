@@ -21,6 +21,7 @@ import { stripCharacterFaceGridPrompt, stripVideoFaceGridPrompt } from './face-g
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds } from './storyboard-prompt.js'
 import { assertClipSecondsFit, clipDurationBounds } from './video-clip-policy.js'
 import { pickLatestActiveTask } from '../utils/generation-task-status.js'
+import { isRetryableProviderStatus, parseProviderErrorText } from '../utils/provider-error.js'
 
 type TaskType = 'image' | 'video'
 
@@ -239,6 +240,8 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
     config: { provider: config.provider, model: config.model, baseUrl: config.baseUrl },
     params,
   })
+  // createTask already enqueued; kick again if the first pump raced or threw.
+  enqueueVideo(id)
   return id
 }
 
@@ -293,14 +296,20 @@ async function pumpVideoQueue() {
       const id = videoWaitQueue.shift()
       if (id == null) break
       if (cancelledTaskIds.has(id) || activeVideoIds.has(id) || activeProcessors.has(id)) continue
-      const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
-      if (!row || row.type !== 'video' || TERMINAL_TASK_STATUSES.has(String(row.status))) continue
-      const config = await resolveConfigForTask(row)
-      if (!config) {
-        await failTask(id, '找不到可用的视频 AI 配置')
-        continue
+      try {
+        const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+        if (!row || row.type !== 'video' || TERMINAL_TASK_STATUSES.has(String(row.status))) continue
+        const config = await resolveConfigForTask(row)
+        if (!config) {
+          await failTask(id, '找不到可用的视频 AI 配置')
+          continue
+        }
+        logTaskProgress('VideoTask', 'pump', { id, provider: config.provider })
+        startVideoProcessor(id, config)
+      } catch (err: any) {
+        logTaskError('VideoTask', 'pump', { id, error: err?.message })
+        await failTask(id, err?.message || '视频任务启动失败')
       }
-      startVideoProcessor(id, config)
     }
   } finally {
     pumpingVideoQueue = false
@@ -454,7 +463,9 @@ async function processTask(id: number, config: AIConfig) {
       signal: AbortSignal.timeout(600_000),
     })
 
-    if (!resp.ok) throw new Error(`API error ${resp.status}: ${await resp.text()}`)
+    if (!resp.ok) {
+      throw new Error(parseProviderErrorText(resp.status, await resp.text(), `API error ${resp.status}`))
+    }
     const result = await resp.json() as any
     logTaskPayload(label, 'response payload', { id, provider: config.provider, result })
 
@@ -618,7 +629,22 @@ async function pollTask(
         headers,
         signal: AbortSignal.timeout(remainingMs),
       })
-      if (!resp.ok) continue
+      if (!resp.ok) {
+        const body = await resp.text()
+        const message = parseProviderErrorText(resp.status, body, `API error ${resp.status}`)
+        if (!isRetryableProviderStatus(resp.status)) {
+          await failTask(record.id, message)
+          return
+        }
+        logTaskWarn(label, 'poll-retry', {
+          id: record.id,
+          taskId,
+          attempt: i + 1,
+          status: resp.status,
+          error: message,
+        })
+        continue
+      }
       const result = await resp.json() as any
 
       // 图片/视频 PollResponse 结构不同，这里统一按 any 取值后按 type 分支
