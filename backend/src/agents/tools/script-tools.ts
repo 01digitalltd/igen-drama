@@ -21,14 +21,14 @@ async function episodeProjectMeta(episodeId: number) {
 
 const AD_REWRITE_INSTRUCTION = `请将以下内容改写为广告分场剧本（广告推广项目）。
 
-结构、出场人物、产品戏份以已注入的 ad_purpose / ad_form / ad_angle 技能为准，不要套用短剧情节。
+结构、出场人物、产品戏份以已注入的 ad_purpose / ad_form / ad_angle 技能为准。
 格式规范：
 - 场景头：## S编号 | 内景/外景 · 地点 | 时间段
 - 动作描写：自然段落，不包含镜头语言；品牌露出写成包装、店招或片尾板，不要写成屏幕大字幕
 - 对白：角色名：（状态/表情）台词内容；口播可用「旁白：（状态）文案」
 - 片尾场必须写到品牌Logo可见
 - 不要发明品牌名、口号或 Logo 图形；用户没给的信息不要编
-- 每个场景服务一个广告节拍，不要写成连续短剧`
+- 每个场景服务一个广告节拍，不要写成可连载短剧（短剧宣传形式除外：可写微型冲突，但仍必须在本支片子收束）`
 
 const DRAMA_REWRITE_INSTRUCTION = `请将以下内容改写为格式化剧本。
 

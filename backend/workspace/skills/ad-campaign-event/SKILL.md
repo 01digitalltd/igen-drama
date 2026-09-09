@@ -32,6 +32,12 @@ description: 活动档期广告。时效与主视觉优先，按 ad_angle 选宣
 - `bundle_show`：组合商品展示
 - `flash_cuts`：快剪促销画面，每切对应一句利益
 
+### 短剧宣传
+
+- `race_the_clock`：赶在档期结束前办成一件事
+- `invite_twist`：被邀请参加活动，中段反转露出主产品
+- `gift_chase`：为礼盒或档期奔走，结尾拿到或下定决心
+
 ## 禁止
 
 - 编造截止日期、折扣数字

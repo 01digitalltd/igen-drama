@@ -32,6 +32,12 @@ description: 到店引流广告。空间与到店理由优先，CTA 是来店而
 - `walk_in`：进店动线空镜
 - `pickup_cta`：到店取货或体验收束
 
+### 短剧宣传
+
+- `walk_in_story`：路人被店吸引走进，有一句动机
+- `reunion_store`：在店里重逢或遇见
+- `rain_shelter`：进来躲雨/歇脚然后留下，落到到店 CTA
+
 ## 禁止
 
 - 把门店拍成纯电商详情页

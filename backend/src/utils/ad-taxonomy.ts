@@ -12,7 +12,7 @@ export const AD_PURPOSES = [
 ] as const
 export type AdPurpose = (typeof AD_PURPOSES)[number]
 
-export const AD_FORMS = ['talent_explain', 'product_showcase'] as const
+export const AD_FORMS = ['talent_explain', 'product_showcase', 'drama_promo'] as const
 export type AdForm = (typeof AD_FORMS)[number]
 
 export const AD_ANGLES = [
@@ -57,6 +57,24 @@ export const AD_ANGLES = [
   'key_visual',
   'bundle_show',
   'flash_cuts',
+  'conflict_save',
+  'meet_cute_sell',
+  'last_second_save',
+  'mistake_story',
+  'peer_teach',
+  'cliff_lesson',
+  'slice_of_life',
+  'origin_vignette',
+  'craft_scene',
+  'skit_review',
+  'dual_role',
+  'friend_reco',
+  'walk_in_story',
+  'reunion_store',
+  'rain_shelter',
+  'race_the_clock',
+  'invite_twist',
+  'gift_chase',
 ] as const
 export type AdAngle = (typeof AD_ANGLES)[number]
 
@@ -73,26 +91,32 @@ export const AD_ANGLE_MAP: Record<AdPurpose, Record<AdForm, readonly AdAngle[]>>
   product_sell: {
     talent_explain: ['pain_hook', 'host_demo', 'testimonial', 'offer_push'],
     product_showcase: ['pack_hero', 'use_demo', 'benefit_cuts', 'unbox'],
+    drama_promo: ['conflict_save', 'meet_cute_sell', 'last_second_save'],
   },
   edu_info: {
     talent_explain: ['expert_talk', 'step_lesson', 'myth_bust', 'faq', 'compare_teach'],
     product_showcase: ['how_it_works', 'feature_tour', 'spec_story', 'before_after'],
+    drama_promo: ['mistake_story', 'peer_teach', 'cliff_lesson'],
   },
   brand_image: {
     talent_explain: ['founder_story', 'values_talk', 'craft_tour'],
     product_showcase: ['cinematic_pack', 'origin_process', 'lifestyle_set'],
+    drama_promo: ['slice_of_life', 'origin_vignette', 'craft_scene'],
   },
   ugc_review: {
     talent_explain: ['selfie_review', 'first_use', 'honest_proscons'],
     product_showcase: ['handheld_demo', 'overlay_review', 'day_in_life'],
+    drama_promo: ['skit_review', 'dual_role', 'friend_reco'],
   },
   store_visit: {
     talent_explain: ['greeter_invite', 'in_store_tour', 'local_offer'],
     product_showcase: ['shelf_hero', 'walk_in', 'pickup_cta'],
+    drama_promo: ['walk_in_story', 'reunion_store', 'rain_shelter'],
   },
   campaign_event: {
     talent_explain: ['host_announce', 'countdown_talk', 'event_invite'],
     product_showcase: ['key_visual', 'bundle_show', 'flash_cuts'],
+    drama_promo: ['race_the_clock', 'invite_twist', 'gift_chase'],
   },
 }
 
@@ -110,6 +134,7 @@ export const AD_PURPOSE_SKILL: Record<AdPurpose, string> = {
 export const AD_FORM_SKILL: Record<AdForm, string> = {
   talent_explain: 'ad-form-talent',
   product_showcase: 'ad-form-product',
+  drama_promo: 'ad-form-drama',
 }
 
 export function isAdPurpose(value: unknown): value is AdPurpose {

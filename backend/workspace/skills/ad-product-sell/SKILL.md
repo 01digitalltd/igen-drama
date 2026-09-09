@@ -34,8 +34,15 @@ description: 产品卖点广告。钩子到成交，按 ad_angle 选择痛点、
 - `benefit_cuts`：卖点快剪特写，一句一个利益
 - `unbox`：开箱到主物露出，再落到 CTA
 
+### 短剧宣传
+
+- `conflict_save`：开场冲突（迟到、搞砸、被拒），产品在转折处解围
+- `meet_cute_sell`：相遇或反差，产品当信物或共同话题
+- `last_second_save`：最后一秒被产品救场，再落到 CTA
+
 ## 禁止
 
 - 把片子写成教学课（那是 edu_info）
+- 把短剧宣传写成可连载长剧
 - 软到没有 CTA
 - 编造价格或库存

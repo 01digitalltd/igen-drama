@@ -32,6 +32,12 @@ description: UGC 测评广告。第一人称、不完美手持感，按 ad_angle
 - `overlay_review`：产品特写 + 旁白点评（旁白不烧字幕）
 - `day_in_life`：一天里产品多次出镜
 
+### 短剧宣传
+
+- `skit_review`：短剧桥段里自然用到产品
+- `dual_role`：使用前后的角色扮演反差
+- `friend_reco`：朋友安利的微型剧情，不要对镜头念稿
+
 ## 禁止
 
 - 影棚灯光语言、专业主持人腔

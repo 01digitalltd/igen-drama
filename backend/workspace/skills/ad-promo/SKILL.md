@@ -7,7 +7,7 @@ description: 广告项目共用规范。仅在 project_category=ad_promo 时生�
 
 本技能只在项目 `project_category` / `genre` 为 `ad_promo` 时生效。短剧项目**完全忽略本文件**。
 
-节拍结构、出镜方式以同时注入的 **目的技能**（ad-product-sell / ad-edu-info 等）和 **形式技能**（ad-form-talent / ad-form-product）为准。本文件只管全类型共用规则。
+节拍结构、出镜方式以同时注入的 **目的技能** 和 **形式技能**（ad-form-talent / ad-form-product / ad-form-drama）为准。本文件只管全类型共用规则。
 
 广告项目复用同一条生产管线（改写 → 提取 → 提示词 → 分镜 → 成片）。格式仍用短剧的场景头，方便后续提取与分镜工具复用。
 

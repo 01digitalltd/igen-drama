@@ -225,12 +225,14 @@ function extractUserMessage(
   adForm?: string | null,
 ) {
   const ad = isAdPromoCategory(projectCategory)
-  const talentLed = ad && adForm === 'talent_explain'
+  const needsCast = ad && (adForm === 'talent_explain' || adForm === 'drama_promo')
   const kind = target === 'characters' ? 'characters' : target === 'scenes' ? 'scenes' : 'key props'
   const rules = target === 'characters'
     ? (ad
-      ? (talentLed
-        ? 'This is an ad-promo project in talent-explain form. You MUST extract the on-camera presenter/expert who speaks. Empty array is not valid.'
+      ? (needsCast
+        ? (adForm === 'drama_promo'
+          ? 'This is an ad-promo project in short-drama form. You MUST extract the on-camera characters who act or speak in the mini-story. Empty array is not valid.'
+          : 'This is an ad-promo project in talent-explain form. You MUST extract the on-camera presenter/expert who speaks. Empty array is not valid.')
         : 'This is an ad-promo project in product-showcase form. Extract on-camera talent only if they speak or act. Empty array is valid for product-only ads. Each item needs name, and preferably role, appearance, and styling.')
       : 'Extract every character who has dialogue or an important action. Each item needs name, and preferably role, appearance (look + temperament), and styling (hair, makeup, costume).')
     : target === 'scenes'

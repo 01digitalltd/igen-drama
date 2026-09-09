@@ -51,12 +51,19 @@ test('skill dirs cover shared + purpose + form without dropping any purpose', ()
   assert.ok(all.has('ad-promo'))
   assert.ok(all.has('ad-form-talent'))
   assert.ok(all.has('ad-form-product'))
+  assert.ok(all.has('ad-form-drama'))
   for (const purpose of AD_PURPOSES) {
     const dirs = adSkillDirsFor(normalizeAdTaxonomy({ purpose }))
     assert.equal(dirs[0], 'ad-promo')
     assert.equal(dirs.length, 3)
     dirs.forEach((dir) => assert.ok(all.has(dir)))
   }
+})
+
+test('short-drama promo form keeps a mini-story angle', () => {
+  const spec = normalizeAdTaxonomy({ purpose: 'product_sell', form: 'drama_promo' })
+  assert.equal(spec.form, 'drama_promo')
+  assert.equal(spec.angle, 'conflict_save')
 })
 
 test('merge keeps unrelated metadata keys', () => {
