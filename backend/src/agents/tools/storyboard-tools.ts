@@ -456,7 +456,7 @@ const updateStoryboard = createTool({
   id: 'update_storyboard',
   description: 'Update a specific storyboard shot.',
   inputSchema: z.object({
-    storyboard_id: z.number(),
+    storyboard_id: z.coerce.number(),
     title: z.string().optional(),
     shot_type: z.string().optional(),
     angle: z.string().optional(),
@@ -497,25 +497,28 @@ const updateStoryboard = createTool({
       fields: Object.keys(fields),
     })
 
-    const currentCharacterIds = 'character_ids' in fields
-      ? fields.character_ids
-      : (await db.select().from(schema.storyboardCharacters)
-          .where(eq(schema.storyboardCharacters.storyboardId, storyboard_id)))
-          .map(link => link.characterId)
+    const touchesBindings = 'scene_id' in fields || 'character_ids' in fields || 'prop_ids' in fields
+    if (touchesBindings) {
+      const currentCharacterIds = 'character_ids' in fields
+        ? fields.character_ids
+        : (await db.select().from(schema.storyboardCharacters)
+            .where(eq(schema.storyboardCharacters.storyboardId, storyboard_id)))
+            .map(link => link.characterId)
 
-    const currentPropIds = 'prop_ids' in fields
-      ? fields.prop_ids
-      : (await db.select().from(schema.storyboardProps)
-          .where(eq(schema.storyboardProps.storyboardId, storyboard_id)))
-          .map(link => link.propId)
+      const currentPropIds = 'prop_ids' in fields
+        ? fields.prop_ids
+        : (await db.select().from(schema.storyboardProps)
+            .where(eq(schema.storyboardProps.storyboardId, storyboard_id)))
+            .map(link => link.propId)
 
-    await validateStoryboardBindings(
-      episodeId,
-      dramaId,
-      'scene_id' in fields ? fields.scene_id : storyboard.sceneId,
-      currentCharacterIds,
-      currentPropIds,
-    )
+      await validateStoryboardBindings(
+        episodeId,
+        dramaId,
+        'scene_id' in fields ? fields.scene_id : storyboard.sceneId,
+        currentCharacterIds,
+        currentPropIds,
+      )
+    }
 
     const updates: Record<string, any> = { updatedAt: now() }
     if ('title' in fields) updates.title = fields.title

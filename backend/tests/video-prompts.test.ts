@@ -18,4 +18,8 @@ test('extractGenerateText reads Mastra generate text', () => {
   assert.equal(extractGenerateText({ text: '  0-3秒：抬头  ' }), '0-3秒：抬头')
   assert.equal(extractGenerateText({ content: 'hello' }), 'hello')
   assert.equal(extractGenerateText(null), '')
+  assert.equal(
+    extractGenerateText({ text: '', steps: [{ text: '' }, { text: '  0-3秒：抬头  ' }] }),
+    '0-3秒：抬头',
+  )
 })

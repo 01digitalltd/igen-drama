@@ -10,7 +10,15 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { Workspace, LocalFilesystem } from '@mastra/core/workspace'
 import { isAdPromoCategory } from '../utils/project-category.js'
-import { adSkillDirsFor, allAdSkillDirs, normalizeAdTaxonomy } from '../utils/ad-taxonomy.js'
+import { normalizeAdTaxonomy } from '../utils/ad-taxonomy.js'
+import {
+  AD_SKILL_DIRS,
+  AGENT_SKILL_MAP,
+  agentUsesAdSkills,
+  skillDirsForAgent,
+} from './skill-dirs.js'
+
+export { AD_SKILL_AGENT_TYPES, agentUsesAdSkills, skillDirsForAgent } from './skill-dirs.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -19,22 +27,6 @@ const SKILLS_DIR = path.join(WORKSPACE_DIR, 'skills')
 
 // 启动时确保工作目录存在（Agent 文件读写的 jail 根）
 fs.mkdirSync(SKILLS_DIR, { recursive: true })
-
-/** 每个 Agent 注册的 skill 目录（相对 workspace/skills/，含子规范目录；目录名需符合 Agent Skills 规范：小写+连字符） */
-const AGENT_SKILL_MAP: Record<string, string[]> = {
-  script_rewriter: ['script-rewriter'],
-  extractor: ['extractor'],
-  storyboard_breaker: ['storyboard-breaker'],
-  prompt_generator: [
-    'prompt-generator/character-prompt',
-    'prompt-generator/scene-prompt',
-    'prompt-generator/prop-prompt',
-    'prompt-generator/video-prompt',
-  ],
-}
-
-/** Extra skills loaded only for 广告推广 projects. Workspace registers all; injection picks purpose+form. */
-const AD_SKILL_DIRS = allAdSkillDirs()
 
 /** 每个 Agent 的 Workspace（filesystem 工作目录 + 原生技能注册）
  *  skills 用动态解析器按目录前缀匹配：设置页新建的子技能无需重启即可被发现 */
@@ -46,7 +38,7 @@ export const skillWorkspaces: Record<string, Workspace> = Object.fromEntries(
       name: `${agentType} workspace`,
       filesystem: new LocalFilesystem({ basePath: WORKSPACE_DIR }),
       skills: () => {
-        const allowed = [...prefixes, ...AD_SKILL_DIRS]
+        const allowed = agentUsesAdSkills(agentType) ? [...prefixes, ...AD_SKILL_DIRS] : prefixes
         return scanSkillPaths().filter(p =>
           allowed.some(prefix => p === `skills/${prefix}` || p.startsWith(`skills/${prefix}/`)))
       },
@@ -95,11 +87,7 @@ export async function loadAgentSkills(
   spec?: { purpose?: string | null; form?: string | null; angle?: string | null } | null,
 ): Promise<string> {
   const workspace = skillWorkspaces[agentType]
-  const adDirs = isAdPromoCategory(genre) ? adSkillDirsFor(normalizeAdTaxonomy(spec)) : []
-  const prefixes = [
-    ...(AGENT_SKILL_MAP[agentType] || []),
-    ...adDirs,
-  ]
+  const prefixes = skillDirsForAgent(agentType, genre, spec)
   if (!workspace || !prefixes.length) return ''
 
   const allPaths = scanSkillPaths().map(p => p.replace(/^skills\//, ''))
@@ -108,14 +96,18 @@ export async function loadAgentSkills(
 
   const contents: string[] = []
   for (const relPath of relPaths) {
-    const skill = await workspace.skills?.get(`skills/${relPath}`)
-    const body = skill?.instructions?.trim()
-    if (body) contents.push(formatSkillSection(relPath, body))
+    try {
+      const skill = await workspace.skills?.get(`skills/${relPath}`)
+      const body = skill?.instructions?.trim()
+      if (body) contents.push(formatSkillSection(relPath, body))
+    } catch {
+      /* skip a missing/unreadable skill rather than failing the whole agent turn */
+    }
   }
 
   if (!contents.length) return ''
 
-  const specLine = isAdPromoCategory(genre)
+  const specLine = isAdPromoCategory(genre) && agentUsesAdSkills(agentType)
     ? `\n当前广告规格：ad_purpose=${normalizeAdTaxonomy(spec).purpose} ad_form=${normalizeAdTaxonomy(spec).form} ad_angle=${normalizeAdTaxonomy(spec).angle}\n只执行这一组规格对应的节拍与出镜方式，不要混用其他广告类型。\n`
     : ''
 

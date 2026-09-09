@@ -15,6 +15,7 @@ import { firstConfigModel } from './video-clip-policy.js'
 import { now } from '../utils/response.js'
 import { extractGenerateText, looksLikeVideoPrompt } from './video-prompt-text.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
+import { isAdPromoCategory } from '../utils/project-category.js'
 
 export interface VideoPromptBatchStatus {
   status: 'running' | 'done' | 'error'
@@ -53,8 +54,11 @@ export async function startVideoPromptBatch(
   const sbs = await db.select().from(schema.storyboards)
     .where(eq(schema.storyboards.episodeId, episodeId))
     .orderBy(schema.storyboards.storyboardNumber)
-  const pending = storyboardIds?.length
-    ? sbs.filter(sb => storyboardIds.includes(sb.id))
+  const selectedIds = (storyboardIds || [])
+    .map(Number)
+    .filter(n => Number.isInteger(n) && n > 0)
+  const pending = selectedIds.length
+    ? sbs.filter(sb => selectedIds.includes(Number(sb.id)))
     : sbs.filter(sb => !(sb.videoPrompt || '').trim())
   if (!pending.length) return { started: false, total: 0 }
 
@@ -69,7 +73,11 @@ export async function startVideoPromptBatch(
   const spoken = await getDramaDialogueLanguage(dramaId)
   const clip = await loadEpisodeClipPolicy(episodeId)
   const bounds = clip?.bounds
-  const mustRewrite = Boolean(storyboardIds?.length)
+  const mustRewrite = Boolean(selectedIds.length)
+  const ad = await loadDramaAdContext(dramaId)
+  const adHint = isAdPromoCategory(ad.genre)
+    ? '当前是广告项目。视频提示词仍按 video-prompt 技能写时间轴（0-3秒：或 [0-3s]），不要改写成脚本或分场；产品/品牌Logo 出镜用 @道具名。'
+    : ''
 
   const task: VideoPromptBatchStatus = {
     status: 'running',
@@ -98,13 +106,14 @@ export async function startVideoPromptBatch(
             modelOverride: opts.model || undefined,
             textConfigId: opts.configId ?? undefined,
             locale: opts.locale || undefined,
-            ...agentContextFromAd(await loadDramaAdContext(dramaId)),
+            ...agentContextFromAd(ad),
           })
           const result = await agent.generate([{
             role: 'user',
             content: [
               withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})生成视频提示词(video_prompt)。视频模型:${videoLabel}。prompt_skill:${clip?.videoGeneration?.prompt_skill || 'seedance'}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${sb.duration || bounds?.typical || 10}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${Math.min(Number(sb.duration) || bounds?.max || 15, bounds?.max || 15)}s。
 ${clip?.videoGeneration?.prompt_skill === 'omni' ? '当前是 Gemini Omni：遵守 Skill video-prompt/omni，时间轴写成 [0-3s]，用该分镜 image_refs 的 <IMAGE_REF_N> 简单标记绑定参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。' : '当前是 Seedance/其他模型：遵守 Skill video-prompt，时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'}
+${adHint}
 请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】子镜头与台词/旁白)、氛围、时长、image_refs 及 video_generation 约束，据此生成 video_prompt（段落内允许多镜头切镜，但不跨场景，切镜点对齐分镜 description 的【镜头N】结构）,然后调用 update_storyboard 保存到分镜 ID:${sb.id}。update_storyboard 参数只传 storyboard_id 和 video_prompt 两个键,不要回传该分镜的其他任何字段,不要重新拆分整集。必须实际调用工具，不要只在回复中给出提示词。`, opts.locale),
               dialogueLanguageInstruction(spoken),
             ].join('\n\n'),
@@ -145,7 +154,12 @@ ${clip?.videoGeneration?.prompt_skill === 'omni' ? '当前是 Gemini Omni：遵�
     }
   })()
     .then(() => {
-      task.status = 'done'
+      if (task.failed > 0 && task.completed === 0) {
+        task.status = 'error'
+        task.error = `视频提示词生成失败（${task.failed}/${task.total}）`
+      } else {
+        task.status = 'done'
+      }
       task.finished_at = new Date().toISOString()
       task.current_storyboard_id = undefined
       emitPromptStatus(episodeId)

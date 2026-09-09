@@ -10,8 +10,8 @@ test('video prompt batch service runs per-shot async agent loop', () => {
 
   // 默认只处理缺少 video_prompt 的分镜；指定 storyboardIds 时只处理所选（已有提示词也重新生成）
   assert.match(svc, /filter\(sb => !\(sb\.videoPrompt \|\| ''\)\.trim\(\)\)/)
-  assert.match(svc, /storyboardIds\?\.length/)
-  assert.match(svc, /storyboardIds\.includes\(sb\.id\)/)
+  assert.match(svc, /storyboardIds\?\.length|selectedIds\.length/)
+  assert.match(svc, /selectedIds\.includes\(Number\(sb\.id\)\)/)
   // 运行中不重复启动
   assert.match(svc, /status === 'running'\) return \{ started: false, total: -1 \}/)
   // 逐个分镜调用 prompt_generator，以落库结果判定成败
@@ -25,6 +25,8 @@ test('video prompt batch service runs per-shot async agent loop', () => {
   assert.match(svc, /from '\.\/video-prompt-text\.js'/)
   assert.match(svc, /persistShotVideoPrompt/)
   assert.match(svc, /mustRewrite/)
+  assert.match(svc, /task\.failed > 0 && task\.completed === 0/)
+  assert.match(svc, /视频提示词仍按 video-prompt/)
   // 进度跟踪与文本模型覆盖
   assert.match(svc, /current_storyboard_id/)
   assert.match(svc, /modelOverride: opts\.model/)
@@ -47,6 +49,8 @@ test('storyboard context injects video_generation clip bounds', () => {
   assert.match(tools, /save-over-budget/)
   assert.match(tools, /fitShotDurationsToBudget/)
   assert.match(tools, /acceptShotsWithinCount/)
+  assert.match(tools, /storyboard_id: z\.coerce\.number\(\)/)
+  assert.match(tools, /touchesBindings/)
 })
 
 test('episodes route exposes video prompt batch endpoints', () => {
