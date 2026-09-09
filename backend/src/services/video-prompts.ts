@@ -12,6 +12,7 @@ import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWar
 import { withContentLanguage } from '../utils/content-language.js'
 import { dialogueLanguageInstruction, getDramaDialogueLanguage } from './dialogue-language.js'
 import { getDramaVoVoice, rewriteNarratorLabels, voVoiceInstruction } from './vo-voice.js'
+import { getDramaStyleValue, visualStyleInstruction } from './style-preset.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
 import { firstConfigModel } from './video-clip-policy.js'
@@ -123,6 +124,7 @@ export async function startVideoPromptBatch(
 
   const spoken = await getDramaDialogueLanguage(dramaId)
   const narratorVoice = await getDramaVoVoice(dramaId)
+  const styleValue = await getDramaStyleValue(dramaId)
   const clip = await loadEpisodeClipPolicy(episodeId)
   const bounds = clip?.bounds
   const ad = await loadDramaAdContext(dramaId)
@@ -182,6 +184,7 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
 只返回 JSON {"video_prompt":"..."}。必须根据上面的 description 生成，不要调用工具。`, opts.locale),
               dialogueLanguageInstruction(spoken),
               voVoiceInstruction(narratorVoice),
+              visualStyleInstruction(styleValue),
             ].join('\n\n'),
           }], {
             maxSteps: 1,

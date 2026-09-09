@@ -14,7 +14,7 @@ import type { AIConfig } from './adapters/types'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn, redactUrl } from '../utils/task-logger.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
-import { getDramaStyleValue } from './style-preset.js'
+import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective } from './style-preset.js'
 import { appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
 import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from './video-model-policy.js'
@@ -178,7 +178,8 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
     }
   }
 
-  const style = await getDramaStyleValue(params.dramaId)
+  const visual = await loadDramaVisualStyle(params.dramaId)
+  const style = visual.value
   const videoOpts = isRealisticDramaStyle(style) ? { excludeProviders: ['volcengine'] } : undefined
 
   // 指定配置（集锁定）可能已停用/删除/厂商收敛，失效时回退到当前启用配置
@@ -211,6 +212,7 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
   prompt = rewriteNarratorLabels(prompt, narratorVoice)
   prompt = appendVoLanguageDirective(prompt, spoken)
   prompt = appendVoVoiceDirective(prompt, narratorVoice)
+  prompt = appendVisualStyleDirective(prompt, visual.value, visual.prompt)
 
   const bounds = clipDurationBounds(config.provider, params.model || config.model)
   assertClipSecondsFit(parseVideoPromptDurationSeconds(prompt), bounds, 'prompt')
@@ -466,6 +468,8 @@ async function processTask(id: number, config: AIConfig) {
         const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
         if (sb) prompt = resolveStoryboardVideoPrompt(sb)
       }
+      const visual = await loadDramaVisualStyle(await resolveVideoDramaId(record))
+      prompt = appendVisualStyleDirective(prompt, visual.value, visual.prompt)
       const videoPrompt = (() => {
         const composed = composeVideoPromptAfterCharacterGrid(prompt, overlaidCount)
         return isOmniVideoConfig(config.provider, record.model)
@@ -1051,7 +1055,7 @@ async function normalizeVideoReferenceUrl(value: string | null | undefined): Pro
   return raw
 }
 
-async function resolveVideoDramaStyle(record: { dramaId?: unknown; storyboardId?: unknown }) {
+async function resolveVideoDramaId(record: { dramaId?: unknown; storyboardId?: unknown }) {
   let dramaId = Number(record.dramaId) || 0
   if (!dramaId && record.storyboardId) {
     const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, Number(record.storyboardId)))
@@ -1060,7 +1064,11 @@ async function resolveVideoDramaStyle(record: { dramaId?: unknown; storyboardId?
       dramaId = Number(ep?.dramaId) || 0
     }
   }
-  return getDramaStyleValue(dramaId || null)
+  return dramaId || null
+}
+
+async function resolveVideoDramaStyle(record: { dramaId?: unknown; storyboardId?: unknown }) {
+  return getDramaStyleValue(await resolveVideoDramaId(record))
 }
 
 async function storyboardBoundStillUrls(storyboardId: unknown): Promise<string[]> {

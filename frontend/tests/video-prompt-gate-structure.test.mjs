@@ -96,5 +96,6 @@ test('video step can lock narrator voice', () => {
   assert.match(page, /dramaVoVoice/)
   assert.match(page, /setVoVoice/)
   assert.match(page, /voVoiceInstruction\(dramaVoVoice\.value\)/)
+  assert.match(page, /visualStyleInstruction\(/)
   assert.match(page, /vo_voice: next/)
 })

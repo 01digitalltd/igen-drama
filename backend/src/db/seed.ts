@@ -4,7 +4,7 @@ import { now } from '../utils/response.js'
 import { isPublicUuid, newPublicUuid } from '../utils/public-id.js'
 
 const stylePresetSeeds = [
-  { name: '3D 漫剧', value: '3d', sortOrder: 1, prompt: '3D CG animation style, game-engine quality render, semi-realistic stylized characters, refined facial features, detailed materials and textures, cinematic lighting, high detail', description: '游戏引擎级 3D 渲染，半写实角色，当前短剧主流的 3D 漫剧质感' },
+  { name: '3D 漫剧', value: '3d', sortOrder: 1, prompt: '3D CG animation style, Unreal Engine / game-engine cinematic render, stylized 3D animated characters (not real people), detailed 3D materials and textures, cinematic lighting, high detail, not photoreal live-action', description: '游戏引擎级 3D 渲染，风格化三维角色，当前短剧主流的 3D 漫剧质感，不是真人实拍' },
   { name: '日漫赛璐璐', value: 'anime', sortOrder: 2, prompt: 'Japanese anime style, cel shading, clean crisp line art, vivid saturated colors, expressive character designs, detailed painted backgrounds', description: '日式赛璐璐动画风格' },
   { name: '吉卜力手绘', value: 'ghibli', sortOrder: 3, prompt: 'Studio Ghibli style, hand-drawn animation, soft watercolor painted backgrounds, warm nostalgic lighting, gentle natural palette, whimsical cozy atmosphere', description: '吉卜力手绘治愈风' },
   { name: '水彩绘本', value: 'watercolor', sortOrder: 4, prompt: 'watercolor illustration style, soft translucent washes, visible paper texture, delicate fluid brushwork, light airy atmosphere, hand-painted storybook feel', description: '水彩插画质感' },
@@ -51,7 +51,12 @@ export async function seedMongo() {
   const ts = now()
   for (const seed of stylePresetSeeds) {
     const exists = await presets.findOne({ value: seed.value })
-    if (exists) continue
+    if (exists) {
+      if (seed.value === '3d' && String(exists.prompt || '').includes('semi-realistic')) {
+        await presets.updateOne({ _id: exists._id }, { $set: { prompt: seed.prompt, description: seed.description, updatedAt: ts } })
+      }
+      continue
+    }
     const next = await counters.findOneAndUpdate(
       { _id: schema.stylePresets.__name },
       { $inc: { seq: 1 } },

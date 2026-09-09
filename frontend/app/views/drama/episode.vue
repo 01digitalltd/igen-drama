@@ -1582,6 +1582,7 @@ import { api, dramaAPI, episodeAPI, storyboardAPI, characterAPI, sceneAPI, propA
 import { useAgent, waitAgentJob } from '~/composables/useAgent'
 import { DIALOGUE_LANGUAGE_OPTIONS, dialogueLanguageInstruction, normalizeDialogueLanguage } from '~/utils/dialogue-language'
 import { VO_VOICE_OPTIONS, normalizeVoVoice, voVoiceInstruction } from '~/utils/vo-voice'
+import { visualStyleInstruction } from '~/utils/visual-style'
 
 definePageMeta({ layout: 'studio' })
 
@@ -2988,6 +2989,7 @@ async function genVideoPrompt(sb) {
     const started = await api.post(`/agent/prompt_generator/chat`, {
       message: `${dialogueLanguageInstruction(dramaDialogueLanguage.value)}
 ${voVoiceInstruction(dramaVoVoice.value)}
+${visualStyleInstruction(drama.value?.style)}
 
 请为分镜 #${idx}(ID:${sb.id})生成视频提示词(video_prompt)。视频模型:${label}。${skillHint}
 

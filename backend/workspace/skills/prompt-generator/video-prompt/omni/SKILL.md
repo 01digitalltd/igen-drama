@@ -87,6 +87,7 @@ description: Gemini Omni Flash 视频提示词规范 — 简单标记绑定参�
 - 引用 `image_refs` 之外的 tag，或 Seedance 的 `@名字` / `@图片N`
 - `[# Sources]`、`[# References]` 这类前缀声明（角色简单时用简单标记即可）
 - 抽象心理描写；把对白写成屏幕字幕
+- 把 3D／日漫／手绘项目写成真人实拍（遵守用户消息里的【视觉风格】）
 - 为 Omni 编写编辑/续写指令（「Make the violin invisible」「Extend this video」）
 
 ## 保存

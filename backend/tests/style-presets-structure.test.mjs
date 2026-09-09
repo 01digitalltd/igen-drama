@@ -16,7 +16,7 @@ test('drama creation no longer pre-creates episodes from total_episodes', () => 
 test('drama creation records a fixed aspect ratio for video generation', () => {
   const dramas = read('src/routes/dramas.ts')
 
-  assert.match(dramas, /aspectRatio: body\.aspect_ratio \|\| '16:9'/)
+  assert.match(dramas, /aspectRatio: body\.aspect_ratio \|\| defaultAspectRatioForCategory/)
   assert.match(dramas, /if \(body\.aspect_ratio !== undefined\) updates\.aspectRatio = body\.aspect_ratio/)
 })
 
@@ -38,6 +38,7 @@ test('drama creation stores spoken dialogue language independently of UI locale'
   assert.match(generation, /appendVoLanguageDirective\(prompt, spoken\)/)
   assert.match(generation, /appendVoVoiceDirective\(prompt, narratorVoice\)/)
   assert.match(generation, /rewriteNarratorLabels\(prompt, narratorVoice\)/)
+  assert.match(generation, /appendVisualStyleDirective\(prompt, visual\.value, visual\.prompt\)/)
 })
 
 test('style presets route is mounted and implements CRUD', () => {
@@ -64,7 +65,8 @@ test('drama style prompt is injected into image prompt composition', () => {
   const scenes = read('src/routes/scenes.ts')
 
   assert.match(service, /getDramaStylePrompt/)
-  assert.match(service, /stylePresets\.value, drama\.style/)
+  assert.match(service, /stylePresets\.value, value/)
+  assert.match(service, /appendVisualStyleDirective/)
   assert.match(gridTools, /stripCharacterFaceGridPrompt/)
   assert.match(characters, /stripCharacterFaceGridPrompt/)
   assert.match(scenes, /getDramaStylePrompt\(scene\.dramaId\)/)
@@ -80,7 +82,7 @@ test('style preset seed includes photoreal live-action', () => {
   assert.match(seed, /photorealistic live-action/)
   assert.match(seed, /写实真人/)
   assert.match(generation, /stripCharacterFaceGridPrompt/)
-  assert.match(generation, /stripVideoFaceGridPrompt/)
+  assert.match(generation, /composeVideoPromptAfterCharacterGrid/)
   assert.doesNotMatch(generation, /withRealisticCharacterFaceGrid/)
   assert.doesNotMatch(generation, /withRealisticVideoFaceGridRemoval/)
 })
@@ -89,5 +91,5 @@ test('agent default prompts no longer hardcode consistent art style', () => {
   const agents = read('src/agents/index.ts')
 
   assert.doesNotMatch(agents, /必须包含 "consistent art style"/)
-  assert.match(agents, /视觉风格描述会由工具/)
+  assert.match(agents, /用户消息【视觉风格】/)
 })
