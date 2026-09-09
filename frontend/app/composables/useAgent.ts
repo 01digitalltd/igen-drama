@@ -5,6 +5,18 @@ async function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
+/** POST /agent/:type/chat returns immediately; callers must wait for the in-memory job. */
+export async function waitAgentJob(type: string, jobId: string, timeoutMs = 15 * 60 * 1000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    await sleep(2000)
+    const job = await api.get<any>(`/agent/${type}/jobs/${jobId}`)
+    if (job?.status === 'done') return job
+    if (job?.status === 'error') throw new Error(job.error || 'Agent failed')
+  }
+  throw new Error('Agent 任务超时')
+}
+
 export function useAgent() {
   const running = ref(false)
   const runningType = ref<string | null>(null)
@@ -22,15 +34,7 @@ export function useAgent() {
         config_id: configId || undefined,
       })
       const jobId = data?.job_id
-      if (jobId) {
-        const deadline = Date.now() + 15 * 60 * 1000
-        while (Date.now() < deadline) {
-          await sleep(2000)
-          const job = await api.get<any>(`/agent/${type}/jobs/${jobId}`)
-          if (job?.status === 'done') break
-          if (job?.status === 'error') throw new Error(job.error || 'Agent failed')
-        }
-      }
+      if (jobId) await waitAgentJob(type, jobId)
       toast.success('完成')
       await onDone?.()
     } catch (err: any) {

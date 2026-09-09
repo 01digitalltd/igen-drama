@@ -36,6 +36,13 @@ test('video generation is blocked until every shot has a video prompt', () => {
 
 test('agent completion callback is awaited so prompt batch sees fresh shots', () => {
   assert.match(useAgent, /await onDone\?\.\(\)/)
+  assert.match(useAgent, /export async function waitAgentJob/)
+  assert.match(useAgent, /throw new Error\('Agent 任务超时'\)/)
+})
+
+test('single-shot AI generate waits for the prompt_generator job before toasting success', () => {
+  assert.match(page, /waitAgentJob\('prompt_generator'/)
+  assert.match(page, /视频提示词未写入，请重试/)
 })
 
 test('shot video failure stays on the card instead of duplicating the toast', () => {

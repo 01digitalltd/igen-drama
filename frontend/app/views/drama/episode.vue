@@ -1573,7 +1573,7 @@ import {
   MapPin, Play, Plus, X, ListTodo,
 } from 'lucide-vue-next'
 import { api, dramaAPI, episodeAPI, storyboardAPI, characterAPI, sceneAPI, propAPI, taskAPI, mergeAPI, aiConfigAPI, uploadAPI } from '~/composables/useApi'
-import { useAgent } from '~/composables/useAgent'
+import { useAgent, waitAgentJob } from '~/composables/useAgent'
 import { DIALOGUE_LANGUAGE_OPTIONS, dialogueLanguageInstruction, normalizeDialogueLanguage } from '~/utils/dialogue-language'
 
 definePageMeta({ layout: 'studio' })
@@ -2904,7 +2904,7 @@ function pollVideoPromptBatch(attempts = 240) {
       if (st && st.status !== 'running') {
         videoPromptBatch.value = { running: false, total: 0, completed: 0 }
         await refresh()
-        if (st.status === 'done') {
+        if (st.status === 'done' && !(st.failed > 0 && !st.completed)) {
           toast.success(st.failed ? `视频提示词批量生成完成，${st.failed} 个失败` : '视频提示词批量生成完成')
         } else {
           toast.error(st.error || '视频提示词批量生成失败')
@@ -2963,7 +2963,7 @@ async function genVideoPrompt(sb) {
   const propNames = getStoryboardProps(sb).map(p => p.name).join('、') || '无'
   videoPromptGeneratingIds.value.push(sb.id)
   try {
-    await api.post(`/agent/prompt_generator/chat`, {
+    const started = await api.post(`/agent/prompt_generator/chat`, {
       message: `${dialogueLanguageInstruction(dramaDialogueLanguage.value)}
 
 请为分镜 #${idx}(ID:${sb.id})生成视频提示词(video_prompt)。视频模型:${label}。${skillHint}
@@ -2976,8 +2976,13 @@ async function genVideoPrompt(sb) {
       model: chatModelOverride() || undefined,
       config_id: chatConfigId() || undefined,
     })
-    toast.success(`分镜 #${idx} 视频提示词已生成`)
+    if (started?.job_id) await waitAgentJob('prompt_generator', started.job_id)
     await refresh()
+    const fresh = sbs.value.find(item => item.id === sb.id)
+    if (!((fresh?.video_prompt || fresh?.videoPrompt || '').trim())) {
+      throw new Error('视频提示词未写入，请重试')
+    }
+    toast.success(`分镜 #${idx} 视频提示词已生成`)
   } catch (e) {
     toast.error(e.message)
   } finally {
