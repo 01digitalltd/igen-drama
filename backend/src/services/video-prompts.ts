@@ -14,6 +14,7 @@ import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
 import { firstConfigModel } from './video-clip-policy.js'
 import { now } from '../utils/response.js'
 import { extractGenerateText, looksLikeVideoPrompt } from './video-prompt-text.js'
+import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
 
 export interface VideoPromptBatchStatus {
   status: 'running' | 'done' | 'error'
@@ -97,6 +98,7 @@ export async function startVideoPromptBatch(
             modelOverride: opts.model || undefined,
             textConfigId: opts.configId ?? undefined,
             locale: opts.locale || undefined,
+            ...agentContextFromAd(await loadDramaAdContext(dramaId)),
           })
           const result = await agent.generate([{
             role: 'user',

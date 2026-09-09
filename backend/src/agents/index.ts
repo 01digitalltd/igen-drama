@@ -16,6 +16,7 @@ import { storyboardTools } from './tools/storyboard-tools.js'
 import { imagePromptTools } from './tools/image-prompt-tools.js'
 import { loadAgentSkills, skillWorkspaces } from './skills.js'
 import { loadAgentPromptFile } from './prompts.js'
+import { getAgentAdSpec, getAgentGenre } from './context.js'
 
 // Default prompts (used when workspace/prompts/<type>.md 文件缺失时兜底)
 export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: string }> = {
@@ -331,13 +332,13 @@ const AGENT_TOOLS: Record<string, Record<string, any>> = {
   },
 }
 
-/** instructions 按请求解析：prompt 文件（或默认）+ 技能全文拼接 */
+/** instructions 按请求解析：prompt 文件（或默认）+ 技能全文拼接；广告项目额外注入 ad-promo skill */
 function buildInstructions(type: string) {
-  return async () => {
+  return async ({ requestContext }: { requestContext?: RequestContext } = {}) => {
     const defaults = DEFAULT_PROMPTS[type]
     const promptFile = await loadAgentPromptFile(type)
     const baseInstructions = promptFile?.instructions || defaults.instructions
-    const skillInstructions = await loadAgentSkills(type)
+    const skillInstructions = await loadAgentSkills(type, getAgentGenre(requestContext), getAgentAdSpec(requestContext))
     return skillInstructions
       ? [baseInstructions, '', skillInstructions].join('\n')
       : baseInstructions

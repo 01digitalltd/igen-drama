@@ -15,6 +15,12 @@ import { eq, and } from '../../db/query.js'
 import { now } from '../../utils/response.js'
 import { logTaskProgress, logTaskSuccess } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
+import { dramaAdFields, ensureBrandLogoProp, loadDramaAdContext, loadDramaCategory } from '../../services/brand-logo.js'
+import { isAdPromoCategory } from '../../utils/project-category.js'
+
+async function adFields(dramaId: number) {
+  return dramaAdFields(await loadDramaAdContext(dramaId))
+}
 
 // ─── 关联辅助 ────────────────────────────────────────────────
 async function linkCharToEpisode(episodeId: number, characterId: number) {
@@ -93,7 +99,7 @@ const readScriptForExtraction = createTool({
     const content = ep.scriptContent || ep.content
     if (!content) return { error: 'Episode has no script content' }
     logTaskSuccess('ExtractTool', 'read-script', { episodeId, dramaId, scriptLength: content.length })
-    return { script: content }
+    return { script: content, ...(await adFields(dramaId)) }
   },
 })
 
@@ -124,6 +130,7 @@ const readExistingCharacters = createTool({
       count: visibleChars.length,
       characters: visibleChars,
       current_episode_characters: visibleChars.filter(c => linkedIds.has(c.id)),
+      ...(await adFields(dramaId)),
     }
     logTaskSuccess('ExtractTool', 'read-characters', {
       episodeId,
@@ -162,6 +169,7 @@ const readExistingScenes = createTool({
       count: visibleScenes.length,
       scenes: visibleScenes,
       current_episode_scenes: visibleScenes.filter(s => linkedIds.has(s.id)),
+      ...(await adFields(dramaId)),
     }
     logTaskSuccess('ExtractTool', 'read-scenes', {
       episodeId,
@@ -345,6 +353,10 @@ export async function persistDedupProps(episodeId: number, dramaId: number, prop
     }
   }
 
+  if (isAdPromoCategory(await loadDramaCategory(dramaId))) {
+    await ensureBrandLogoProp(dramaId, episodeId)
+  }
+
   const payload = {
     message: `道具保存完成：新增 ${results.created}，合并更新 ${results.merged}`,
     ...results,
@@ -419,6 +431,7 @@ const readExistingProps = createTool({
       count: visibleProps.length,
       props: visibleProps,
       current_episode_props: visibleProps.filter(p => linkedIds.has(p.id)),
+      ...(await adFields(dramaId)),
     }
     logTaskSuccess('ExtractTool', 'read-props', {
       episodeId,

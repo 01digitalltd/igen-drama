@@ -8,6 +8,7 @@ import { mastra } from '../mastra/index.js'
 import { withContentLanguage } from '../utils/content-language.js'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { publishEpisodeEvent } from './episode-events.js'
+import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
 
 export interface AgentJob {
   id: string
@@ -107,19 +108,23 @@ export function startAgentJob(params: {
   logTaskStart('Agent', agentType, { dramaId, episodeId, jobId: job.id, message })
   logTaskPayload('Agent', `${agentType} input`, params)
 
-  const requestContext = buildAgentRequestContext({
-    episodeId,
-    dramaId,
-    modelOverride: params.model || undefined,
-    textConfigId: params.configId || undefined,
-    locale: params.locale || undefined,
-  })
   const startTime = performance.now()
 
-  ;(async () => agent.generate(
-    [{ role: 'user', content: withContentLanguage(message, params.locale) }],
-    { maxSteps: 20, requestContext },
-  ))()
+  ;(async () => {
+    const ad = await loadDramaAdContext(dramaId)
+    const requestContext = buildAgentRequestContext({
+      episodeId,
+      dramaId,
+      modelOverride: params.model || undefined,
+      textConfigId: params.configId || undefined,
+      locale: params.locale || undefined,
+      ...agentContextFromAd(ad),
+    })
+    return agent.generate(
+      [{ role: 'user', content: withContentLanguage(message, params.locale) }],
+      { maxSteps: 20, requestContext },
+    )
+  })()
     .then((result: any) => {
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(1)
       const toolCalls = result.toolCalls || []

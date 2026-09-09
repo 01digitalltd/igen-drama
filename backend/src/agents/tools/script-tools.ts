@@ -9,6 +9,34 @@ import { eq } from '../../db/query.js'
 import { now } from '../../utils/response.js'
 import { getEpisodeId, getAgentLocale } from '../context.js'
 import { withContentLanguage } from '../../utils/content-language.js'
+import { dramaAdFields, loadDramaAdContext } from '../../services/brand-logo.js'
+import { isAdPromoCategory } from '../../utils/project-category.js'
+
+async function episodeProjectMeta(episodeId: number) {
+  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, episodeId))
+  if (!ep) return { error: `Episode not found (id=${episodeId})` as const }
+  const ad = await loadDramaAdContext(ep.dramaId)
+  return { ep, ad }
+}
+
+const AD_REWRITE_INSTRUCTION = `请将以下内容改写为广告分场剧本（广告推广项目）。
+
+结构、出场人物、产品戏份以已注入的 ad_purpose / ad_form / ad_angle 技能为准，不要套用短剧情节。
+格式规范：
+- 场景头：## S编号 | 内景/外景 · 地点 | 时间段
+- 动作描写：自然段落，不包含镜头语言；品牌露出写成包装、店招或片尾板，不要写成屏幕大字幕
+- 对白：角色名：（状态/表情）台词内容；口播可用「旁白：（状态）文案」
+- 片尾场必须写到品牌Logo可见
+- 不要发明品牌名、口号或 Logo 图形；用户没给的信息不要编
+- 每个场景服务一个广告节拍，不要写成连续短剧`
+
+const DRAMA_REWRITE_INSTRUCTION = `请将以下内容改写为格式化剧本。
+
+格式规范：
+- 场景头：## S编号 | 内景/外景 · 地点 | 时间段
+- 动作描写：自然段落，不包含镜头语言
+- 对白：角色名：（状态/表情）台词内容
+- 每个场景 30-60 秒内容`
 
 const readEpisodeScript = createTool({
   id: 'read_episode_script',
@@ -17,12 +45,16 @@ const readEpisodeScript = createTool({
   execute: async (_input, context) => {
     const episodeId = getEpisodeId(context?.requestContext)
     if (!episodeId) return { error: 'Missing episodeId in request context' }
-    const [ep] = await db.select().from(schema.episodes)
-      .where(eq(schema.episodes.id, episodeId))
-    if (!ep) return { error: `Episode not found (id=${episodeId})` }
-    const content = ep.content || ep.scriptContent
+    const meta = await episodeProjectMeta(episodeId)
+    if ('error' in meta) return meta
+    const content = meta.ep.content || meta.ep.scriptContent
     if (!content) return { error: `Episode has no content (id=${episodeId})` }
-    return { content, word_count: content.length, episode_id: episodeId }
+    return {
+      content,
+      word_count: content.length,
+      episode_id: episodeId,
+      ...dramaAdFields(meta.ad),
+    }
   },
 })
 
@@ -35,22 +67,17 @@ const rewriteToScreenplay = createTool({
   execute: async ({ instructions }, context) => {
     const episodeId = getEpisodeId(context?.requestContext)
     if (!episodeId) return { error: 'Missing episodeId in request context' }
-    const [ep] = await db.select().from(schema.episodes)
-      .where(eq(schema.episodes.id, episodeId))
-    if (!ep) return { error: `Episode not found` }
-    const source = ep.content || ep.scriptContent
+    const meta = await episodeProjectMeta(episodeId)
+    if ('error' in meta) return meta
+    const source = meta.ep.content || meta.ep.scriptContent
     if (!source) return { error: `Episode has no content to rewrite` }
     const locale = getAgentLocale(context?.requestContext)
+    const base = isAdPromoCategory(meta.ad.genre) ? AD_REWRITE_INSTRUCTION : DRAMA_REWRITE_INSTRUCTION
 
     return {
       source_content: source,
-      instruction: withContentLanguage(`请将以下内容改写为格式化剧本。
-
-格式规范：
-- 场景头：## S编号 | 内景/外景 · 地点 | 时间段
-- 动作描写：自然段落，不包含镜头语言
-- 对白：角色名：（状态/表情）台词内容
-- 每个场景 30-60 秒内容
+      ...dramaAdFields(meta.ad),
+      instruction: withContentLanguage(`${base}
 
 ${instructions || ''}
 

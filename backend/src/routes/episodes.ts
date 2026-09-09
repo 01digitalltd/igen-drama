@@ -14,6 +14,8 @@ import { getVideoPromptBatchStatus, startVideoPromptBatch } from '../services/vi
 import { loadOwnedDrama, loadOwnedEpisode } from '../utils/ownership.js'
 import { getRequestLocale } from '../middleware/request-locale.js'
 import { collectShotOverflow, loadEpisodeClipPolicy } from '../services/episode-clip-policy.js'
+import { ensureBrandLogoProp, loadDramaCategory } from '../services/brand-logo.js'
+import { isAdPromoCategory } from '../utils/project-category.js'
 
 const app = new Hono()
 
@@ -66,6 +68,9 @@ app.post('/', async (c) => {
 
   const [ep] = await db.select().from(schema.episodes)
     .where(eq(schema.episodes.id, getInsertId(res)))
+  if (isAdPromoCategory(await loadDramaCategory(dramaId))) {
+    await ensureBrandLogoProp(dramaId, ep.id)
+  }
   return success(c, {
     id: ep.id,
     episode_number: ep.episodeNumber,

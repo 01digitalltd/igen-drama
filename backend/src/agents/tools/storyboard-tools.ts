@@ -13,6 +13,7 @@ import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
 import { logTaskProgress, logTaskSuccess, logTaskWarn } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
 import { buildShotImageRefs } from '../../services/storyboard-prompt.js'
+import { dramaAdFields, loadDramaAdContext } from '../../services/brand-logo.js'
 
 async function syncStoryboardCharacters(storyboardId: number, characterIds: number[]) {
   await db.delete(schema.storyboardCharacters)
@@ -219,6 +220,7 @@ const readStoryboardContext = createTool({
     const maxShots = clip?.videoGeneration?.estimated_shot_count?.max || null
     const targetSeconds = clip?.videoGeneration?.target_duration_seconds || null
     const payload = {
+      ...dramaAdFields(await loadDramaAdContext(dramaId)),
       episode: {
         id: ep.id,
         title: ep.title,

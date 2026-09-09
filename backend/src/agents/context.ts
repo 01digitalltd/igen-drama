@@ -10,6 +10,10 @@ export interface AgentRequestContextValues {
   modelOverride?: string
   textConfigId?: number
   locale?: string
+  genre?: string
+  adPurpose?: string
+  adForm?: string
+  adAngle?: string
 }
 
 export function buildAgentRequestContext(values: AgentRequestContextValues): RequestContext<AgentRequestContextValues> {
@@ -19,6 +23,10 @@ export function buildAgentRequestContext(values: AgentRequestContextValues): Req
   if (values.modelOverride) rc.set('modelOverride', values.modelOverride)
   if (values.textConfigId) rc.set('textConfigId', values.textConfigId)
   if (values.locale) rc.set('locale', values.locale)
+  if (values.genre) rc.set('genre', values.genre)
+  if (values.adPurpose) rc.set('adPurpose', values.adPurpose)
+  if (values.adForm) rc.set('adForm', values.adForm)
+  if (values.adAngle) rc.set('adAngle', values.adAngle)
   return rc
 }
 
@@ -38,4 +46,22 @@ export function getDramaId(requestContext: RequestContext | undefined): number |
 export function getAgentLocale(requestContext: RequestContext | undefined): string | null {
   const v = requestContext?.get('locale' as never)
   return typeof v === 'string' && v.trim() ? v : null
+}
+
+export function getAgentGenre(requestContext: RequestContext | undefined): string | null {
+  const v = requestContext?.get('genre' as never)
+  return typeof v === 'string' && v.trim() ? v : null
+}
+
+function getAgentString(requestContext: RequestContext | undefined, key: 'adPurpose' | 'adForm' | 'adAngle'): string | null {
+  const v = requestContext?.get(key as never)
+  return typeof v === 'string' && v.trim() ? v : null
+}
+
+export function getAgentAdSpec(requestContext: RequestContext | undefined) {
+  const purpose = getAgentString(requestContext, 'adPurpose')
+  const form = getAgentString(requestContext, 'adForm')
+  const angle = getAgentString(requestContext, 'adAngle')
+  if (!purpose && !form && !angle) return null
+  return { purpose, form, angle }
 }

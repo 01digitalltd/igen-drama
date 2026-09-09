@@ -9,6 +9,7 @@ import { ensurePropFinalPrompt } from '../services/final-prompt.js'
 import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { loadOwnedDrama, loadOwnedProp } from '../utils/ownership.js'
 import { getRequestLocale } from '../middleware/request-locale.js'
+import { isBrandLogoProp } from '../utils/project-category.js'
 
 const app = new Hono()
 // 道具图：白底单品静物，方形画布
@@ -109,6 +110,9 @@ app.post('/:id/generate-image', async (c) => {
   const id = Number(c.req.param('id'))
   const body = await c.req.json()
   const prop = await loadOwnedProp(c, id)
+  if (isBrandLogoProp(prop)) {
+    return badRequest(c, '品牌 Logo 必须上传官方原件，不能用 AI 生成或重绘')
+  }
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
 
   const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))

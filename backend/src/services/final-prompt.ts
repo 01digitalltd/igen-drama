@@ -20,6 +20,8 @@ import {
 } from '../agents/tools/image-prompt-tools.js'
 import { logTaskError, logTaskProgress } from '../utils/task-logger.js'
 import { withContentLanguage } from '../utils/content-language.js'
+import { isBrandLogoProp } from '../utils/project-category.js'
+import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
 import { z } from 'zod'
 
 type CharacterRow = typeof schema.characters.$inferSelect
@@ -105,6 +107,7 @@ async function generateStructuredPrompt(episodeId: number, dramaId: number, mess
     modelOverride: opts?.model || undefined,
     textConfigId: opts?.configId || undefined,
     locale: opts?.locale || undefined,
+    ...agentContextFromAd(await loadDramaAdContext(dramaId)),
   })
   const result: any = await agent.generate(
     [{ role: 'user', content: withContentLanguage(message, opts?.locale) }],
@@ -184,6 +187,11 @@ export async function ensureSceneFinalPrompt(scene: SceneRow, episodeId: number,
 
 /** 确保道具拥有白底单品最终提示词，返回最终提示词（失败返回 ''）；force 时忽略已有提示词强制重新生成 */
 export async function ensurePropFinalPrompt(prop: PropRow, episodeId: number, force = false, opts?: PromptAgentOptions): Promise<string> {
+  if (isBrandLogoProp(prop)) {
+    const locked = '使用用户上传的官方 Logo 原件作为参考图。禁止 AI 生成或重绘商标。'
+    if (prop.finalPrompt && !force) return prop.finalPrompt
+    return persistPropFinalPrompt(prop.dramaId, prop.id, locked)
+  }
   if (prop.finalPrompt && !force) return prop.finalPrompt
   try {
     logTaskProgress('FinalPrompt', 'prop-generate', { propId: prop.id, episodeId })

@@ -9,6 +9,8 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { Workspace, LocalFilesystem } from '@mastra/core/workspace'
+import { isAdPromoCategory } from '../utils/project-category.js'
+import { adSkillDirsFor, allAdSkillDirs, normalizeAdTaxonomy } from '../utils/ad-taxonomy.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -31,6 +33,9 @@ const AGENT_SKILL_MAP: Record<string, string[]> = {
   ],
 }
 
+/** Extra skills loaded only for 广告推广 projects. Workspace registers all; injection picks purpose+form. */
+const AD_SKILL_DIRS = allAdSkillDirs()
+
 /** 每个 Agent 的 Workspace（filesystem 工作目录 + 原生技能注册）
  *  skills 用动态解析器按目录前缀匹配：设置页新建的子技能无需重启即可被发现 */
 export const skillWorkspaces: Record<string, Workspace> = Object.fromEntries(
@@ -40,8 +45,11 @@ export const skillWorkspaces: Record<string, Workspace> = Object.fromEntries(
       id: `workspace-${agentType}`,
       name: `${agentType} workspace`,
       filesystem: new LocalFilesystem({ basePath: WORKSPACE_DIR }),
-      skills: () => scanSkillPaths().filter(p =>
-        prefixes.some(prefix => p === `skills/${prefix}` || p.startsWith(`skills/${prefix}/`))),
+      skills: () => {
+        const allowed = [...prefixes, ...AD_SKILL_DIRS]
+        return scanSkillPaths().filter(p =>
+          allowed.some(prefix => p === `skills/${prefix}` || p.startsWith(`skills/${prefix}/`)))
+      },
     }),
   ]),
 )
@@ -81,9 +89,17 @@ function formatSkillSection(skillId: string, content: string): string {
 /** 读取 Agent 专属技能全文（经 workspace.skills API，保持原注入格式）
  *  AGENT_SKILL_MAP 的目录按前缀匹配：目录自身及其子目录下所有 SKILL.md 都会注入，
  *  因此设置页新建的子技能（如 storyboard-breaker/xxx）无需改代码即可生效 */
-export async function loadAgentSkills(agentType: string): Promise<string> {
+export async function loadAgentSkills(
+  agentType: string,
+  genre?: string | null,
+  spec?: { purpose?: string | null; form?: string | null; angle?: string | null } | null,
+): Promise<string> {
   const workspace = skillWorkspaces[agentType]
-  const prefixes = AGENT_SKILL_MAP[agentType] || []
+  const adDirs = isAdPromoCategory(genre) ? adSkillDirsFor(normalizeAdTaxonomy(spec)) : []
+  const prefixes = [
+    ...(AGENT_SKILL_MAP[agentType] || []),
+    ...adDirs,
+  ]
   if (!workspace || !prefixes.length) return ''
 
   const allPaths = scanSkillPaths().map(p => p.replace(/^skills\//, ''))
@@ -99,11 +115,15 @@ export async function loadAgentSkills(agentType: string): Promise<string> {
 
   if (!contents.length) return ''
 
+  const specLine = isAdPromoCategory(genre)
+    ? `\n当前广告规格：ad_purpose=${normalizeAdTaxonomy(spec).purpose} ad_form=${normalizeAdTaxonomy(spec).form} ad_angle=${normalizeAdTaxonomy(spec).angle}\n只执行这一组规格对应的节拍与出镜方式，不要混用其他广告类型。\n`
+    : ''
+
   return [
     '以下是该 Agent 专属的项目技能规范（SKILL.md）。',
     '不同 Agent 会加载不同 skill；你只需要遵守当前注入的这些技能。',
     '你必须在不违背当前工具边界的前提下优先遵守这些规范；若与用户明确要求冲突，以用户要求为准。',
-    '',
+    specLine,
     contents.join('\n\n'),
   ].join('\n')
 }

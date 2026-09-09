@@ -17,8 +17,10 @@ import {
 import { db, schema } from '../db/index.js'
 import { eq } from '../db/query.js'
 import { contentLanguageInstruction } from '../utils/content-language.js'
+import { isAdPromoCategory } from '../utils/project-category.js'
 import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { publishEpisodeEvent } from './episode-events.js'
+import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
 import { z } from 'zod'
 
 export type ExtractTarget = 'characters' | 'scenes' | 'props'
@@ -214,15 +216,32 @@ async function loadExistingHint(target: ExtractTarget, dramaId: number): Promise
   return rows.length ? `Existing props in this project (reuse these names when they match): ${rows.join('、')}` : ''
 }
 
-function extractUserMessage(target: ExtractTarget, script: string, existingHint: string, locale?: string) {
+function extractUserMessage(
+  target: ExtractTarget,
+  script: string,
+  existingHint: string,
+  locale?: string,
+  projectCategory?: string,
+  adForm?: string | null,
+) {
+  const ad = isAdPromoCategory(projectCategory)
+  const talentLed = ad && adForm === 'talent_explain'
   const kind = target === 'characters' ? 'characters' : target === 'scenes' ? 'scenes' : 'key props'
   const rules = target === 'characters'
-    ? 'Extract every character who has dialogue or an important action. Each item needs name, and preferably role, appearance (look + temperament), and styling (hair, makeup, costume).'
+    ? (ad
+      ? (talentLed
+        ? 'This is an ad-promo project in talent-explain form. You MUST extract the on-camera presenter/expert who speaks. Empty array is not valid.'
+        : 'This is an ad-promo project in product-showcase form. Extract on-camera talent only if they speak or act. Empty array is valid for product-only ads. Each item needs name, and preferably role, appearance, and styling.')
+      : 'Extract every character who has dialogue or an important action. Each item needs name, and preferably role, appearance (look + temperament), and styling (hair, makeup, costume).')
     : target === 'scenes'
       ? 'Extract every distinct location+time. Each item needs location, and preferably time, prompt (empty space and set dressing only — no people, actions, or handheld plot props), and lighting.'
-      : 'Extract only plot-critical props (0-3). Skip everyday objects and set dressing. Empty array is valid. description is physical appearance only.'
+      : (ad
+        ? 'This is an ad-promo project. You MUST include a prop named 品牌Logo with type 品牌Logo (reuse that name if it already exists). Also extract the advertised product if it will get a close-up. Skip unrelated everyday objects. Logo description must say to use the official mark already uploaded in brand settings — do not invent graphic details. Empty array is not valid unless 品牌Logo already exists in the project.'
+        : 'Extract only plot-critical props (0-3). Skip everyday objects and set dressing. Empty array is valid. description is physical appearance only.')
   return [
     `Extract ${kind} from the formatted screenplay below. Return JSON only.`,
+    `project_category=${ad ? 'ad_promo' : 'short_drama'}`,
+    adForm ? `ad_form=${adForm}` : '',
     rules,
     existingHint,
     contentLanguageInstruction(locale),
@@ -260,17 +279,19 @@ export function startExtraction(episodeId: number, dramaId: number, target: Extr
     if (!script) throw new Error('本集没有剧本内容，请先完成改写')
 
     const existingHint = await loadExistingHint(target, dramaId)
+    const ad = await loadDramaAdContext(dramaId)
     const requestContext = buildAgentRequestContext({
       episodeId,
       dramaId,
       modelOverride: opts.model || undefined,
       textConfigId: opts.configId || undefined,
       locale: opts.locale || undefined,
+      ...agentContextFromAd(ad),
     })
 
     logTaskProgress('Extract', `${target}-structured`, { episodeId, scriptLength: script.length })
     const result: any = await agent.generate(
-      [{ role: 'user', content: extractUserMessage(target, script, existingHint, opts.locale) }],
+      [{ role: 'user', content: extractUserMessage(target, script, existingHint, opts.locale, ad.genre, ad.spec?.form) }],
       {
         requestContext,
         maxSteps: 1,
