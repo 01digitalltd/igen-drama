@@ -14,17 +14,17 @@ test('video prompt batch service runs per-shot async agent loop', () => {
   assert.match(svc, /selectedIds\.includes\(Number\(sb\.id\)\)/)
   // 运行中不重复启动
   assert.match(svc, /status === 'running'\) return \{ started: false, total: -1 \}/)
-  // 逐个分镜调用 prompt_generator，以落库结果判定成败
+  // 逐个分镜调用 prompt_generator，以后端落库判定成败（不依赖模型自己调工具）
   assert.match(svc, /mastra\.getAgent\('prompt_generator'\)/)
-  assert.match(svc, /read_storyboard_context/)
-  assert.match(svc, /update_storyboard/)
-  assert.match(svc, /fresh\?\.videoPrompt/)
+  assert.match(svc, /loadShotPromptContext/)
+  assert.match(svc, /toolChoice: 'none'/)
+  assert.match(svc, /structuredOutput/)
+  assert.match(svc, /VIDEO_PROMPT_SCHEMA/)
   assert.match(svc, /VIDEO_PROMPT_ATTEMPTS/)
   assert.match(svc, /batch-shot-retry/)
   assert.match(svc, /looksLikeVideoPrompt/)
   assert.match(svc, /from '\.\/video-prompt-text\.js'/)
   assert.match(svc, /persistShotVideoPrompt/)
-  assert.match(svc, /mustRewrite/)
   assert.match(svc, /task\.failed > 0 && task\.completed === 0/)
   assert.match(svc, /视频提示词仍按 video-prompt/)
   // 进度跟踪与文本模型覆盖
@@ -33,7 +33,7 @@ test('video prompt batch service runs per-shot async agent loop', () => {
   assert.match(svc, /dialogueLanguageInstruction\(spoken\)/)
   assert.match(svc, /getDramaDialogueLanguage\(dramaId\)/)
   assert.match(svc, /prompt_skill/)
-  assert.match(svc, /video-prompt\/omni/)
+  assert.match(svc, /Gemini Omni/)
   assert.match(svc, /<IMAGE_REF_N>/)
   assert.match(svc, /image_refs/)
 })

@@ -1,5 +1,7 @@
 /**
- * 批量视频提示词任务 — 异步为缺少 video_prompt 的分镜逐个运行 prompt_generator Agent
+ * 批量视频提示词任务 — 异步为缺少 video_prompt 的分镜逐个运行 prompt_generator
+ * Persistence does not depend on the model calling update_storyboard: the backend
+ * inlines shot context, asks for JSON, then writes videoPrompt itself.
  * 进程内内存态：按集跟踪一份任务，运行中不重复启动；重启后状态丢失
  */
 import { eq } from '../db/query.js'
@@ -13,9 +15,16 @@ import { publishEpisodeEvent } from './episode-events.js'
 import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
 import { firstConfigModel } from './video-clip-policy.js'
 import { now } from '../utils/response.js'
-import { extractGenerateText, looksLikeVideoPrompt } from './video-prompt-text.js'
+import { buildShotImageRefs } from './storyboard-prompt.js'
+import {
+  looksLikeVideoPrompt,
+  payloadFromGenerateResult,
+  summarizeGenerateResult,
+  videoPromptFromPayload,
+} from './video-prompt-text.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
 import { isAdPromoCategory } from '../utils/project-category.js'
+import { z } from 'zod'
 
 export interface VideoPromptBatchStatus {
   status: 'running' | 'done' | 'error'
@@ -30,6 +39,47 @@ export interface VideoPromptBatchStatus {
 
 const tasks = new Map<number, VideoPromptBatchStatus>()
 const VIDEO_PROMPT_ATTEMPTS = 3
+const VIDEO_PROMPT_SCHEMA = z.object({ video_prompt: z.string() })
+const STRUCTURED_INSTRUCTIONS = `你是视频提示词工程师。只返回 JSON {"video_prompt":"..."}。不要调用工具，不要输出 JSON 以外的说明。
+video_prompt 必须按时间轴分段：Seedance/其他用「0-3秒：」并 @角色名/@场景名/@道具名；Omni 用「[0-3s]」和 image_refs 里的 <IMAGE_REF_N>。
+最后一段结束秒数必须等于该分镜 duration。description 的每个【镜头N】映射为 1-2 个连续分段，不要创作新台词。`
+
+async function loadShotPromptContext(storyboard: {
+  id: number
+  description?: string | null
+  atmosphere?: string | null
+  duration?: number | null
+  sceneId?: number | null
+}) {
+  const charLinks = await db.select().from(schema.storyboardCharacters)
+    .where(eq(schema.storyboardCharacters.storyboardId, storyboard.id))
+  const propLinks = await db.select().from(schema.storyboardProps)
+    .where(eq(schema.storyboardProps.storyboardId, storyboard.id))
+  const characterIds = charLinks.map(link => link.characterId)
+  const propIds = propLinks.map(link => link.propId)
+  const characters = characterIds.length
+    ? (await db.select().from(schema.characters)).filter(row => characterIds.includes(row.id) && !row.deletedAt)
+    : []
+  const props = propIds.length
+    ? (await db.select().from(schema.props)).filter(row => propIds.includes(row.id) && !row.deletedAt)
+    : []
+  const scene = storyboard.sceneId
+    ? (await db.select().from(schema.scenes).where(eq(schema.scenes.id, storyboard.sceneId)))[0] || null
+    : null
+  return {
+    description: String(storyboard.description || '').trim(),
+    atmosphere: String(storyboard.atmosphere || '').trim(),
+    duration: Number(storyboard.duration) || 0,
+    sceneName: scene && !scene.deletedAt ? scene.location : '',
+    characterNames: characters.map(row => row.name).filter(Boolean),
+    propNames: props.map(row => row.name).filter(Boolean),
+    imageRefs: buildShotImageRefs({
+      scene: scene && !scene.deletedAt ? { location: scene.location, image_url: scene.imageUrl } : null,
+      characters: characters.map(row => ({ name: row.name, image_url: row.imageUrl })),
+      props: props.map(row => ({ name: row.name, image_url: row.imageUrl })),
+    }),
+  }
+}
 
 function emitPromptStatus(episodeId: number) {
   publishEpisodeEvent(episodeId, { type: 'prompts', payload: getVideoPromptBatchStatus(episodeId) })
@@ -73,7 +123,6 @@ export async function startVideoPromptBatch(
   const spoken = await getDramaDialogueLanguage(dramaId)
   const clip = await loadEpisodeClipPolicy(episodeId)
   const bounds = clip?.bounds
-  const mustRewrite = Boolean(selectedIds.length)
   const ad = await loadDramaAdContext(dramaId)
   const adHint = isAdPromoCategory(ad.genre)
     ? '当前是广告项目。视频提示词仍按 video-prompt 技能写时间轴（0-3秒：或 [0-3s]），不要改写成脚本或分场；产品/品牌Logo 出镜用 @道具名。'
@@ -93,12 +142,17 @@ export async function startVideoPromptBatch(
   ;(async () => {
     const agent = mastra.getAgent('prompt_generator')
     if (!agent) throw new Error('视频提示词 Agent 不可用')
+    const lastErrors: string[] = []
     for (const sb of pending) {
       task.current_storyboard_id = sb.id
       logTaskProgress('VideoPrompt', 'batch-shot', { episodeId, storyboardId: sb.id, index: task.completed + task.failed + 1, total: task.total })
-      const beforeUpdated = sb.updatedAt
       try {
+        const shot = await loadShotPromptContext(sb)
+        if (!shot.description) throw new Error('分镜没有画面描述，无法生成视频提示词')
         let saved = false
+        const omni = clip?.videoGeneration?.prompt_skill === 'omni'
+        const duration = shot.duration || bounds?.typical || 10
+        const endCap = Math.min(duration, bounds?.max || 15)
         for (let attempt = 1; attempt <= VIDEO_PROMPT_ATTEMPTS && !saved; attempt++) {
           const requestContext = buildAgentRequestContext({
             episodeId,
@@ -111,52 +165,65 @@ export async function startVideoPromptBatch(
           const result = await agent.generate([{
             role: 'user',
             content: [
-              withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})生成视频提示词(video_prompt)。视频模型:${videoLabel}。prompt_skill:${clip?.videoGeneration?.prompt_skill || 'seedance'}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${sb.duration || bounds?.typical || 10}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${Math.min(Number(sb.duration) || bounds?.max || 15, bounds?.max || 15)}s。
-${clip?.videoGeneration?.prompt_skill === 'omni' ? '当前是 Gemini Omni：遵守 Skill video-prompt/omni，时间轴写成 [0-3s]，用该分镜 image_refs 的 <IMAGE_REF_N> 简单标记绑定参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。' : '当前是 Seedance/其他模型：遵守 Skill video-prompt，时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'}
+              withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})写视频提示词(video_prompt)。视频模型:${videoLabel}。prompt_skill:${clip?.videoGeneration?.prompt_skill || 'seedance'}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。
+${omni ? '当前是 Gemini Omni：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_REF_N> 标记参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。' : '当前是 Seedance/其他模型：时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'}
 ${adHint}
-请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】子镜头与台词/旁白)、氛围、时长、image_refs 及 video_generation 约束，据此生成 video_prompt（段落内允许多镜头切镜，但不跨场景，切镜点对齐分镜 description 的【镜头N】结构）,然后调用 update_storyboard 保存到分镜 ID:${sb.id}。update_storyboard 参数只传 storyboard_id 和 video_prompt 两个键,不要回传该分镜的其他任何字段,不要重新拆分整集。必须实际调用工具，不要只在回复中给出提示词。`, opts.locale),
+
+分镜画面描述：
+${shot.description}
+氛围：${shot.atmosphere || '（未填）'}
+场景：${shot.sceneName || '（未绑定）'}
+角色：${shot.characterNames.join('、') || '无'}
+道具：${shot.propNames.join('、') || '无'}
+image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${ref.kind}:${ref.name}`).join('；') : '无'}
+
+只返回 JSON {"video_prompt":"..."}。必须根据上面的 description 生成，不要调用工具。`, opts.locale),
               dialogueLanguageInstruction(spoken),
             ].join('\n\n'),
-          }], { maxSteps: 8, requestContext })
-          const [fresh] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, sb.id))
-          let after = String(fresh?.videoPrompt || '').trim()
-          let rewritten = fresh?.updatedAt !== beforeUpdated
-          if (!after || (mustRewrite && !rewritten)) {
-            const fallback = extractGenerateText(result)
-            if (looksLikeVideoPrompt(fallback)) {
-              await persistShotVideoPrompt(sb.id, fallback)
-              after = fallback
-              rewritten = true
-              logTaskWarn('VideoPrompt', 'batch-shot-fallback', { storyboardId: sb.id, attempt })
-            }
+          }], {
+            maxSteps: 1,
+            toolChoice: 'none',
+            instructions: STRUCTURED_INSTRUCTIONS,
+            structuredOutput: {
+              schema: VIDEO_PROMPT_SCHEMA,
+              jsonPromptInjection: true,
+            },
+            requestContext,
+          })
+          const drafted = videoPromptFromPayload(await payloadFromGenerateResult(result))
+          if (looksLikeVideoPrompt(drafted)) {
+            await persistShotVideoPrompt(sb.id, drafted)
+            saved = true
+            break
           }
-          saved = Boolean(after) && (!mustRewrite || rewritten)
-          if (!saved) {
-            logTaskWarn('VideoPrompt', 'batch-shot-retry', {
-              storyboardId: sb.id,
-              attempt,
-              error: 'agent finished but video_prompt was not saved',
-              text: extractGenerateText(result).slice(0, 240),
-            })
-          }
+          logTaskWarn('VideoPrompt', 'batch-shot-retry', {
+            storyboardId: sb.id,
+            attempt,
+            error: 'agent finished but video_prompt was not saved',
+            ...summarizeGenerateResult(result),
+            text: drafted.slice(0, 240),
+          })
         }
         if (saved) task.completed++
         else {
           task.failed++
+          lastErrors.push(`#${sb.storyboardNumber}`)
           logTaskError('VideoPrompt', 'batch-shot', { storyboardId: sb.id, error: 'agent finished but video_prompt is empty' })
         }
         emitPromptStatus(episodeId)
       } catch (err: any) {
         task.failed++
+        lastErrors.push(`#${sb.storyboardNumber}:${err?.message || 'error'}`)
         logTaskError('VideoPrompt', 'batch-shot', { storyboardId: sb.id, error: err?.message })
         emitPromptStatus(episodeId)
       }
     }
+    return lastErrors
   })()
-    .then(() => {
+    .then((lastErrors) => {
       if (task.failed > 0 && task.completed === 0) {
         task.status = 'error'
-        task.error = `视频提示词生成失败（${task.failed}/${task.total}）`
+        task.error = `视频提示词生成失败（${task.failed}/${task.total}）${lastErrors?.length ? `：${lastErrors[0]}` : ''}`
       } else {
         task.status = 'done'
       }
