@@ -36,7 +36,7 @@ app.post('/', async (c) => {
   }
 
   try {
-    if (body.drama_id) await loadOwnedDrama(c, Number(body.drama_id))
+    const drama = body.drama_id ? await loadOwnedDrama(c, body.drama_id) : null
     if (body.storyboard_id) await loadOwnedStoryboard(c, Number(body.storyboard_id))
     // Explicit config_id from the client wins so the studio model picker can switch
     // Gemini Omni / MiniMax H3 / Seedance. Episode lock is only the fallback.
@@ -62,7 +62,7 @@ app.post('/', async (c) => {
       storyboardId: body.storyboard_id,
       sceneId: body.scene_id,
       characterId: body.character_id,
-      dramaId: body.drama_id,
+      dramaId: drama?.id,
       episodeId,
     })
     logTaskPayload('TaskAPI', 'request body', body)
@@ -70,7 +70,7 @@ app.post('/', async (c) => {
     const id = type === 'image'
       ? await generateImage({
         storyboardId: body.storyboard_id,
-        dramaId: body.drama_id,
+        dramaId: drama?.id,
         episodeId,
         sceneId: body.scene_id,
         characterId: body.character_id,
@@ -83,7 +83,7 @@ app.post('/', async (c) => {
       })
       : await generateVideo({
         storyboardId: body.storyboard_id,
-        dramaId: body.drama_id,
+        dramaId: drama?.id,
         episodeId,
         prompt: body.prompt,
         model: body.model,
@@ -120,14 +120,16 @@ app.get('/', async (c) => {
   const storyboardId = c.req.query('storyboard_id')
   const dramaId = c.req.query('drama_id')
 
-  if (dramaId) await loadOwnedDrama(c, Number(dramaId))
   if (storyboardId) await loadOwnedStoryboard(c, Number(storyboardId))
 
   let rows = await db.select().from(schema.sysTask)
 
   if (type) rows = rows.filter(r => r.type === type)
   if (storyboardId) rows = rows.filter(r => r.storyboardId === Number(storyboardId))
-  if (dramaId) rows = rows.filter(r => r.dramaId === Number(dramaId))
+  if (dramaId) {
+    const drama = await loadOwnedDrama(c, dramaId)
+    rows = rows.filter(r => r.dramaId === drama.id)
+  }
 
   if (shouldScopeToOwner(c) && !dramaId) {
     const owner = getOwnerUserId(c)!

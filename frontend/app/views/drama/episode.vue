@@ -699,6 +699,12 @@
                     <option v-for="opt in DIALOGUE_LANGUAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
                   </select>
                 </label>
+                <label class="dim" style="font-size:12px;display:flex;align-items:center;gap:6px">
+                  旁白声线
+                  <select class="input" style="width:auto;padding:2px 8px;font-size:12px" :value="dramaVoVoice" @change="setVoVoice($event.target.value)">
+                    <option v-for="opt in VO_VOICE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </select>
+                </label>
                 <button class="btn btn-sm" :disabled="videoPromptBatch.running || !sbs.length" @click="batchVideoPrompts(selectedSbIds.length ? selectedSbIds : sbs.map(s => s.id))">
                   <Loader2 v-if="videoPromptBatch.running" :size="11" class="animate-spin" />
                   <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -1575,11 +1581,12 @@ import {
 import { api, dramaAPI, episodeAPI, storyboardAPI, characterAPI, sceneAPI, propAPI, taskAPI, mergeAPI, aiConfigAPI, uploadAPI } from '~/composables/useApi'
 import { useAgent, waitAgentJob } from '~/composables/useAgent'
 import { DIALOGUE_LANGUAGE_OPTIONS, dialogueLanguageInstruction, normalizeDialogueLanguage } from '~/utils/dialogue-language'
+import { VO_VOICE_OPTIONS, normalizeVoVoice, voVoiceInstruction } from '~/utils/vo-voice'
 
 definePageMeta({ layout: 'studio' })
 
 const route = useRoute()
-const dramaId = Number(route.params.id)
+const dramaId = String(route.params.id || '')
 const episodeNumber = Number(route.params.episodeNumber)
 
 const drama = ref(null), episode = ref(null), chars = ref([]), scenes = ref([]), propItems = ref([]), sbs = ref([]), mergeData = ref(null)
@@ -2081,6 +2088,7 @@ const lockedVideoConfigLabel = computed(() => configLabel(videoConfigs.value.fin
 // 画面比例在创建项目时固定，视频生成统一使用
 const dramaAspectRatio = computed(() => drama.value?.aspect_ratio || drama.value?.aspectRatio || '16:9')
 const dramaDialogueLanguage = computed(() => normalizeDialogueLanguage(drama.value?.dialogue_language || drama.value?.dialogueLanguage))
+const dramaVoVoice = computed(() => normalizeVoVoice(drama.value?.vo_voice || drama.value?.voVoice))
 
 async function setDialogueLanguage(code) {
   const next = normalizeDialogueLanguage(code)
@@ -2094,6 +2102,20 @@ async function setDialogueLanguage(code) {
     }
   } catch (e) {
     drama.value = { ...drama.value, dialogue_language: prevLang, dialogueLanguage: prevLang }
+    toast.error(e.message)
+  }
+}
+
+async function setVoVoice(code) {
+  const next = normalizeVoVoice(code)
+  if (next === dramaVoVoice.value || !drama.value) return
+  const prevVoice = drama.value.vo_voice || drama.value.voVoice
+  drama.value = { ...drama.value, vo_voice: next, voVoice: next }
+  try {
+    await dramaAPI.update(dramaId, { vo_voice: next })
+    toast.info('旁白声线已更新。之后生成的影片会用新声线，不必重跑提示词。')
+  } catch (e) {
+    drama.value = { ...drama.value, vo_voice: prevVoice, voVoice: prevVoice }
     toast.error(e.message)
   }
 }
@@ -2965,6 +2987,7 @@ async function genVideoPrompt(sb) {
   try {
     const started = await api.post(`/agent/prompt_generator/chat`, {
       message: `${dialogueLanguageInstruction(dramaDialogueLanguage.value)}
+${voVoiceInstruction(dramaVoVoice.value)}
 
 请为分镜 #${idx}(ID:${sb.id})生成视频提示词(video_prompt)。视频模型:${label}。${skillHint}
 

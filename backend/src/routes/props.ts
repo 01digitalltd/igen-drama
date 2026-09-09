@@ -7,7 +7,7 @@ import { generateImage } from '../services/generation.js'
 import { getDramaStylePrompt } from '../services/style-preset.js'
 import { ensurePropFinalPrompt } from '../services/final-prompt.js'
 import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
-import { loadOwnedDrama, loadOwnedProp } from '../utils/ownership.js'
+import { loadOwnedDrama, loadOwnedEpisode, loadOwnedProp } from '../utils/ownership.js'
 import { getRequestLocale } from '../middleware/request-locale.js'
 import { isBrandLogoProp } from '../utils/project-category.js'
 
@@ -20,22 +20,23 @@ app.post('/', async (c) => {
   const body = await c.req.json()
   if (!body.drama_id) return badRequest(c, 'drama_id required')
   if (!body.name?.trim()) return badRequest(c, 'name required')
-  await loadOwnedDrama(c, Number(body.drama_id))
+  const drama = await loadOwnedDrama(c, body.drama_id)
   const ts = now()
   const res = await db.insert(schema.props).values({
     name: body.name.trim(),
     type: body.type || '',
     description: body.description || '',
-    dramaId: body.drama_id,
+    dramaId: drama.id,
     createdAt: ts,
     updatedAt: ts,
   })
   const propId = getInsertId(res)
   if (body.episode_id) {
+    const episode = await loadOwnedEpisode(c, body.episode_id)
     const existing = await db.select().from(schema.episodeProps)
-      .where(and(eq(schema.episodeProps.episodeId, Number(body.episode_id)), eq(schema.episodeProps.propId, propId)))
+      .where(and(eq(schema.episodeProps.episodeId, episode.id), eq(schema.episodeProps.propId, propId)))
     if (!existing.length) {
-      await db.insert(schema.episodeProps).values({ episodeId: Number(body.episode_id), propId, createdAt: ts })
+      await db.insert(schema.episodeProps).values({ episodeId: episode.id, propId, createdAt: ts })
     }
   }
   const [row] = await db.select().from(schema.props).where(eq(schema.props.id, propId))
@@ -91,9 +92,7 @@ app.post('/:id/generate-prompt', async (c) => {
   const body = await c.req.json()
   const prop = await loadOwnedProp(c, id)
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
-
-  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
-  if (!ep) return badRequest(c, 'Episode not found')
+  const ep = await loadOwnedEpisode(c, body.episode_id)
 
   logTaskStart('FinalPrompt', 'prop-generate', { propId: id, episodeId: ep.id, force: !!body.force })
   const finalPrompt = await ensurePropFinalPrompt(prop, ep.id, !!body.force, { model: body.text_model, configId: body.text_config_id ?? undefined, locale: getRequestLocale(c, body.locale) })
@@ -114,9 +113,7 @@ app.post('/:id/generate-image', async (c) => {
     return badRequest(c, '品牌 Logo 必须上传官方原件，不能用 AI 生成或重绘')
   }
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
-
-  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
-  if (!ep) return badRequest(c, 'Episode not found')
+  const ep = await loadOwnedEpisode(c, body.episode_id)
 
   const stylePrompt = await getDramaStylePrompt(prop.dramaId)
   const prompt = prop.finalPrompt || propImagePrompt(prop, stylePrompt)

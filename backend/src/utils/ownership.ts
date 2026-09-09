@@ -2,6 +2,13 @@ import type { Context } from 'hono'
 import { and, eq, isNull } from '../db/query.js'
 import { db, schema } from '../db/index.js'
 import { isServiceAuthEnabled } from '../middleware/service-auth.js'
+import {
+  isPublicUuid,
+  newPublicUuid,
+  normalizePublicUuid,
+  parseNumericId,
+} from './public-id.js'
+import type { DramaRow, EpisodeRow } from '../db/schema.js'
 
 export function getOwnerUserId(c: Context): string | null {
   return (c.get('ownerUserId') as string | null | undefined) || null
@@ -28,23 +35,65 @@ function denyMissing(): never {
   throw new OwnershipError('剧本不存在', 404)
 }
 
-export async function loadOwnedDrama(c: Context, dramaId: number) {
-  const [drama] = await db.select().from(schema.dramas).where(eq(schema.dramas.id, dramaId))
+export async function ensureDramaUuid(drama: DramaRow): Promise<DramaRow & { uuid: string }> {
+  if (drama.uuid && isPublicUuid(drama.uuid)) {
+    return { ...drama, uuid: normalizePublicUuid(drama.uuid) }
+  }
+  const uuid = newPublicUuid()
+  await db.update(schema.dramas).set({ uuid }).where(eq(schema.dramas.id, drama.id))
+  return { ...drama, uuid }
+}
+
+export async function ensureEpisodeUuid(episode: EpisodeRow): Promise<EpisodeRow & { uuid: string }> {
+  if (episode.uuid && isPublicUuid(episode.uuid)) {
+    return { ...episode, uuid: normalizePublicUuid(episode.uuid) }
+  }
+  const uuid = newPublicUuid()
+  await db.update(schema.episodes).set({ uuid }).where(eq(schema.episodes.id, episode.id))
+  return { ...episode, uuid }
+}
+
+export async function findDramaByRef(ref: string | number): Promise<DramaRow | undefined> {
+  if (isPublicUuid(ref)) {
+    const uuid = normalizePublicUuid(String(ref))
+    const [row] = await db.select().from(schema.dramas).where(eq(schema.dramas.uuid, uuid))
+    return row
+  }
+  const id = parseNumericId(ref)
+  if (!id) return undefined
+  const [row] = await db.select().from(schema.dramas).where(eq(schema.dramas.id, id))
+  return row
+}
+
+export async function findEpisodeByRef(ref: string | number): Promise<EpisodeRow | undefined> {
+  if (isPublicUuid(ref)) {
+    const uuid = normalizePublicUuid(String(ref))
+    const [row] = await db.select().from(schema.episodes).where(eq(schema.episodes.uuid, uuid))
+    return row
+  }
+  const id = parseNumericId(ref)
+  if (!id) return undefined
+  const [row] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, id))
+  return row
+}
+
+export async function loadOwnedDrama(c: Context, dramaRef: string | number) {
+  const drama = await findDramaByRef(dramaRef)
   if (!drama || drama.deletedAt) denyMissing()
   if (shouldScopeToOwner(c)) {
     const owner = getOwnerUserId(c)
     if (!drama.ownerUserId || drama.ownerUserId !== owner) denyMissing()
   }
-  return drama
+  return ensureDramaUuid(drama)
 }
 
-export async function loadOwnedEpisode(c: Context, episodeId: number) {
-  const [episode] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, episodeId))
+export async function loadOwnedEpisode(c: Context, episodeRef: string | number) {
+  const episode = await findEpisodeByRef(episodeRef)
   if (!episode || episode.deletedAt) {
     throw new OwnershipError('剧集不存在', 404)
   }
   await loadOwnedDrama(c, episode.dramaId)
-  return episode
+  return ensureEpisodeUuid(episode)
 }
 
 export async function loadOwnedCharacter(c: Context, characterId: number) {

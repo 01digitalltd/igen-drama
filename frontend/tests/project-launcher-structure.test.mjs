@@ -51,6 +51,8 @@ test('create dialog fixes aspect ratio at project creation', () => {
   assert.match(page, /1:1 · 方形/)
   assert.match(page, /对白语言/)
   assert.match(page, /dialogue_language/)
+  assert.match(page, /旁白声线/)
+  assert.match(page, /vo_voice/)
   assert.doesNotMatch(page, /计划集数/)
 })
 

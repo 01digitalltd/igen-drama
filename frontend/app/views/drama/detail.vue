@@ -31,6 +31,12 @@
               <option v-for="opt in DIALOGUE_LANGUAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
           </label>
+          <label class="meta-item" @click.stop>
+            旁白声线
+            <select class="input" style="width:auto;padding:2px 8px;font-size:12px" :value="normalizeVoVoice(drama.vo_voice || drama.voVoice)" @change="setVoVoice($event.target.value)">
+              <option v-for="opt in VO_VOICE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+          </label>
         </div>
       </div>
       <button class="btn btn-primary head-action" @click="openAddEpisode">
@@ -560,10 +566,11 @@ import { toast } from 'vue-sonner'
 import { dramaAPI, episodeAPI, characterAPI, sceneAPI, propAPI, uploadAPI } from '~/composables/useApi'
 import BaseSelect from '~/components/BaseSelect.vue'
 import { DIALOGUE_LANGUAGE_OPTIONS, normalizeDialogueLanguage } from '~/utils/dialogue-language'
+import { VO_VOICE_OPTIONS, normalizeVoVoice } from '~/utils/vo-voice'
 
 const route = useRoute()
 const drama = ref(null)
-const dramaId = Number(route.params.id)
+const dramaId = String(route.params.id || '')
 const addDialog = ref(false)
 const creatingEpisode = ref(false)
 const newEpisodeTitle = ref('')
@@ -647,6 +654,19 @@ async function setDialogueLanguage(code) {
     await dramaAPI.update(dramaId, { dialogue_language: next })
   } catch (e) {
     drama.value = { ...drama.value, dialogue_language: prev, dialogueLanguage: prev }
+    toast.error(e.message)
+  }
+}
+
+async function setVoVoice(code) {
+  const next = normalizeVoVoice(code)
+  const prev = drama.value?.vo_voice || drama.value?.voVoice
+  if (!drama.value || next === normalizeVoVoice(prev)) return
+  drama.value = { ...drama.value, vo_voice: next, voVoice: next }
+  try {
+    await dramaAPI.update(dramaId, { vo_voice: next })
+  } catch (e) {
+    drama.value = { ...drama.value, vo_voice: prev, voVoice: prev }
     toast.error(e.message)
   }
 }

@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { and, eq, isNull } from '../db/query.js'
 import { db, getInsertId, schema } from '../db/index.js'
-import { success, notFound, badRequest, now } from '../utils/response.js'
+import { success, badRequest, now } from '../utils/response.js'
 import { toSnakeCaseArray, toSnakeCase } from '../utils/transform.js'
 import { getActiveConfigId, isOfficialProvider } from '../services/ai.js'
 import { getDramaStyleValue } from '../services/style-preset.js'
@@ -11,7 +11,8 @@ import { EXTRACT_TARGETS, getExtractionStatus, startExtraction, type ExtractTarg
 import { listAgentJobsForEpisode, toPublicAgentJob } from '../services/agent-jobs.js'
 import { subscribeEpisodeEvents } from '../services/episode-events.js'
 import { getVideoPromptBatchStatus, startVideoPromptBatch } from '../services/video-prompts.js'
-import { loadOwnedDrama, loadOwnedEpisode } from '../utils/ownership.js'
+import { loadOwnedDrama, loadOwnedEpisode, ensureEpisodeUuid } from '../utils/ownership.js'
+import { toPublicEpisode } from '../utils/public-id.js'
 import { getRequestLocale } from '../middleware/request-locale.js'
 import { collectShotOverflow, loadEpisodeClipPolicy } from '../services/episode-clip-policy.js'
 import { ensureBrandLogoProp, loadDramaCategory } from '../services/brand-logo.js'
@@ -19,12 +20,17 @@ import { isAdPromoCategory } from '../utils/project-category.js'
 
 const app = new Hono()
 
+async function episodeFromParam(c: Parameters<typeof loadOwnedEpisode>[0]) {
+  const ref = c.req.param('id') || c.req.param('episode_id')
+  return loadOwnedEpisode(c, ref)
+}
+
 // POST /episodes — Create a new episode
 app.post('/', async (c) => {
   const body = await c.req.json()
   if (!body.drama_id) return badRequest(c, 'drama_id required')
-  const dramaId = Number(body.drama_id)
-  await loadOwnedDrama(c, dramaId)
+  const drama = await loadOwnedDrama(c, body.drama_id)
+  const dramaId = drama.id
 
   const style = await getDramaStyleValue(dramaId)
   const videoOpts = isRealisticDramaStyle(style) ? { excludeProviders: ['volcengine'] } : undefined
@@ -47,12 +53,12 @@ app.post('/', async (c) => {
 
   // Get next episode number（忽略已软删的集，删除中间集后新集号可复用空位之后的最大值）
   const existing = await db.select().from(schema.episodes)
-    .where(and(eq(schema.episodes.dramaId, body.drama_id), isNull(schema.episodes.deletedAt)))
+    .where(and(eq(schema.episodes.dramaId, dramaId), isNull(schema.episodes.deletedAt)))
     .orderBy(schema.episodes.episodeNumber)
   const nextNum = existing.length ? Math.max(...existing.map(e => e.episodeNumber)) + 1 : 1
 
   const res = await db.insert(schema.episodes).values({
-    dramaId: body.drama_id,
+    dramaId,
     episodeNumber: nextNum,
     title: body.title || `第${nextNum}集`,
     imageConfigId,
@@ -68,23 +74,21 @@ app.post('/', async (c) => {
 
   const [ep] = await db.select().from(schema.episodes)
     .where(eq(schema.episodes.id, getInsertId(res)))
+  const created = await ensureEpisodeUuid(ep)
   if (isAdPromoCategory(await loadDramaCategory(dramaId))) {
-    await ensureBrandLogoProp(dramaId, ep.id)
+    await ensureBrandLogoProp(dramaId, created.id)
   }
-  return success(c, {
-    id: ep.id,
-    episode_number: ep.episodeNumber,
-    title: ep.title,
-    image_config_id: ep.imageConfigId,
-    video_config_id: ep.videoConfigId,
-    resolution: ep.resolution,
-  })
+  return success(c, toPublicEpisode(created, drama, {
+    image_config_id: created.imageConfigId,
+    video_config_id: created.videoConfigId,
+    resolution: created.resolution,
+  }))
 })
 
 // PUT /episodes/:id - Update episode fields
 app.put('/:id', async (c) => {
-  const id = Number(c.req.param('id'))
-  await loadOwnedEpisode(c, id)
+  const owned = await episodeFromParam(c)
+  const id = owned.id
   const body = await c.req.json()
 
   const allowed = ['content', 'script_content', 'title', 'description', 'status', 'resolution', 'video_config_id', 'target_duration_seconds']
@@ -139,10 +143,12 @@ app.put('/:id', async (c) => {
 
   await db.update(schema.episodes).set(drizzleUpdates).where(eq(schema.episodes.id, id))
   const [fresh] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, id))
+  const publicFresh = fresh ? await ensureEpisodeUuid(fresh) : owned
+  const drama = await loadOwnedDrama(c, publicFresh.dramaId)
   const policy = await loadEpisodeClipPolicy(id)
   const overflow = policy ? await collectShotOverflow(id, policy.bounds) : { durationIds: [], promptIds: [] }
   return success(c, {
-    ...(fresh ? toSnakeCase(fresh) : {}),
+    ...toPublicEpisode(publicFresh, drama),
     overflow_shot_ids: overflow.durationIds,
     overflow_prompt_ids: overflow.promptIds,
     clip_policy: policy?.bounds || null,
@@ -151,19 +157,16 @@ app.put('/:id', async (c) => {
 
 // DELETE /episodes/:id - Soft delete episode（其分镜/生成记录保留但不可达）
 app.delete('/:id', async (c) => {
-  const id = Number(c.req.param('id'))
-  await loadOwnedEpisode(c, id)
-  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, id))
-  if (!ep) return notFound(c, '剧集不存在')
+  const ep = await episodeFromParam(c)
   await db.update(schema.episodes).set({ deletedAt: now(), updatedAt: now() })
-    .where(eq(schema.episodes.id, id))
+    .where(eq(schema.episodes.id, ep.id))
   return success(c)
 })
 
 // GET /episodes/:id/characters — characters linked to this episode
 app.get('/:id/characters', async (c) => {
-  const episodeId = Number(c.req.param('id'))
-  await loadOwnedEpisode(c, episodeId)
+  const ep = await episodeFromParam(c)
+  const episodeId = ep.id
   const links = await db.select().from(schema.episodeCharacters)
     .where(eq(schema.episodeCharacters.episodeId, episodeId))
   const charIds = links.map(l => l.characterId)
@@ -175,8 +178,8 @@ app.get('/:id/characters', async (c) => {
 
 // GET /episodes/:id/scenes — scenes linked to this episode
 app.get('/:id/scenes', async (c) => {
-  const episodeId = Number(c.req.param('id'))
-  await loadOwnedEpisode(c, episodeId)
+  const ep = await episodeFromParam(c)
+  const episodeId = ep.id
   const links = await db.select().from(schema.episodeScenes)
     .where(eq(schema.episodeScenes.episodeId, episodeId))
   const sceneIds = links.map(l => l.sceneId)
@@ -188,8 +191,8 @@ app.get('/:id/scenes', async (c) => {
 
 // GET /episodes/:id/props — props linked to this episode
 app.get('/:id/props', async (c) => {
-  const episodeId = Number(c.req.param('id'))
-  await loadOwnedEpisode(c, episodeId)
+  const ep = await episodeFromParam(c)
+  const episodeId = ep.id
   const links = await db.select().from(schema.episodeProps)
     .where(eq(schema.episodeProps.episodeId, episodeId))
   const propIds = links.map(l => l.propId)
@@ -201,8 +204,7 @@ app.get('/:id/props', async (c) => {
 
 // POST /episodes/:id/extract — 异步提取资产（target: characters | scenes | props），立即返回；状态经 SSE /events 推送
 app.post('/:id/extract', async (c) => {
-  const id = Number(c.req.param('id'))
-  const ep = await loadOwnedEpisode(c, id)
+  const ep = await episodeFromParam(c)
   const body = await c.req.json()
   const target = body.target as ExtractTarget
   if (!EXTRACT_TARGETS.includes(target)) return badRequest(c, 'target 必须是 characters / scenes / props')
@@ -216,15 +218,14 @@ app.post('/:id/extract', async (c) => {
 
 // GET /episodes/:id/extract-status — 查询三类资产提取任务状态（SSE 断开时的兜底）
 app.get('/:id/extract-status', async (c) => {
-  const id = Number(c.req.param('id'))
-  await loadOwnedEpisode(c, id)
-  return success(c, getExtractionStatus(id))
+  const ep = await episodeFromParam(c)
+  return success(c, getExtractionStatus(ep.id))
 })
 
 // GET /episodes/:id/events — push extract + agent job updates (SSE through the Next.js BFF)
 app.get('/:id/events', async (c) => {
-  const id = Number(c.req.param('id'))
-  await loadOwnedEpisode(c, id)
+  const ep = await episodeFromParam(c)
+  const id = ep.id
   c.header('Cache-Control', 'no-cache, no-transform')
   c.header('Connection', 'keep-alive')
   c.header('X-Accel-Buffering', 'no')
@@ -260,8 +261,7 @@ app.get('/:id/events', async (c) => {
 
 // POST /episodes/:id/generate-video-prompts — 异步批量为缺少视频提示词的分镜生成（立即返回，前端轮询状态）
 app.post('/:id/generate-video-prompts', async (c) => {
-  const id = Number(c.req.param('id'))
-  const ep = await loadOwnedEpisode(c, id)
+  const ep = await episodeFromParam(c)
   const body = await c.req.json().catch(() => ({}))
   const storyboardIds = Array.isArray(body.storyboard_ids)
     ? body.storyboard_ids.map(Number).filter((n: number) => Number.isInteger(n) && n > 0)
@@ -279,15 +279,14 @@ app.post('/:id/generate-video-prompts', async (c) => {
 
 // GET /episodes/:id/video-prompts-status — 查询批量视频提示词任务状态
 app.get('/:id/video-prompts-status', async (c) => {
-  const id = Number(c.req.param('id'))
-  await loadOwnedEpisode(c, id)
-  return success(c, getVideoPromptBatchStatus(id))
+  const ep = await episodeFromParam(c)
+  return success(c, getVideoPromptBatchStatus(ep.id))
 })
 
 // GET /episodes/:episode_id/storyboards
 app.get('/:episode_id/storyboards', async (c) => {
-  const episodeId = Number(c.req.param('episode_id'))
-  await loadOwnedEpisode(c, episodeId)
+  const ep = await episodeFromParam(c)
+  const episodeId = ep.id
   const rows = await db.select().from(schema.storyboards)
     .where(eq(schema.storyboards.episodeId, episodeId))
     .orderBy(schema.storyboards.storyboardNumber)
@@ -337,8 +336,8 @@ app.get('/:episode_id/storyboards', async (c) => {
 // GET /episodes/:id/generation-tasks — 按集聚合 sys_task + video_merges
 // sys_task 无 episode_id,通过 storyboard/scene/character/prop 关联键归属到当前集
 app.get('/:id/generation-tasks', async (c) => {
-  const episodeId = Number(c.req.param('id'))
-  const ep = await loadOwnedEpisode(c, episodeId)
+  const ep = await episodeFromParam(c)
+  const episodeId = ep.id
 
   const sbs = await db.select().from(schema.storyboards).where(eq(schema.storyboards.episodeId, episodeId))
   const storyboardIds = new Set(sbs.map(s => s.id))
@@ -377,8 +376,8 @@ app.get('/:id/generation-tasks', async (c) => {
 })
 
 app.get('/:id/pipeline-status', async (c) => {
-  const episodeId = Number(c.req.param('id'))
-  const ep = await loadOwnedEpisode(c, episodeId)
+  const ep = await episodeFromParam(c)
+  const episodeId = ep.id
 
   const chars = await db.select().from(schema.characters).where(eq(schema.characters.dramaId, ep.dramaId))
   const scenes = await db.select().from(schema.scenes).where(eq(schema.scenes.dramaId, ep.dramaId))
@@ -396,7 +395,7 @@ app.get('/:id/pipeline-status', async (c) => {
   }
 
   return success(c, {
-    episode_id: episodeId,
+    episode_id: ep.uuid || String(ep.id),
     steps: {
       script_rewrite: { status: ep.scriptContent ? 'done' : (ep.content ? 'ready' : 'pending') },
       extract_characters: { status: stepStatus(chars.length > 0), count: chars.length },
@@ -407,6 +406,13 @@ app.get('/:id/pipeline-status', async (c) => {
       merge_episode: { status: latestMerge?.status === 'completed' ? 'done' : (latestMerge ? latestMerge.status : 'pending'), merged_url: latestMerge?.mergedUrl },
     },
   })
+})
+
+// GET /episodes/:id — after nested /:id/* routes so Hono keeps those matches
+app.get('/:id', async (c) => {
+  const ep = await episodeFromParam(c)
+  const drama = await loadOwnedDrama(c, ep.dramaId)
+  return success(c, toPublicEpisode(ep, drama))
 })
 
 export default app

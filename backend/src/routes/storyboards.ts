@@ -83,22 +83,22 @@ async function validateStoryboardBindings(episodeId: number, sceneId: number | n
 app.post('/', async (c) => {
   const body = await c.req.json()
   if (!body.episode_id) return badRequest(c, 'episode_id required')
-  await loadOwnedEpisode(c, Number(body.episode_id))
+  const episode = await loadOwnedEpisode(c, body.episode_id)
   const ts = now()
   logTaskStart('StoryboardAPI', 'create', {
-    episodeId: body.episode_id,
+    episodeId: episode.id,
     shotNumber: body.storyboard_number || 1,
     sceneId: body.scene_id,
     characterIds: body.character_ids,
   })
   logTaskPayload('StoryboardAPI', 'create body', body)
-  await validateStoryboardBindings(body.episode_id, body.scene_id, body.character_ids, body.prop_ids)
-  const clip = await loadEpisodeClipPolicy(Number(body.episode_id))
+  await validateStoryboardBindings(episode.id, body.scene_id, body.character_ids, body.prop_ids)
+  const clip = await loadEpisodeClipPolicy(episode.id)
   const duration = clip?.bounds
     ? clampShotDurationForModel(body.duration || clip.bounds.typical, clip.bounds, clip.bounds.typical)
     : (body.duration || 10)
   const res = await db.insert(schema.storyboards).values({
-    episodeId: body.episode_id,
+    episodeId: episode.id,
     storyboardNumber: body.storyboard_number || 1,
     title: body.title,
     description: body.description,

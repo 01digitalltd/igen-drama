@@ -8,7 +8,7 @@ import { getDramaStylePrompt } from '../services/style-preset.js'
 import { stripCharacterFaceGridPrompt } from '../services/face-grid.js'
 import { ensureCharacterFinalPrompt } from '../services/final-prompt.js'
 import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
-import { loadOwnedCharacter, loadOwnedDrama } from '../utils/ownership.js'
+import { loadOwnedCharacter, loadOwnedDrama, loadOwnedEpisode } from '../utils/ownership.js'
 import { getRequestLocale } from '../middleware/request-locale.js'
 
 const app = new Hono()
@@ -19,7 +19,7 @@ app.post('/', async (c) => {
   const body = await c.req.json()
   if (!body.drama_id) return badRequest(c, 'drama_id required')
   if (!body.name?.trim()) return badRequest(c, 'name required')
-  await loadOwnedDrama(c, Number(body.drama_id))
+  const drama = await loadOwnedDrama(c, body.drama_id)
   const ts = now()
   const res = await db.insert(schema.characters).values({
     name: body.name.trim(),
@@ -27,16 +27,17 @@ app.post('/', async (c) => {
     description: body.description || '',
     appearance: body.appearance || '',
     styling: body.styling || '',
-    dramaId: body.drama_id,
+    dramaId: drama.id,
     createdAt: ts,
     updatedAt: ts,
   })
   const charId = getInsertId(res)
   if (body.episode_id) {
+    const episode = await loadOwnedEpisode(c, body.episode_id)
     const existing = await db.select().from(schema.episodeCharacters)
-      .where(and(eq(schema.episodeCharacters.episodeId, Number(body.episode_id)), eq(schema.episodeCharacters.characterId, charId)))
+      .where(and(eq(schema.episodeCharacters.episodeId, episode.id), eq(schema.episodeCharacters.characterId, charId)))
     if (!existing.length) {
-      await db.insert(schema.episodeCharacters).values({ episodeId: Number(body.episode_id), characterId: charId, createdAt: ts })
+      await db.insert(schema.episodeCharacters).values({ episodeId: episode.id, characterId: charId, createdAt: ts })
     }
   }
   const [row] = await db.select().from(schema.characters).where(eq(schema.characters.id, charId))
@@ -91,9 +92,7 @@ app.post('/:id/generate-image', async (c) => {
   const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, id))
   if (!char) return badRequest(c, 'Character not found')
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
-
-  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
-  if (!ep) return badRequest(c, 'Episode not found')
+  const ep = await loadOwnedEpisode(c, body.episode_id)
 
   const stylePrompt = await getDramaStylePrompt(char.dramaId)
   const prompt = stripCharacterFaceGridPrompt(char.finalPrompt || characterImagePrompt(char, stylePrompt))
@@ -116,9 +115,7 @@ app.post('/:id/generate-prompt', async (c) => {
   const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, id))
   if (!char) return badRequest(c, 'Character not found')
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
-
-  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
-  if (!ep) return badRequest(c, 'Episode not found')
+  const ep = await loadOwnedEpisode(c, body.episode_id)
 
   logTaskStart('FinalPrompt', 'character-generate', { characterId: id, episodeId: ep.id, force: !!body.force })
   const finalPrompt = await ensureCharacterFinalPrompt(char, ep.id, !!body.force, { model: body.text_model, configId: body.text_config_id ?? undefined, locale: getRequestLocale(c, body.locale) })
@@ -135,8 +132,7 @@ app.post('/batch-generate-images', async (c) => {
   const body = await c.req.json()
   const ids: number[] = body.character_ids || []
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
-  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
-  if (!ep) return badRequest(c, 'Episode not found')
+  const ep = await loadOwnedEpisode(c, body.episode_id)
   const stylePrompt = await getDramaStylePrompt(ep.dramaId)
   const results = await Promise.all(ids.map(async (cid) => {
     const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, cid))

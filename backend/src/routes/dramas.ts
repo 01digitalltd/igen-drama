@@ -1,10 +1,12 @@
 import { Hono } from 'hono'
 import { and, eq, isNull, desc } from '../db/query.js'
 import { db, getInsertId, schema } from '../db/index.js'
-import { success, badRequest, notFound, created, now } from '../utils/response.js'
-import { toSnakeCase, toSnakeCaseArray } from '../utils/transform.js'
-import { getOwnerTenantId, getOwnerUserId, loadOwnedDrama, ownerDramaWhere } from '../utils/ownership.js'
+import { success, badRequest, created, now } from '../utils/response.js'
+import { toSnakeCaseArray } from '../utils/transform.js'
+import { getOwnerTenantId, getOwnerUserId, loadOwnedDrama, loadOwnedEpisode, ownerDramaWhere, ensureDramaUuid, ensureEpisodeUuid } from '../utils/ownership.js'
+import { toPublicDrama, toPublicEpisode } from '../utils/public-id.js'
 import { defaultDialogueLanguageFromLocale, normalizeDialogueLanguage } from '../services/dialogue-language.js'
+import { DEFAULT_VO_VOICE, normalizeVoVoice } from '../services/vo-voice.js'
 import { defaultAspectRatioForCategory, normalizeProjectCategory, isAdPromoCategory } from '../utils/project-category.js'
 import { mergeAdTaxonomyMetadata, normalizeAdTaxonomy, adContextFields, taxonomyFromMetadata } from '../utils/ad-taxonomy.js'
 import { ensureBrandLogoProp } from '../services/brand-logo.js'
@@ -26,7 +28,7 @@ function enrichDrama(drama: DramaRow, extra: Record<string, unknown> = {}) {
   const genre = normalizeProjectCategory(drama.genre)
   const spec = isAdPromoCategory(genre) ? taxonomyFromMetadata(drama.metadata) : null
   return {
-    ...toSnakeCase(drama),
+    ...toPublicDrama(drama),
     tags: drama.tags ? JSON.parse(drama.tags) : [],
     ...adContextFields(spec, genre),
     ...extra,
@@ -51,9 +53,11 @@ app.get('/', async (c) => {
   const total = filtered.length
   const items = filtered.slice((page - 1) * pageSize, page * pageSize)
 
-  const enriched = await Promise.all(items.map(async (drama) => {
+  const enriched = await Promise.all(items.map(async (item) => {
+    const drama = await ensureDramaUuid(item)
     const eps = await db.select().from(schema.episodes)
       .where(and(eq(schema.episodes.dramaId, drama.id), isNull(schema.episodes.deletedAt)))
+    const publicEps = await Promise.all(eps.map((ep) => ensureEpisodeUuid(ep)))
     const chars = await db.select().from(schema.characters)
       .where(eq(schema.characters.dramaId, drama.id))
     const scns = await db.select().from(schema.scenes)
@@ -61,7 +65,7 @@ app.get('/', async (c) => {
     return {
       ...enrichDrama(drama),
       total_episodes: eps.length,
-      episodes: toSnakeCaseArray(eps),
+      episodes: publicEps.map((ep) => toPublicEpisode(ep, drama)),
       characters: toSnakeCaseArray(chars),
       scenes: toSnakeCaseArray(scns),
     }
@@ -91,6 +95,7 @@ app.post('/', async (c) => {
     dialogueLanguage: normalizeDialogueLanguage(
       body.dialogue_language || body.dialogueLanguage || defaultDialogueLanguageFromLocale(body.locale),
     ),
+    voVoice: normalizeVoVoice(body.vo_voice || body.voVoice || DEFAULT_VO_VOICE),
     tags: body.tags ? JSON.stringify(body.tags) : null,
     metadata,
     ownerUserId: getOwnerUserId(c),
@@ -102,12 +107,13 @@ app.post('/', async (c) => {
 
   const [result] = await db.select().from(schema.dramas)
     .where(eq(schema.dramas.id, getInsertId(res)))
+  const createdDrama = result ? await ensureDramaUuid(result) : result
 
-  if (isAdPromoCategory(result?.genre)) {
-    await ensureBrandLogoProp(result.id)
+  if (isAdPromoCategory(createdDrama?.genre)) {
+    await ensureBrandLogoProp(createdDrama.id)
   }
 
-  return created(c, enrichDrama(result))
+  return created(c, enrichDrama(createdDrama))
 })
 
 
@@ -125,11 +131,12 @@ app.get('/stats', async (c) => {
 
 // GET /dramas/:id - Get drama detail
 app.get('/:id', async (c) => {
-  const id = Number(c.req.param('id'))
-  const drama = await loadOwnedDrama(c, id)
+  const drama = await loadOwnedDrama(c, c.req.param('id'))
+  const id = drama.id
 
   const eps = await db.select().from(schema.episodes)
     .where(and(eq(schema.episodes.dramaId, id), isNull(schema.episodes.deletedAt)))
+  const publicEps = await Promise.all(eps.map((ep) => ensureEpisodeUuid(ep)))
   const chars = await db.select().from(schema.characters)
     .where(eq(schema.characters.dramaId, id))
   const scns = await db.select().from(schema.scenes)
@@ -139,7 +146,7 @@ app.get('/:id', async (c) => {
 
   return success(c, {
     ...enrichDrama(drama),
-    episodes: toSnakeCaseArray(eps),
+    episodes: publicEps.map((ep) => toPublicEpisode(ep, drama)),
     characters: toSnakeCaseArray(chars),
     scenes: toSnakeCaseArray(scns),
     props: toSnakeCaseArray(prps),
@@ -148,8 +155,8 @@ app.get('/:id', async (c) => {
 
 // PUT /dramas/:id - Update drama
 app.put('/:id', async (c) => {
-  const id = Number(c.req.param('id'))
-  const drama = await loadOwnedDrama(c, id)
+  const drama = await loadOwnedDrama(c, c.req.param('id'))
+  const id = drama.id
   const body = await c.req.json()
   const updates: Record<string, any> = { updatedAt: now() }
   if (body.title !== undefined) updates.title = body.title
@@ -159,6 +166,9 @@ app.put('/:id', async (c) => {
   if (body.aspect_ratio !== undefined) updates.aspectRatio = body.aspect_ratio
   if (body.dialogue_language !== undefined || body.dialogueLanguage !== undefined) {
     updates.dialogueLanguage = normalizeDialogueLanguage(body.dialogue_language ?? body.dialogueLanguage)
+  }
+  if (body.vo_voice !== undefined || body.voVoice !== undefined) {
+    updates.voVoice = normalizeVoVoice(body.vo_voice ?? body.voVoice)
   }
   if (body.status !== undefined) updates.status = body.status
   if (body.tags !== undefined) updates.tags = JSON.stringify(body.tags)
@@ -191,16 +201,15 @@ app.put('/:id', async (c) => {
 
 // DELETE /dramas/:id - Soft delete
 app.delete('/:id', async (c) => {
-  const id = Number(c.req.param('id'))
-  await loadOwnedDrama(c, id)
-  await db.update(schema.dramas).set({ deletedAt: now() }).where(eq(schema.dramas.id, id))
+  const drama = await loadOwnedDrama(c, c.req.param('id'))
+  await db.update(schema.dramas).set({ deletedAt: now() }).where(eq(schema.dramas.id, drama.id))
   return success(c)
 })
 
 // PUT /dramas/:id/characters - Save characters
 app.put('/:id/characters', async (c) => {
-  const dramaId = Number(c.req.param('id'))
-  await loadOwnedDrama(c, dramaId)
+  const drama = await loadOwnedDrama(c, c.req.param('id'))
+  const dramaId = drama.id
   const body = await c.req.json()
   const chars = body.characters || []
   const ts = now()
@@ -217,15 +226,16 @@ app.put('/:id/characters', async (c) => {
 
 // PUT /dramas/:id/episodes - Save episodes
 app.put('/:id/episodes', async (c) => {
-  const dramaId = Number(c.req.param('id'))
-  await loadOwnedDrama(c, dramaId)
+  const drama = await loadOwnedDrama(c, c.req.param('id'))
+  const dramaId = drama.id
   const body = await c.req.json()
   const episodes = body.episodes || []
   const ts = now()
 
   for (const ep of episodes) {
     if (ep.id) {
-      await db.update(schema.episodes).set({ ...ep, updatedAt: ts }).where(eq(schema.episodes.id, ep.id))
+      const existing = await loadOwnedEpisode(c, ep.id)
+      await db.update(schema.episodes).set({ ...ep, id: existing.id, uuid: existing.uuid, dramaId, updatedAt: ts }).where(eq(schema.episodes.id, existing.id))
     } else {
       await db.insert(schema.episodes).values({
         ...ep,

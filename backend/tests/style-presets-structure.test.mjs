@@ -27,11 +27,17 @@ test('drama creation stores spoken dialogue language independently of UI locale'
   const generation = read('src/services/generation.ts')
 
   assert.match(schema, /dialogueLanguage/)
+  assert.match(schema, /voVoice/)
   assert.match(dramas, /dialogueLanguage: normalizeDialogueLanguage/)
   assert.match(dramas, /body\.dialogue_language \|\| body\.dialogueLanguage/)
   assert.match(dramas, /updates\.dialogueLanguage = normalizeDialogueLanguage/)
+  assert.match(dramas, /voVoice: normalizeVoVoice/)
+  assert.match(dramas, /updates\.voVoice = normalizeVoVoice/)
   assert.match(prompts, /dialogueLanguageInstruction\(spoken\)/)
-  assert.match(generation, /appendVoLanguageDirective\(prompt, await getDramaDialogueLanguage/)
+  assert.match(prompts, /voVoiceInstruction\(narratorVoice\)/)
+  assert.match(generation, /appendVoLanguageDirective\(prompt, spoken\)/)
+  assert.match(generation, /appendVoVoiceDirective\(prompt, narratorVoice\)/)
+  assert.match(generation, /rewriteNarratorLabels\(prompt, narratorVoice\)/)
 })
 
 test('style presets route is mounted and implements CRUD', () => {

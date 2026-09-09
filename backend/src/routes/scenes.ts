@@ -7,7 +7,7 @@ import { getDramaStylePrompt } from '../services/style-preset.js'
 import { ensureSceneFinalPrompt } from '../services/final-prompt.js'
 import { appendEmptySceneGuard } from '../services/empty-scene-prompt.js'
 import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
-import { loadOwnedDrama, loadOwnedScene } from '../utils/ownership.js'
+import { loadOwnedDrama, loadOwnedEpisode, loadOwnedScene } from '../utils/ownership.js'
 import { getRequestLocale } from '../middleware/request-locale.js'
 
 const app = new Hono()
@@ -17,11 +17,12 @@ app.post('/', async (c) => {
   const body = await c.req.json()
   if (!body.drama_id) return badRequest(c, 'drama_id required')
   if (!body.location?.trim()) return badRequest(c, 'location required')
-  await loadOwnedDrama(c, Number(body.drama_id))
+  const drama = await loadOwnedDrama(c, body.drama_id)
   const ts = now()
+  const episode = body.episode_id ? await loadOwnedEpisode(c, body.episode_id) : null
   const res = await db.insert(schema.scenes).values({
-    dramaId: body.drama_id,
-    episodeId: body.episode_id,
+    dramaId: drama.id,
+    episodeId: episode?.id,
     location: body.location.trim(),
     time: body.time || '',
     prompt: body.prompt || body.description || body.location,
@@ -30,11 +31,11 @@ app.post('/', async (c) => {
     updatedAt: ts,
   })
   const sceneId = getInsertId(res)
-  if (body.episode_id) {
+  if (episode) {
     const existing = await db.select().from(schema.episodeScenes)
-      .where(and(eq(schema.episodeScenes.episodeId, Number(body.episode_id)), eq(schema.episodeScenes.sceneId, sceneId)))
+      .where(and(eq(schema.episodeScenes.episodeId, episode.id), eq(schema.episodeScenes.sceneId, sceneId)))
     if (!existing.length) {
-      await db.insert(schema.episodeScenes).values({ episodeId: Number(body.episode_id), sceneId, createdAt: ts })
+      await db.insert(schema.episodeScenes).values({ episodeId: episode.id, sceneId, createdAt: ts })
     }
   }
   const [result] = await db.select().from(schema.scenes)
@@ -88,8 +89,7 @@ app.post('/:id/generate-image', async (c) => {
   const body = await c.req.json()
   const scene = await loadOwnedScene(c, id)
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
-  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
-  if (!ep) return badRequest(c, 'Episode not found')
+  const ep = await loadOwnedEpisode(c, body.episode_id)
 
   const stylePrompt = await getDramaStylePrompt(scene.dramaId)
   const prompt = appendEmptySceneGuard(scene.finalPrompt || sceneImagePrompt(scene, stylePrompt), true)
@@ -112,9 +112,7 @@ app.post('/:id/generate-prompt', async (c) => {
   const body = await c.req.json()
   const scene = await loadOwnedScene(c, id)
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
-
-  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id)))
-  if (!ep) return badRequest(c, 'Episode not found')
+  const ep = await loadOwnedEpisode(c, body.episode_id)
 
   logTaskStart('FinalPrompt', 'scene-generate', { sceneId: id, episodeId: ep.id, force: !!body.force })
   const finalPrompt = await ensureSceneFinalPrompt(scene, ep.id, !!body.force, { model: body.text_model, configId: body.text_config_id ?? undefined, locale: getRequestLocale(c, body.locale) })

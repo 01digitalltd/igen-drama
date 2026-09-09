@@ -160,6 +160,11 @@
               <BaseSelect v-model="form.dialogue_language" :options="dialogueLanguageOptions" placeholder="选择对白语言" />
               <span class="field-hint">角色在生成影片里的口语；剧本仍用当前写作语言</span>
             </label>
+            <label class="field">
+              <span class="field-label">旁白声线</span>
+              <BaseSelect v-model="form.vo_voice" :options="voVoiceOptions" placeholder="选择旁白声线" />
+              <span class="field-hint">不指定会随机换男女声。角色对白不受影响</span>
+            </label>
           </div>
           <div class="dialog-foot">
             <button type="button" class="btn" @click="showCreate = false">取消</button>
@@ -190,6 +195,7 @@ import { Film, Clock } from 'lucide-vue-next'
 import { dramaAPI, stylePresetAPI } from '~/composables/useApi'
 import BaseSelect from '~/components/BaseSelect.vue'
 import { DIALOGUE_LANGUAGE_OPTIONS, normalizeDialogueLanguage } from '~/utils/dialogue-language'
+import { VO_VOICE_OPTIONS, normalizeVoVoice } from '~/utils/vo-voice'
 
 const dramas = ref([])
 const loading = ref(false)
@@ -200,7 +206,7 @@ const sortMode = ref('updated')
 const activeMenuId = ref(null)
 const dramaToDelete = ref(null)
 const deletingDrama = ref(false)
-const form = ref({ title: '', style: '', aspect_ratio: '16:9', dialogue_language: 'cmn-TW' })
+const form = ref({ title: '', style: '', aspect_ratio: '16:9', dialogue_language: 'cmn-TW', vo_voice: 'female' })
 const stylePresets = ref([])
 const styleSelectOptions = computed(() => stylePresets.value.map(p => ({ label: p.name, value: p.value })))
 const selectedStyleDesc = computed(() => stylePresets.value.find(p => p.value === form.value.style)?.description || '')
@@ -211,6 +217,7 @@ const aspectRatioOptions = [
   { label: '自适应', value: 'adaptive' },
 ]
 const dialogueLanguageOptions = DIALOGUE_LANGUAGE_OPTIONS
+const voVoiceOptions = VO_VOICE_OPTIONS
 const filters = [
   { label: '全部', value: 'all' },
   { label: '待开始', value: 'draft' },
@@ -283,6 +290,7 @@ async function create() {
     const d = await dramaAPI.create({
       ...form.value,
       dialogue_language: normalizeDialogueLanguage(form.value.dialogue_language),
+      vo_voice: normalizeVoVoice(form.value.vo_voice),
     })
     showCreate.value = false
     navigateTo(`/drama/${d.id}`)

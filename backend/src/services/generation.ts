@@ -16,6 +16,7 @@ import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue } from './style-preset.js'
 import { appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
+import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
 import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt } from './face-grid.js'
 import {
@@ -205,7 +206,11 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
     provider: config.provider,
     model: params.model || config.model,
   })
-  prompt = appendVoLanguageDirective(prompt, await getDramaDialogueLanguage(params.dramaId))
+  const spoken = await getDramaDialogueLanguage(params.dramaId)
+  const narratorVoice = await getDramaVoVoice(params.dramaId)
+  prompt = rewriteNarratorLabels(prompt, narratorVoice)
+  prompt = appendVoLanguageDirective(prompt, spoken)
+  prompt = appendVoVoiceDirective(prompt, narratorVoice)
 
   const bounds = clipDurationBounds(config.provider, params.model || config.model)
   assertClipSecondsFit(parseVideoPromptDurationSeconds(prompt), bounds, 'prompt')

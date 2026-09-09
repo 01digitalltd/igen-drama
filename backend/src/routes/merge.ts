@@ -11,8 +11,8 @@ const app = new Hono()
 
 // POST /episodes/:id/merge — 拼接镜头视频(body.storyboard_ids 可选,只拼所选)
 app.post('/episodes/:id/merge', async (c) => {
-  const episodeId = Number(c.req.param('id'))
-  const ep = await loadOwnedEpisode(c, episodeId)
+  const ep = await loadOwnedEpisode(c, c.req.param('id'))
+  const episodeId = ep.id
 
   let storyboardIds: number[] | undefined
   try {
@@ -35,8 +35,8 @@ app.post('/episodes/:id/merge', async (c) => {
 
 // GET /episodes/:id/merge — 查询最新拼接状态
 app.get('/episodes/:id/merge', async (c) => {
-  const episodeId = Number(c.req.param('id'))
-  await loadOwnedEpisode(c, episodeId)
+  const ep = await loadOwnedEpisode(c, c.req.param('id'))
+  const episodeId = ep.id
   const merges = await db.select().from(schema.videoMerges)
     .where(eq(schema.videoMerges.episodeId, episodeId))
   merges.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
@@ -48,8 +48,8 @@ app.get('/episodes/:id/merge', async (c) => {
 
 // GET /episodes/:id/merges — 成片列表(全部拼接记录,新的在前)
 app.get('/episodes/:id/merges', async (c) => {
-  const episodeId = Number(c.req.param('id'))
-  await loadOwnedEpisode(c, episodeId)
+  const ep = await loadOwnedEpisode(c, c.req.param('id'))
+  const episodeId = ep.id
   const merges = await db.select().from(schema.videoMerges)
     .where(and(eq(schema.videoMerges.episodeId, episodeId), isNull(schema.videoMerges.deletedAt)))
   merges.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))

@@ -22,12 +22,14 @@ function defineTable<T extends Record<string, unknown>>(name: string, fields: (k
 
 export type DramaRow = {
   id: number
+  uuid: string | null
   title: string
   description: string | null
   genre: string | null
   style: string | null
   aspectRatio: string | null
   dialogueLanguage: string | null
+  voVoice: string | null
   totalEpisodes: number | null
   totalDuration: number | null
   status: string
@@ -43,6 +45,7 @@ export type DramaRow = {
 
 export type EpisodeRow = {
   id: number
+  uuid: string | null
   dramaId: number
   episodeNumber: number
   title: string
@@ -292,12 +295,12 @@ export type AssetRow = {
 }
 
 export const dramas = defineTable<DramaRow>('dramas', [
-  'id', 'title', 'description', 'genre', 'style', 'aspectRatio', 'dialogueLanguage', 'totalEpisodes', 'totalDuration',
+  'id', 'uuid', 'title', 'description', 'genre', 'style', 'aspectRatio', 'dialogueLanguage', 'voVoice', 'totalEpisodes', 'totalDuration',
   'status', 'thumbnail', 'tags', 'metadata', 'ownerUserId', 'ownerTenantId', 'createdAt', 'updatedAt', 'deletedAt',
 ])
 
 export const episodes = defineTable<EpisodeRow>('episodes', [
-  'id', 'dramaId', 'episodeNumber', 'title', 'content', 'scriptContent', 'description', 'duration',
+  'id', 'uuid', 'dramaId', 'episodeNumber', 'title', 'content', 'scriptContent', 'description', 'duration',
   'status', 'videoUrl', 'thumbnail', 'imageConfigId', 'videoConfigId', 'resolution', 'targetDurationSeconds',
   'createdAt', 'updatedAt', 'deletedAt',
 ])

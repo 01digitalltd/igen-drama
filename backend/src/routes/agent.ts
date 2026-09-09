@@ -30,9 +30,9 @@ app.post('/:type/chat', async (c) => {
     return badRequest(c, 'message is required')
   }
 
-  await loadOwnedDrama(c, Number(drama_id))
-  const episode = await loadOwnedEpisode(c, Number(episode_id))
-  if (episode.dramaId !== Number(drama_id)) {
+  const drama = await loadOwnedDrama(c, drama_id)
+  const episode = await loadOwnedEpisode(c, episode_id)
+  if (episode.dramaId !== drama.id) {
     return badRequest(c, 'episode does not belong to drama')
   }
 
@@ -40,8 +40,8 @@ app.post('/:type/chat', async (c) => {
     const job = startAgentJob({
       agentType,
       message,
-      dramaId: Number(drama_id),
-      episodeId: Number(episode_id),
+      dramaId: drama.id,
+      episodeId: episode.id,
       model: body.model || undefined,
       configId: body.config_id || undefined,
       locale: getRequestLocale(c, body.locale),

@@ -91,3 +91,10 @@ test('video step can change project dialogue language', () => {
   assert.match(page, /dialogueLanguageInstruction\(dramaDialogueLanguage\.value\)/)
   assert.match(page, /dialogue_language: next/)
 })
+
+test('video step can lock narrator voice', () => {
+  assert.match(page, /dramaVoVoice/)
+  assert.match(page, /setVoVoice/)
+  assert.match(page, /voVoiceInstruction\(dramaVoVoice\.value\)/)
+  assert.match(page, /vo_voice: next/)
+})

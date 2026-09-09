@@ -10,13 +10,14 @@ import {
   toSetDoc,
   type Condition,
 } from './mongo.js'
+import { newPublicUuid } from '../utils/public-id.js'
 
 function isColumn(value: unknown): value is ColumnRef {
   return Boolean(value && typeof value === 'object' && '__field' in (value as object))
 }
 
-function tableHasId(table: { id?: unknown }): boolean {
-  return isColumn(table.id)
+function tableHasColumn(table: object, field: string): boolean {
+  return isColumn((table as Record<string, unknown>)[field])
 }
 
 export function eq(column: ColumnRef, value: unknown): Condition {
@@ -112,9 +113,13 @@ class InsertBuilder implements PromiseLike<{ insertId: number | string; affected
   private async exec() {
     if (!this.data) throw new Error('insert().values() is required')
     const col = getCollection(this.table.__name)
-    const hasId = tableHasId(this.table)
+    const hasId = tableHasColumn(this.table, 'id')
     const id = hasId ? (typeof this.data.id === 'number' ? this.data.id : await nextId(this.table.__name)) : undefined
-    await col.insertOne(toInsertDoc(hasId, this.data, id))
+    const values = { ...this.data }
+    if (tableHasColumn(this.table, 'uuid') && (values.uuid == null || values.uuid === '')) {
+      values.uuid = newPublicUuid()
+    }
+    await col.insertOne(toInsertDoc(hasId, values, id))
     return { insertId: id ?? '', affectedRows: 1 }
   }
 }

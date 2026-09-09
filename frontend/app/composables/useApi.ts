@@ -37,25 +37,25 @@ export const api = {
 
 export const dramaAPI = {
   list: () => api.get<{ items: any[] }>('/dramas'),
-  get: (id: number) => api.get(`/dramas/${id}`),
+  get: (id: string | number) => api.get(`/dramas/${id}`),
   create: (data: any) => api.post('/dramas', data),
-  update: (id: number, data: any) => api.put(`/dramas/${id}`, data),
-  del: (id: number) => api.del(`/dramas/${id}`),
+  update: (id: string | number, data: any) => api.put(`/dramas/${id}`, data),
+  del: (id: string | number) => api.del(`/dramas/${id}`),
 }
 
 export const episodeAPI = {
   create: (data: any) => api.post('/episodes', data),
-  update: (id: number, data: any) => api.put(`/episodes/${id}`, data),
-  del: (id: number) => api.del(`/episodes/${id}`),
-  characters: (id: number) => api.get(`/episodes/${id}/characters`),
-  scenes: (id: number) => api.get(`/episodes/${id}/scenes`),
-  props: (id: number) => api.get(`/episodes/${id}/props`),
-  storyboards: (id: number) => api.get(`/episodes/${id}/storyboards`),
-  pipelineStatus: (id: number) => api.get(`/episodes/${id}/pipeline-status`),
-  extract: (id: number, target: string, model?: string, configId?: number) => api.post(`/episodes/${id}/extract`, { target, model: model || undefined, config_id: configId || undefined }),
-  extractStatus: (id: number) => api.get(`/episodes/${id}/extract-status`),
-  generateVideoPrompts: (id: number, model?: string, configId?: number, storyboardIds?: number[]) => api.post(`/episodes/${id}/generate-video-prompts`, { model: model || undefined, config_id: configId || undefined, storyboard_ids: storyboardIds?.length ? storyboardIds : undefined }),
-  videoPromptsStatus: (id: number) => api.get(`/episodes/${id}/video-prompts-status`),
+  update: (id: string | number, data: any) => api.put(`/episodes/${id}`, data),
+  del: (id: string | number) => api.del(`/episodes/${id}`),
+  characters: (id: string | number) => api.get(`/episodes/${id}/characters`),
+  scenes: (id: string | number) => api.get(`/episodes/${id}/scenes`),
+  props: (id: string | number) => api.get(`/episodes/${id}/props`),
+  storyboards: (id: string | number) => api.get(`/episodes/${id}/storyboards`),
+  pipelineStatus: (id: string | number) => api.get(`/episodes/${id}/pipeline-status`),
+  extract: (id: string | number, target: string, model?: string, configId?: number) => api.post(`/episodes/${id}/extract`, { target, model: model || undefined, config_id: configId || undefined }),
+  extractStatus: (id: string | number) => api.get(`/episodes/${id}/extract-status`),
+  generateVideoPrompts: (id: string | number, model?: string, configId?: number, storyboardIds?: number[]) => api.post(`/episodes/${id}/generate-video-prompts`, { model: model || undefined, config_id: configId || undefined, storyboard_ids: storyboardIds?.length ? storyboardIds : undefined }),
+  videoPromptsStatus: (id: string | number) => api.get(`/episodes/${id}/video-prompts-status`),
 }
 
 export const storyboardAPI = {
@@ -68,25 +68,25 @@ export const characterAPI = {
   create: (data: any) => api.post('/characters', data),
   update: (id: number, data: any) => api.put(`/characters/${id}`, data),
   del: (id: number) => api.del(`/characters/${id}`),
-  generatePrompt: (id: number, episodeId: number, force = false, textModel?: string, textConfigId?: number) => api.post(`/characters/${id}/generate-prompt`, { episode_id: episodeId, force, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
-  generateImage: (id: number, episodeId: number, model?: string, configId?: number, textModel?: string, textConfigId?: number) => api.post(`/characters/${id}/generate-image`, { episode_id: episodeId, model: model || undefined, config_id: configId || undefined, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
-  batchImages: (ids: number[], episodeId: number, model?: string, configId?: number, textModel?: string, textConfigId?: number) => api.post('/characters/batch-generate-images', { character_ids: ids, episode_id: episodeId, model: model || undefined, config_id: configId || undefined, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
+  generatePrompt: (id: number, episodeId: string | number, force = false, textModel?: string, textConfigId?: number) => api.post(`/characters/${id}/generate-prompt`, { episode_id: episodeId, force, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
+  generateImage: (id: number, episodeId: string | number, model?: string, configId?: number, textModel?: string, textConfigId?: number) => api.post(`/characters/${id}/generate-image`, { episode_id: episodeId, model: model || undefined, config_id: configId || undefined, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
+  batchImages: (ids: number[], episodeId: string | number, model?: string, configId?: number, textModel?: string, textConfigId?: number) => api.post('/characters/batch-generate-images', { character_ids: ids, episode_id: episodeId, model: model || undefined, config_id: configId || undefined, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
 }
 
 export const sceneAPI = {
   create: (data: any) => api.post('/scenes', data),
   update: (id: number, data: any) => api.put(`/scenes/${id}`, data),
   del: (id: number) => api.del(`/scenes/${id}`),
-  generatePrompt: (id: number, episodeId: number, force = false, textModel?: string, textConfigId?: number) => api.post(`/scenes/${id}/generate-prompt`, { episode_id: episodeId, force, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
-  generateImage: (id: number, episodeId: number, model?: string, configId?: number, textModel?: string, textConfigId?: number) => api.post(`/scenes/${id}/generate-image`, { episode_id: episodeId, model: model || undefined, config_id: configId || undefined, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
+  generatePrompt: (id: number, episodeId: string | number, force = false, textModel?: string, textConfigId?: number) => api.post(`/scenes/${id}/generate-prompt`, { episode_id: episodeId, force, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
+  generateImage: (id: number, episodeId: string | number, model?: string, configId?: number, textModel?: string, textConfigId?: number) => api.post(`/scenes/${id}/generate-image`, { episode_id: episodeId, model: model || undefined, config_id: configId || undefined, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
 }
 
 export const propAPI = {
   create: (data: any) => api.post('/props', data),
   update: (id: number, data: any) => api.put(`/props/${id}`, data),
   del: (id: number) => api.del(`/props/${id}`),
-  generatePrompt: (id: number, episodeId: number, force = false, textModel?: string, textConfigId?: number) => api.post(`/props/${id}/generate-prompt`, { episode_id: episodeId, force, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
-  generateImage: (id: number, episodeId: number, model?: string, configId?: number, textModel?: string, textConfigId?: number) => api.post(`/props/${id}/generate-image`, { episode_id: episodeId, model: model || undefined, config_id: configId || undefined, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
+  generatePrompt: (id: number, episodeId: string | number, force = false, textModel?: string, textConfigId?: number) => api.post(`/props/${id}/generate-prompt`, { episode_id: episodeId, force, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
+  generateImage: (id: number, episodeId: string | number, model?: string, configId?: number, textModel?: string, textConfigId?: number) => api.post(`/props/${id}/generate-image`, { episode_id: episodeId, model: model || undefined, config_id: configId || undefined, text_model: textModel || undefined, text_config_id: textConfigId || undefined }),
 }
 
 // 统一生成任务（图片/视频）：POST 带 type 字段，列表按 type 过滤
@@ -95,7 +95,7 @@ export const taskAPI = {
   get: (id: number) => api.get(`/tasks/${id}`),
   cancel: (id: number) => api.post(`/tasks/${id}/cancel`),
   del: (id: number) => api.del(`/tasks/${id}`),
-  list: (params?: { type?: 'image' | 'video'; drama_id?: number; storyboard_id?: number }) => {
+  list: (params?: { type?: 'image' | 'video'; drama_id?: string | number; storyboard_id?: number }) => {
     const query = new URLSearchParams()
     if (params?.type) query.set('type', params.type)
     if (params?.drama_id) query.set('drama_id', String(params.drama_id))
@@ -103,7 +103,7 @@ export const taskAPI = {
     return api.get(`/tasks${query.size ? `?${query.toString()}` : ''}`)
   },
   // 按集聚合生成任务（sys_task + video_merges）
-  listByEpisode: (episodeId: number) => api.get<{ tasks: any[]; merges: any[] }>(`/episodes/${episodeId}/generation-tasks`),
+  listByEpisode: (episodeId: string | number) => api.get<{ tasks: any[]; merges: any[] }>(`/episodes/${episodeId}/generation-tasks`),
 }
 
 async function uploadReq<T = any>(path: string, file: File): Promise<T> {
@@ -125,9 +125,9 @@ export const uploadAPI = {
   audio: (f: File) => uploadReq<{ url: string; path: string }>('/upload/audio', f),
 }
 export const mergeAPI = {
-  merge: (epId: number, storyboardIds?: number[]) => api.post(`/merge/episodes/${epId}/merge`, storyboardIds?.length ? { storyboard_ids: storyboardIds } : {}),
-  status: (epId: number) => api.get(`/merge/episodes/${epId}/merge`),
-  list: (epId: number) => api.get<any[]>(`/merge/episodes/${epId}/merges`),
+  merge: (epId: string | number, storyboardIds?: number[]) => api.post(`/merge/episodes/${epId}/merge`, storyboardIds?.length ? { storyboard_ids: storyboardIds } : {}),
+  status: (epId: string | number) => api.get(`/merge/episodes/${epId}/merge`),
+  list: (epId: string | number) => api.get<any[]>(`/merge/episodes/${epId}/merges`),
 }
 export const aiConfigAPI = {
   list: (t?: string) => api.get(`/ai-configs${t ? `?service_type=${t}` : ''}`),
