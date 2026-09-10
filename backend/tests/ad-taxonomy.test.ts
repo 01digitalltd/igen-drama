@@ -46,16 +46,18 @@ test('reads taxonomy from drama metadata json', () => {
   })
 })
 
-test('skill dirs cover shared + purpose + form without dropping any purpose', () => {
+test('skill dirs cover shared + creative + purpose + form without dropping any purpose', () => {
   const all = new Set(allAdSkillDirs())
   assert.ok(all.has('ad-promo'))
+  assert.ok(all.has('ad-creative-director'))
   assert.ok(all.has('ad-form-talent'))
   assert.ok(all.has('ad-form-product'))
   assert.ok(all.has('ad-form-drama'))
   for (const purpose of AD_PURPOSES) {
     const dirs = adSkillDirsFor(normalizeAdTaxonomy({ purpose }))
     assert.equal(dirs[0], 'ad-promo')
-    assert.equal(dirs.length, 3)
+    assert.equal(dirs[1], 'ad-creative-director')
+    assert.equal(dirs.length, 4)
     dirs.forEach((dir) => assert.ok(all.has(dir)))
   }
 })

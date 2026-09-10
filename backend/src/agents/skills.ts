@@ -78,6 +78,20 @@ function formatSkillSection(skillId: string, content: string): string {
   return [`## Skill: ${skillId}`, content].join('\n')
 }
 
+/** Adjacent `references/*.md` next to a SKILL.md. Injected for the rewriter so the plot library
+ *  actually reaches the model; extractor / storyboard only get the SKILL.md protocol. */
+function loadSkillReferences(skillRelPath: string): string[] {
+  const refDir = path.join(SKILLS_DIR, skillRelPath, 'references')
+  if (!fs.existsSync(refDir)) return []
+  return fs.readdirSync(refDir)
+    .filter(name => name.endsWith('.md'))
+    .sort()
+    .flatMap(name => {
+      const body = fs.readFileSync(path.join(refDir, name), 'utf8').trim()
+      return body ? [formatSkillSection(`${skillRelPath}/references/${name}`, body)] : []
+    })
+}
+
 /** 读取 Agent 专属技能全文（经 workspace.skills API，保持原注入格式）
  *  AGENT_SKILL_MAP 的目录按前缀匹配：目录自身及其子目录下所有 SKILL.md 都会注入，
  *  因此设置页新建的子技能（如 storyboard-breaker/xxx）无需改代码即可生效 */
@@ -100,6 +114,7 @@ export async function loadAgentSkills(
       const skill = await workspace.skills?.get(`skills/${relPath}`)
       const body = skill?.instructions?.trim()
       if (body) contents.push(formatSkillSection(relPath, body))
+      if (agentType === 'script_rewriter') contents.push(...loadSkillReferences(relPath))
     } catch {
       /* skip a missing/unreadable skill rather than failing the whole agent turn */
     }

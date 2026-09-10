@@ -19,9 +19,19 @@ async function episodeProjectMeta(episodeId: number) {
   return { ep, ad }
 }
 
-const AD_REWRITE_INSTRUCTION = `请将以下内容改写为广告分场剧本（广告推广项目）。
+export const AD_REWRITE_INSTRUCTION = `请将以下内容改写为广告分场剧本（广告推广项目）。
 
-结构、出场人物、产品戏份以已注入的 ad_purpose / ad_form / ad_angle 技能为准。
+优先序（高到低）：
+1. 产品事实、品牌、不可编造的价格／疗效／评价
+2. ad_purpose / ad_form / ad_angle 的出镜与视觉义务（如 pack_hero 必须有包装英雄戏）
+3. 创意情节库：内部选 1 个主机制，必要时至多 1 个辅助；都不合适就按同一五拍原创，不要硬套
+4. 五拍写成连续分场（短片可合并）：Hook（约前 3 秒）→ 冲突铺陈 → 专业／产品登場 → 状态改变 → CTA + 品牌Logo
+
+不要把评估过程、构想 A/B/C、markdown 分镜表或镜头／景别／运镜写进剧本。
+不要默认写成「主持人拿产品讲卖点」，除非 ad_form=talent_explain 且 angle 要求对镜头讲解。
+对白语言跟随项目设定，不要写死粤语。
+
+结构、出场人物、产品戏份以已注入的 ad_purpose / ad_form / ad_angle 技能为准；情节花样不得压过这些规格。
 格式规范：
 - 场景头：## S编号 | 内景/外景 · 地点 | 时间段
 - 动作描写：自然段落，不包含镜头语言；品牌露出写成包装、店招或片尾板，不要写成屏幕大字幕

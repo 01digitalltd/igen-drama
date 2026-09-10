@@ -122,6 +122,9 @@ export const AD_ANGLE_MAP: Record<AdPurpose, Record<AdForm, readonly AdAngle[]>>
 
 export const AD_SHARED_SKILL = 'ad-promo'
 
+/** Always-on ad creative skill: plot library + five-beat rewrite. Not an angle. */
+export const AD_CREATIVE_SKILL = 'ad-creative-director'
+
 export const AD_PURPOSE_SKILL: Record<AdPurpose, string> = {
   product_sell: 'ad-product-sell',
   edu_info: 'ad-edu-info',
@@ -211,11 +214,21 @@ export function mergeAdTaxonomyMetadata(existing: unknown, spec: AdTaxonomy): st
 }
 
 export function allAdSkillDirs(): string[] {
-  return [AD_SHARED_SKILL, ...new Set(Object.values(AD_PURPOSE_SKILL)), ...new Set(Object.values(AD_FORM_SKILL))]
+  return [
+    AD_SHARED_SKILL,
+    AD_CREATIVE_SKILL,
+    ...new Set(Object.values(AD_PURPOSE_SKILL)),
+    ...new Set(Object.values(AD_FORM_SKILL)),
+  ]
 }
 
 export function adSkillDirsFor(spec: AdTaxonomy): string[] {
-  return [AD_SHARED_SKILL, AD_PURPOSE_SKILL[spec.purpose], AD_FORM_SKILL[spec.form]]
+  return [
+    AD_SHARED_SKILL,
+    AD_CREATIVE_SKILL,
+    AD_PURPOSE_SKILL[spec.purpose],
+    AD_FORM_SKILL[spec.form],
+  ]
 }
 
 export function adContextFields(spec: AdTaxonomy | null, genre: string) {

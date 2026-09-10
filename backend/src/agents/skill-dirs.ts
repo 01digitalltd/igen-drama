@@ -14,7 +14,7 @@ export const AGENT_SKILL_MAP: Record<string, string[]> = {
   ],
 }
 
-/** Extra skills loaded only for 广告推广 projects. Workspace registers all; injection picks purpose+form. */
+/** Extra skills loaded only for 广告推广 projects. Workspace registers all; injection picks shared + creative + purpose + form. */
 export const AD_SKILL_DIRS = allAdSkillDirs()
 
 /** Ad brief skills belong on rewrite / extract / breakdown — not prompt_generator.

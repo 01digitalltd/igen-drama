@@ -2124,6 +2124,13 @@ const isRealisticDrama = computed(() => {
   const style = String(drama.value?.style || '').trim().toLowerCase()
   return style === 'realistic'
 })
+const isAdPromoDrama = computed(() => {
+  const g = String(drama.value?.genre || '').trim().toLowerCase().replace(/-/g, '_')
+  return g === 'ad_promo' || g === 'adpromo' || g === 'ad'
+})
+const SCRIPT_REWRITE_MESSAGE = '请读取剧本并改写为格式化剧本，然后保存'
+const AD_REWRITE_MESSAGE =
+  '请读取内容并按已注入的广告技能与创意情节库改写成广告分场剧本，片尾须有品牌Logo露出，然后保存'
 function isSeedanceVideoModel(provider, model) {
   const p = String(provider || '').toLowerCase()
   const m = String(model || '').toLowerCase()
@@ -2763,7 +2770,7 @@ function saveRaw() { episodeAPI.update(epId.value, { content: localRaw.value });
 function saveScr() { episodeAPI.update(epId.value, { script_content: localScript.value }); episode.value.script_content = localScript.value }
 function doRewrite() {
   saveRaw()
-  runAgent('script_rewriter', '请读取剧本并改写为格式化剧本，然后保存', dramaId, epId.value, async () => {
+  runAgent('script_rewriter', isAdPromoDrama.value ? AD_REWRITE_MESSAGE : SCRIPT_REWRITE_MESSAGE, dramaId, epId.value, async () => {
     await refresh()
     panel.value = 'production'
     prodTab.value = 'assets'
