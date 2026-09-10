@@ -50,6 +50,7 @@ test('shot video failure stays on the card instead of duplicating the toast', ()
   assert.match(page, /function notifyShotVideoFailure/)
   assert.match(page, /function humanizeVideoTaskError/)
   assert.match(page, /內容安全攔截/)
+  assert.match(page, /1027/)
   const notifyFn = page.match(/function notifyShotVideoFailure[\s\S]*?\n\}/)?.[0] || ''
   assert.match(notifyFn, /failedVideoMessages\.value =/)
   assert.doesNotMatch(notifyFn, /toast\.error/)

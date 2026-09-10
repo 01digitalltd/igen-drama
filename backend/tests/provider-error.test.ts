@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
+  annotateMiniMaxSensitiveBlock,
   isRetryableProviderStatus,
   parseProviderErrorText,
 } from '../src/utils/provider-error.ts'
@@ -21,6 +22,16 @@ test('Gemini poll 400 safety block is a readable message, not a timeout', () => 
   assert.equal(isRetryableProviderStatus(404), false)
   assert.equal(isRetryableProviderStatus(429), true)
   assert.equal(isRetryableProviderStatus(503), true)
+})
+
+test('MiniMax 1027 output sensitive becomes a readable review message', () => {
+  const message = annotateMiniMaxSensitiveBlock('[1027] output_sensitive')
+  assert.match(message, /1027/)
+  assert.match(message, /成片/)
+  assert.doesNotMatch(message, /output_sensitive/)
+  const input = annotateMiniMaxSensitiveBlock('[1026] video description contains sensitive content')
+  assert.match(input, /1026/)
+  assert.match(input, /輸入/)
 })
 
 test('video poll fails fast on non-retryable HTTP errors instead of exhausting attempts', () => {

@@ -3642,6 +3642,12 @@ async function pollVideoGeneration(generationId, storyboardId) {
 
 function humanizeVideoTaskError(message) {
   const raw = String(message || '').trim()
+  if (/\[?1027\]|\boutput[_\s-]?sensitive\b/i.test(raw)) {
+    return 'MiniMax 內容審核攔截（成片，代號 1027）：模型已生成但成片被判定敏感。常見原因是參考圖含真人臉或包裝／Logo 文字。請改用 3D 定妝圖、簡化提示後再生成一次，不要用同一鏡連續狂點。'
+  }
+  if (/\[?1026\]|\binput[_\s-]?sensitive\b|video description contains sensitive/i.test(raw)) {
+    return 'MiniMax 內容審核攔截（輸入，代號 1026）：提示詞或參考圖被判定敏感。請改寫提示、拿掉真人臉參考圖後再試，不要用同一內容連續重試。'
+  }
   if (
     /prohibited content guidelines/i.test(raw)
     || raw.includes('内容安全拦截')

@@ -120,6 +120,12 @@ test('poll maps official task statuses and create errors', () => {
   })
   assert.equal(failed.status, 'failed')
   assert.match(String(failed.error), /1026/)
+  const outputBlocked = adapter.parsePollResponse({
+    task: { status: 'failed', error: { code: '1027', message: 'output_sensitive' } },
+  })
+  assert.equal(outputBlocked.status, 'failed')
+  assert.match(String(outputBlocked.error), /1027/)
+  assert.match(String(outputBlocked.error), /成片/)
   assert.deepEqual(
     adapter.parseGenerateResponse({ task_id: '424010985738629' }),
     { isAsync: true, taskId: '424010985738629' },

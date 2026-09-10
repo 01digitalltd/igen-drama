@@ -19,6 +19,7 @@ import type {
   VideoPollResponse,
 } from './types'
 import { joinProviderUrl } from './url'
+import { annotateMiniMaxSensitiveBlock } from '../../utils/provider-error.js'
 
 const H3_MODEL_PREFIX = 'minimax-h3'
 const DEFAULT_MODEL = 'MiniMax-H3'
@@ -95,13 +96,15 @@ export function normalizeMiniMaxResolution(resolution?: string | null, model?: s
 
 function providerCreateError(result: any): string | null {
   const err = result?.error
-  if (typeof err === 'string' && err.trim()) return err.trim()
+  if (typeof err === 'string' && err.trim()) return annotateMiniMaxSensitiveBlock(err.trim())
   if (err && typeof err === 'object') {
     const message = String(err.message || '').trim()
     const code = err.code ? `[${err.code}] ` : ''
-    if (message) return `${code}${message}`
+    if (message) return annotateMiniMaxSensitiveBlock(`${code}${message}`)
   }
-  if (typeof result?.message === 'string' && result.message.trim()) return result.message.trim()
+  if (typeof result?.message === 'string' && result.message.trim()) {
+    return annotateMiniMaxSensitiveBlock(result.message.trim())
+  }
   return null
 }
 
@@ -230,7 +233,7 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
       const err = task.error
       const msg = typeof err === 'string' ? err : (err?.message || JSON.stringify(err) || 'Video generation failed')
       const code = err && typeof err === 'object' && err.code ? `[${err.code}] ` : ''
-      return { status: 'failed', error: `${code}${msg}` }
+      return { status: 'failed', error: annotateMiniMaxSensitiveBlock(`${code}${msg}`) }
     }
     return { status: 'processing' }
   }

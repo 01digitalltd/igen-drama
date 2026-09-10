@@ -88,6 +88,7 @@ description: Gemini Omni Flash 视频提示词规范 — 简单标记绑定参�
 - `[# Sources]`、`[# References]` 这类前缀声明（角色简单时用简单标记即可）
 - 抽象心理描写；把对白写成屏幕字幕
 - 把 3D／日漫／手绘项目写成真人实拍（遵守用户消息里的【视觉风格】）
+- 非写实项目：IMAGE_REF 只锁外形、包装与 Logo，正文写明转成该画风；不要按产品实拍照片去拍真人办公室广告
 - 为 Omni 编写编辑/续写指令（「Make the violin invisible」「Extend this video」）
 
 ## 保存

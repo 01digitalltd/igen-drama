@@ -16,14 +16,21 @@ const STYLE_LABELS: Record<string, string> = {
   realistic: '写实真人',
 }
 
-/** Video-only guards. Image preset copy like "semi-realistic" makes MiniMax go live-action. */
+/** Video-only guards. Avoid body/skin/human wording — MiniMax 1027 flags those then blocks the clip. */
 const VIDEO_STYLE_GUARDS: Record<string, string> = {
-  '3d': '3D CG animated short-drama, Unreal Engine / game-cinematic render, stylized 3D CGI characters (not real people). NOT photorealistic live-action, NOT real human actors, NOT real photography, NOT documentary, no real skin pores.',
-  anime: '2D Japanese anime, cel shading, clean line art. NOT live-action, NOT photoreal, NOT 3D CGI humans.',
-  ghibli: 'Hand-drawn Studio Ghibli animation, painted backgrounds. NOT live-action, NOT photoreal.',
-  watercolor: 'Watercolor illustrated animation, paper texture. NOT live-action, NOT photoreal.',
-  comic: 'Western comic-book animation, bold ink outlines, halftone. NOT live-action, NOT photoreal.',
-  realistic: 'Photorealistic live-action cinematic, real human actors, natural skin texture.',
+  '3d': '3D CG animated short-drama, Unreal Engine game-cinematic render, stylized 3D CGI characters. Reference stills supply product silhouette, label layout and official logo only — restyle rooms and packaging as matching 3D CGI; keep the logo mark readable. Not live-action camera footage, not a photoreal product commercial.',
+  anime: '2D Japanese anime, cel shading, clean line art. Restyle reference stills into this look. Not live-action camera footage.',
+  ghibli: 'Hand-drawn Studio Ghibli animation, painted backgrounds. Restyle reference stills into this look. Not live-action camera footage.',
+  watercolor: 'Watercolor illustrated animation, paper texture. Restyle reference stills into this look. Not live-action camera footage.',
+  comic: 'Western comic-book animation, bold ink outlines, halftone. Restyle reference stills into this look. Not live-action camera footage.',
+  realistic: 'Photorealistic live-action cinematic, natural lighting, 35mm film look.',
+}
+
+function styleLockTrailer(key: string) {
+  if (key === '3d') {
+    return '[STYLE_LOCK] Restyle every reference still into 3D CGI. Keep logo artwork and product silhouette. Not live-action camera footage.'
+  }
+  return '[STYLE_LOCK] Restyle every reference still into the VISUAL_STYLE look. Keep logo artwork and product silhouette. Not live-action camera footage.'
 }
 
 export function normalizeStyleValue(raw?: string | null) {
@@ -52,9 +59,9 @@ export function visualStyleInstruction(styleValue?: string | null) {
     return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 全程真人实拍质感，不要改成动画或 3D。`
   }
   if (key === '3d') {
-    return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 全程是 3D CG 动画（游戏引擎渲染、风格化三维角色），禁止写成真人实拍、写实皮肤毛孔、纪录片摄影。每一段画面都保持这个画风。`
+    return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 全程是 3D CG 动画（游戏引擎渲染、风格化三维角色）。@场景/@角色/@道具 只提供外形、包装与 Logo，必须写成「转成 3D CG」，禁止按实拍照片还原办公室或桌面广告。禁止写成真人实拍。每一段画面都保持这个画风。`
   }
-  return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 全程保持该画风，禁止改成真人实拍。`
+  return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 全程保持该画风。参考图只锁外形，必须转成该画风，禁止按实拍照片还原成真人实拍。`
 }
 
 export function appendVisualStyleDirective(
@@ -68,7 +75,8 @@ export function appendVisualStyleDirective(
   if (!fragment) return base
   if (base.includes('VISUAL_STYLE')) return base
   const tag = `[VISUAL_STYLE: ${key} | ${fragment} Keep this look in every shot.]`
-  return base ? `${tag}\n\n${base}` : tag
+  const lock = key && key !== 'realistic' && key !== 'unset' ? `\n\n${styleLockTrailer(key)}` : ''
+  return base ? `${tag}\n\n${base}${lock}` : `${tag}${lock}`
 }
 
 /** 查询项目绑定的风格预设英文提示词片段；查不到返回 '' */
