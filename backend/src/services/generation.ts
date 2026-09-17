@@ -27,7 +27,12 @@ import {
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs } from './storyboard-prompt.js'
 import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
 import { pickLatestActiveTask } from '../utils/generation-task-status.js'
-import { isRetryableProviderStatus, parseProviderErrorText } from '../utils/provider-error.js'
+import {
+  annotateProviderSafetyBlock,
+  isRetryableProviderFailure,
+  isRetryableProviderStatus,
+  parseProviderErrorText,
+} from '../utils/provider-error.js'
 import { splitVideoQueueByConcurrency } from './video-queue.js'
 
 type TaskType = 'image' | 'video'
@@ -505,17 +510,39 @@ async function processTask(id: number, config: AIConfig) {
 
     if (await isCancelled(id)) return
 
-    const resp = await fetch(url, {
-      method,
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(600_000),
-    })
-
-    if (!resp.ok) {
-      throw new Error(parseProviderErrorText(resp.status, await resp.text(), `API error ${resp.status}`))
+    const maxGenerateAttempts = type === 'image' ? 3 : 1
+    let result: any = null
+    for (let attempt = 1; attempt <= maxGenerateAttempts; attempt++) {
+      const resp = await fetch(url, {
+        method,
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(600_000),
+      })
+      const rawText = await resp.text()
+      if (!resp.ok) {
+        const message = parseProviderErrorText(resp.status, rawText, `API error ${resp.status}`)
+        if (attempt < maxGenerateAttempts && isRetryableProviderFailure(resp.status, message)) {
+          logTaskWarn(label, 'generate-retry', { id, attempt, status: resp.status, error: message })
+          if (await sleepOrCancel(id, attempt * 4000)) return
+          continue
+        }
+        throw new Error(message)
+      }
+      try {
+        result = JSON.parse(rawText)
+      } catch {
+        throw new Error(rawText.slice(0, 300) || 'Invalid provider response')
+      }
+      const busyHint = JSON.stringify(result?.error || result?.message || '')
+      if (attempt < maxGenerateAttempts && isRetryableProviderFailure(resp.status, busyHint)) {
+        logTaskWarn(label, 'generate-retry', { id, attempt, status: resp.status, error: busyHint })
+        if (await sleepOrCancel(id, attempt * 4000)) return
+        continue
+      }
+      break
     }
-    const result = await resp.json() as any
+    if (!result) throw new Error('No provider response')
     logTaskPayload(label, 'response payload', { id, provider: config.provider, result })
 
     if (type === 'image') {
@@ -567,7 +594,7 @@ async function processTask(id: number, config: AIConfig) {
     await pollTask(record, config, taskId!)
   } catch (err: any) {
     if (isAbortError(err) || await isCancelled(id)) return
-    await failTask(id, err.message)
+    await failTask(id, annotateProviderSafetyBlock(err.message))
   }
 }
 

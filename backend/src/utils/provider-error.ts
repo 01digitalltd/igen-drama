@@ -34,8 +34,22 @@ export function annotateMiniMaxSensitiveBlock(message: string) {
   return text
 }
 
+export const APIMART_BUSY_ZH_HANT =
+  '圖片線路忙碌，稍等十秒再按一次生圖即可。這是中轉站排隊，不是劇本或角色有問題。'
+
+export function isProviderBusyMessage(message: string) {
+  const text = String(message || '')
+  return /please wait and try again later/i.test(text)
+    || /thank you for your patience/i.test(text)
+}
+
+export function annotateProviderBusy(message: string) {
+  const text = String(message || '').trim()
+  return isProviderBusyMessage(text) ? APIMART_BUSY_ZH_HANT : text
+}
+
 export function annotateProviderSafetyBlock(message: string) {
-  return annotateMiniMaxSensitiveBlock(annotateGeminiSafetyBlock(message))
+  return annotateProviderBusy(annotateMiniMaxSensitiveBlock(annotateGeminiSafetyBlock(message)))
 }
 
 export function parseProviderErrorText(
@@ -61,6 +75,20 @@ export function parseProviderErrorText(
   return annotateProviderSafetyBlock(raw)
 }
 
+export function agentJobErrorMessage(err: any) {
+  const fallback = 'Agent execution failed'
+  const body = typeof err?.responseBody === 'string' ? err.responseBody : ''
+  if (body.trim()) {
+    return parseProviderErrorText(Number(err?.statusCode) || 500, body, fallback)
+  }
+  const message = String(err?.message || '').trim()
+  return message || fallback
+}
+
 export function isRetryableProviderStatus(status: number) {
   return status === 429 || status >= 500
+}
+
+export function isRetryableProviderFailure(status: number, message: string) {
+  return isRetryableProviderStatus(status) || isProviderBusyMessage(message)
 }

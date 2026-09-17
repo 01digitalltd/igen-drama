@@ -86,6 +86,21 @@ test('buildGenerateRequest uses Interactions API with background poll', () => {
   assert.equal(req.body.input.filter((item: { type: string }) => item.type === 'image').length, 2)
 })
 
+test('APIMart Gemini Omni generate uses Bearer and no query key', () => {
+  const req = adapter.buildGenerateRequest({
+    ...config,
+    baseUrl: 'https://api.apimart.ai',
+    apiKey: 'sk-proxy',
+  }, {
+    id: 1,
+    prompt: '抬头。',
+  })
+  assert.match(req.url, /https:\/\/api\.apimart\.ai\/v1beta\/interactions/)
+  assert.doesNotMatch(req.url, /[?&]key=/)
+  assert.equal(req.headers.Authorization, 'Bearer sk-proxy')
+  assert.equal(req.headers['x-goog-api-key'], undefined)
+})
+
 test('a single reference still uses reference_to_video, not image_to_video', () => {
   const req = adapter.buildGenerateRequest(config, {
     id: 2,

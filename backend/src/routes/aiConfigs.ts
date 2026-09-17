@@ -4,6 +4,7 @@ import { db, getInsertId, schema } from '../db/index.js'
 import { success, notFound, created, badRequest, now } from '../utils/response.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { joinProviderUrl } from '../services/adapters/url.js'
+import { applyGeminiAuth, isOfficialGeminiHost, normalizeGeminiBaseUrl } from '../services/adapters/gemini-auth.js'
 import { isOfficialProvider, parseConfigTemperature } from '../services/ai.js'
 import { redactUrl, logTaskError, logTaskProgress, logTaskSuccess } from '../utils/task-logger.js'
 
@@ -33,10 +34,14 @@ function bearerHeaders(apiKey?: string, withJson = false) {
   return headers
 }
 
-function geminiHeaders(apiKey?: string, withJson = false) {
+function geminiHeaders(apiKey?: string, withJson = false, baseUrl?: string) {
   const headers: Record<string, string> = {}
   if (apiKey) {
-    headers['x-goog-api-key'] = apiKey
+    if (baseUrl && !isOfficialGeminiHost(baseUrl)) {
+      headers.Authorization = `Bearer ${apiKey}`
+    } else {
+      headers['x-goog-api-key'] = apiKey
+    }
   }
   if (withJson) headers['Content-Type'] = 'application/json'
   return headers
@@ -51,12 +56,13 @@ function buildProbe(serviceType: string, provider: string, baseUrl: string, mode
     // interactions 端点很多中转站未配置,探它会误报 500。
     // 用最小合法请求体而非空体——空体在部分中转站会触发上游认证失败的误报
     const modelName = m || 'gemini-3.1-pro-preview'
-    const url = new URL(joinProviderUrl(baseUrl, '/v1beta', `/models/${modelName}:generateContent`))
-    if (apiKey) url.searchParams.set('key', apiKey)
+    const url = new URL(joinProviderUrl(normalizeGeminiBaseUrl(baseUrl), '/v1beta', `/models/${modelName}:generateContent`))
+    const headers = geminiHeaders(apiKey, true, baseUrl)
+    if (apiKey) applyGeminiAuth(url, headers, baseUrl, apiKey)
     return {
       method: 'POST',
       url: url.toString(),
-      headers: geminiHeaders(apiKey, true),
+      headers,
       body: { contents: [{ parts: [{ text: 'hi' }] }] },
     }
   }

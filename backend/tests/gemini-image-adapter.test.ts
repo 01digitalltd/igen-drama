@@ -10,6 +10,41 @@ const config = {
   model: 'gemini-3.1-flash-image',
 }
 
+test('APIMart Gemini image generate uses Bearer and no query key', () => {
+  const req = adapter.buildGenerateRequest({
+    ...config,
+    baseUrl: 'https://api.apimart.ai',
+    apiKey: 'sk-proxy',
+  }, {
+    id: 1,
+    model: 'gemini-3.1-flash-image',
+    prompt: 'a street at night',
+    size: '1920x1080',
+  })
+
+  assert.match(req.url, /https:\/\/api\.apimart\.ai\/v1beta\/models\/gemini-3\.1-flash-image:generateContent/)
+  assert.doesNotMatch(req.url, /[?&]key=/)
+  assert.equal(req.headers.Authorization, 'Bearer sk-proxy')
+  assert.equal(req.headers['x-goog-api-key'], undefined)
+})
+
+test('APIMart wrapped generateContent image is treated as sync', () => {
+  const parsed = adapter.parseGenerateResponse({
+    code: 200,
+    data: {
+      candidates: [{
+        finishReason: 'STOP',
+        content: {
+          parts: [{ inlineData: { mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB' } }],
+        },
+      }],
+    },
+  })
+
+  assert.equal(parsed.isAsync, false)
+  assert.equal(parsed.taskId, undefined)
+})
+
 test('official Gemini image generate uses generateContent, not interactions POST', () => {
   const req = adapter.buildGenerateRequest(config, {
     id: 1,
@@ -21,6 +56,8 @@ test('official Gemini image generate uses generateContent, not interactions POST
   assert.equal(req.method, 'POST')
   assert.match(req.url, /\/v1beta\/models\/gemini-3\.1-flash-image:generateContent/)
   assert.doesNotMatch(req.url, /\/interactions/)
+  assert.match(req.url, /key=test-key/)
+  assert.equal(req.headers['x-goog-api-key'], 'test-key')
   assert.equal(req.body.generationConfig.imageConfig.aspectRatio, '16:9')
   assert.equal(req.body.generationConfig.imageConfig.imageSize, '2K')
   assert.deepEqual(req.body.generationConfig.responseModalities, ['IMAGE', 'TEXT'])

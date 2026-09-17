@@ -23,6 +23,7 @@ import type {
   VideoPollResponse,
 } from './types.js'
 import { joinProviderUrl } from './url.js'
+import { applyGeminiAuth, normalizeGeminiBaseUrl, unwrapGeminiProxyPayload } from './gemini-auth.js'
 import { parseDataUrl } from '../../utils/storage.js'
 import { annotateGeminiSafetyBlock } from '../../utils/provider-error.js'
 
@@ -215,22 +216,23 @@ export class GeminiVideoAdapter implements VideoProviderAdapter {
       body.generation_config = { video_config: { task } }
     }
 
-    const url = new URL(joinProviderUrl(config.baseUrl, '/v1beta', '/interactions'))
-    url.searchParams.set('key', config.apiKey)
+    const url = new URL(joinProviderUrl(normalizeGeminiBaseUrl(config.baseUrl), '/v1beta', '/interactions'))
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Api-Revision': INTERACTIONS_API_REVISION,
+    }
+    applyGeminiAuth(url, headers, config.baseUrl, config.apiKey)
 
     return {
       url: url.toString(),
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': config.apiKey,
-        'Api-Revision': INTERACTIONS_API_REVISION,
-      },
+      headers,
       body,
     }
   }
 
   parseGenerateResponse(result: any): VideoGenResponse {
+    result = unwrapGeminiProxyPayload(result)
     const status = String(result?.status || result?.state || '').toLowerCase()
     if (FAILED_STATUSES.has(status)) {
       throw new Error(geminiErrorMessage(result, `Gemini Omni generation ${status}`))
@@ -254,35 +256,36 @@ export class GeminiVideoAdapter implements VideoProviderAdapter {
   }
 
   buildPollRequest(config: AIConfig, taskId: string): ProviderRequest {
-    const url = new URL(joinProviderUrl(config.baseUrl, '/v1beta', interactionPollPath(taskId)))
-    url.searchParams.set('key', config.apiKey)
+    const url = new URL(joinProviderUrl(normalizeGeminiBaseUrl(config.baseUrl), '/v1beta', interactionPollPath(taskId)))
+    const headers: Record<string, string> = {
+      'Api-Revision': INTERACTIONS_API_REVISION,
+    }
+    applyGeminiAuth(url, headers, config.baseUrl, config.apiKey)
     return {
       url: url.toString(),
       method: 'GET',
-      headers: {
-        'x-goog-api-key': config.apiKey,
-        'Api-Revision': INTERACTIONS_API_REVISION,
-      },
+      headers,
       body: undefined,
     }
   }
 
   /** Best-effort stop for a background Omni interaction. Vendor may ignore this. */
   buildCancelRequest(config: AIConfig, taskId: string): ProviderRequest {
-    const url = new URL(joinProviderUrl(config.baseUrl, '/v1beta', `${interactionPollPath(taskId)}/cancel`))
-    url.searchParams.set('key', config.apiKey)
+    const url = new URL(joinProviderUrl(normalizeGeminiBaseUrl(config.baseUrl), '/v1beta', `${interactionPollPath(taskId)}/cancel`))
+    const headers: Record<string, string> = {
+      'Api-Revision': INTERACTIONS_API_REVISION,
+    }
+    applyGeminiAuth(url, headers, config.baseUrl, config.apiKey)
     return {
       url: url.toString(),
       method: 'POST',
-      headers: {
-        'x-goog-api-key': config.apiKey,
-        'Api-Revision': INTERACTIONS_API_REVISION,
-      },
+      headers,
       body: undefined,
     }
   }
 
   parsePollResponse(result: any): VideoPollResponse {
+    result = unwrapGeminiProxyPayload(result)
     const status = String(result?.status || result?.state || '').toLowerCase()
     const videoUrl = this.extractVideoUrl(result) || undefined
     const hasVideo = Boolean(videoUrl || this.extractVideoBase64(result))

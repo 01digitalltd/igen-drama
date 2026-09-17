@@ -21,7 +21,7 @@ import { isAdPromoCategory } from '../utils/project-category.js'
 import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
-import { z } from 'zod'
+import { charactersFromSourceScript, isInternalToolAssetName, itemsFromGenerateResult, scenesFromFormattedScript, summarizeExtractResult } from './extract-payload.js'
 
 export type ExtractTarget = 'characters' | 'scenes' | 'props'
 export const EXTRACT_TARGETS: ExtractTarget[] = ['characters', 'scenes', 'props']
@@ -36,151 +36,26 @@ export interface ExtractTask {
 const tasks = new Map<string, ExtractTask>()
 const keyOf = (episodeId: number, target: string) => `${episodeId}:${target}`
 
-const STRUCTURED_INSTRUCTIONS = 'You extract production assets from a formatted screenplay. Return JSON that matches the requested schema. Do not call tools. Do not write a prose summary.'
-
-function extractSchema(target: ExtractTarget) {
-  if (target === 'characters') {
-    return z.object({
-      characters: z.array(z.object({
-        name: z.string(),
-        role: z.string().optional(),
-        appearance: z.string().optional(),
-        styling: z.string().optional(),
-        description: z.string().optional(),
-      })),
-    })
-  }
-  if (target === 'scenes') {
-    return z.object({
-      scenes: z.array(z.object({
-        location: z.string(),
-        time: z.string().optional(),
-        prompt: z.string().optional().describe('Empty location: architecture and furnishings only. No people, actions, or handheld plot props.'),
-        lighting: z.string().optional(),
-        description: z.string().optional(),
-      })),
-    })
-  }
-  return z.object({
-    props: z.array(z.object({
-      name: z.string(),
-      type: z.string().optional(),
-      description: z.string().optional(),
-    })),
-  })
-}
-
 async function countLinked(target: ExtractTarget, episodeId: number): Promise<number> {
   if (target === 'characters') {
-    return (await db.select().from(schema.episodeCharacters).where(eq(schema.episodeCharacters.episodeId, episodeId))).length
+    const links = await db.select().from(schema.episodeCharacters).where(eq(schema.episodeCharacters.episodeId, episodeId))
+    const ids = new Set(links.map((row) => row.characterId))
+    return (await db.select().from(schema.characters))
+      .filter((row) => ids.has(row.id) && !row.deletedAt && !isInternalToolAssetName(row.name || ''))
+      .length
   }
   if (target === 'scenes') {
-    return (await db.select().from(schema.episodeScenes).where(eq(schema.episodeScenes.episodeId, episodeId))).length
+    const links = await db.select().from(schema.episodeScenes).where(eq(schema.episodeScenes.episodeId, episodeId))
+    const ids = new Set(links.map((row) => row.sceneId))
+    return (await db.select().from(schema.scenes))
+      .filter((row) => ids.has(row.id) && !row.deletedAt && !isInternalToolAssetName(row.location || ''))
+      .length
   }
-  return (await db.select().from(schema.episodeProps).where(eq(schema.episodeProps.episodeId, episodeId))).length
-}
-
-function tryParseJson(text: string): unknown {
-  const trimmed = text.trim()
-  if (!trimmed) return null
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  const raw = (fenced?.[1] || trimmed).trim()
-  try {
-    return JSON.parse(raw)
-  } catch {
-    const startObj = raw.indexOf('{')
-    const startArr = raw.indexOf('[')
-    const start = startObj === -1 ? startArr : startArr === -1 ? startObj : Math.min(startObj, startArr)
-    if (start < 0) return null
-    const endObj = raw.lastIndexOf('}')
-    const endArr = raw.lastIndexOf(']')
-    const end = Math.max(endObj, endArr)
-    if (end <= start) return null
-    try {
-      return JSON.parse(raw.slice(start, end + 1))
-    } catch {
-      return null
-    }
-  }
-}
-
-function firstString(record: Record<string, unknown>, keys: string[]): string {
-  for (const key of keys) {
-    const value = record[key]
-    if (typeof value === 'string' && value.trim()) return value.trim()
-  }
-  return ''
-}
-
-function normalizeItems(target: ExtractTarget, items: any[]): any[] {
-  return items.map((item) => {
-    if (!item || typeof item !== 'object') return item
-    const record = item as Record<string, unknown>
-    if (target === 'characters') {
-      return {
-        name: firstString(record, ['name', '姓名', '角色名', 'character']),
-        role: firstString(record, ['role', '身份', '定位', '角色定位']),
-        appearance: firstString(record, ['appearance', '外貌', '样貌', '樣貌']),
-        styling: firstString(record, ['styling', '妆造', '妝造', '造型']),
-        description: firstString(record, ['description', '描述']),
-      }
-    }
-    if (target === 'scenes') {
-      return {
-        location: firstString(record, ['location', '地点', '地點', '场景', '場景']),
-        time: firstString(record, ['time', '时间', '時間', '时间段', '時間段']),
-        prompt: firstString(record, ['prompt', '描述', '场景描述', '場景描述']),
-        lighting: firstString(record, ['lighting', '光影', '灯光', '燈光']),
-        description: firstString(record, ['description', '描述']),
-      }
-    }
-    return {
-      name: firstString(record, ['name', '名称', '名稱', '道具名']),
-      type: firstString(record, ['type', '类型', '類型']),
-      description: firstString(record, ['description', '描述', '外貌']),
-    }
-  }).filter((item) => target === 'scenes' ? Boolean(item.location) : Boolean(item.name))
-}
-
-function itemsFromPayload(target: ExtractTarget, payload: unknown): any[] {
-  if (!payload) return []
-  let raw: unknown[] = []
-  if (Array.isArray(payload)) raw = payload
-  else if (typeof payload === 'object') {
-    const record = payload as Record<string, unknown>
-    const aliases = target === 'characters'
-      ? ['characters', '角色']
-      : target === 'scenes'
-        ? ['scenes', '场景', '場景']
-        : ['props', '道具']
-    for (const key of aliases) {
-      const nested = record[key]
-      if (Array.isArray(nested)) {
-        raw = nested
-        break
-      }
-    }
-  }
-  return normalizeItems(target, raw)
-}
-
-async function resolveMaybePromise<T>(value: T | Promise<T> | undefined): Promise<T | undefined> {
-  if (value == null) return undefined
-  return await Promise.resolve(value)
-}
-
-async function payloadFromGenerateResult(result: any): Promise<unknown> {
-  const object = await resolveMaybePromise(result?.object)
-  if (object) return object
-  const steps = result?.steps
-  if (Array.isArray(steps)) {
-    for (let i = steps.length - 1; i >= 0; i--) {
-      const stepObject = await resolveMaybePromise(steps[i]?.object)
-      if (stepObject) return stepObject
-    }
-  }
-  const text = await resolveMaybePromise(result?.text)
-  return tryParseJson(typeof text === 'string' ? text : '')
+  const links = await db.select().from(schema.episodeProps).where(eq(schema.episodeProps.episodeId, episodeId))
+  const ids = new Set(links.map((row) => row.propId))
+  return (await db.select().from(schema.props))
+    .filter((row) => ids.has(row.id) && !row.deletedAt && !isInternalToolAssetName(row.name || ''))
+    .length
 }
 
 async function persistExtracted(target: ExtractTarget, episodeId: number, dramaId: number, items: any[]) {
@@ -189,15 +64,17 @@ async function persistExtracted(target: ExtractTarget, episodeId: number, dramaI
   return persistDedupProps(episodeId, dramaId, items)
 }
 
-async function loadEpisodeScript(episodeId: number): Promise<string> {
+async function loadEpisodeScripts(episodeId: number): Promise<{ formatted: string; original: string; script: string }> {
   const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, episodeId))
-  return String(ep?.scriptContent || ep?.content || '').trim()
+  const original = String(ep?.content || '').trim()
+  const formatted = String(ep?.scriptContent || '').trim()
+  return { formatted, original, script: formatted || original }
 }
 
 async function loadExistingHint(target: ExtractTarget, dramaId: number): Promise<string> {
   if (target === 'characters') {
     const rows = (await db.select().from(schema.characters).where(eq(schema.characters.dramaId, dramaId)))
-      .filter(row => !row.deletedAt)
+      .filter(row => !row.deletedAt && !isInternalToolAssetName(row.name || ''))
       .map(row => row.name)
       .filter(Boolean)
     return rows.length ? `Existing characters in this project (reuse these names when they match): ${rows.join('、')}` : ''
@@ -223,6 +100,7 @@ function extractUserMessage(
   locale?: string,
   projectCategory?: string,
   adForm?: string | null,
+  originalDraft?: string,
 ) {
   const ad = isAdPromoCategory(projectCategory)
   const needsCast = ad && (adForm === 'talent_explain' || adForm === 'drama_promo')
@@ -233,7 +111,7 @@ function extractUserMessage(
         ? (adForm === 'drama_promo'
           ? 'This is an ad-promo project in short-drama form. You MUST extract the on-camera characters who act or speak in the mini-story. Empty array is not valid.'
           : 'This is an ad-promo project in talent-explain form. You MUST extract the on-camera presenter/expert who speaks. Empty array is not valid.')
-        : 'This is an ad-promo project in product-showcase form. Extract on-camera talent only if they speak or act. Empty array is valid for product-only ads. Each item needs name, and preferably role, appearance, and styling.')
+        : 'This is an ad-promo project in product-showcase form. Extract every named on-camera person from the formatted screenplay and the original draft (人物/角色 lines, spoken names). Empty array is valid only when neither text names talent.')
       : 'Extract every character who has dialogue or an important action. Each item needs name, and preferably role, appearance (look + temperament), and styling (hair, makeup, costume).')
     : target === 'scenes'
       ? 'Extract every distinct location+time. Each item needs location, and preferably time, prompt (empty space and set dressing only — no people, actions, or handheld plot props), and lighting.'
@@ -249,6 +127,9 @@ function extractUserMessage(
     contentLanguageInstruction(locale),
     'Screenplay:',
     script.slice(0, 16000),
+    target === 'characters' && originalDraft && originalDraft !== script
+      ? `Original draft (named people here must be extracted even if the formatted screenplay is VO-only):\n${originalDraft.slice(0, 8000)}`
+      : '',
   ].filter(Boolean).join('\n\n')
 }
 
@@ -277,7 +158,7 @@ export function startExtraction(episodeId: number, dramaId: number, target: Extr
     const agent = mastra.getAgent('extractor')
     if (!agent) throw new Error('提取 Agent 不可用')
 
-    const script = await loadEpisodeScript(episodeId)
+    const { formatted, original, script } = await loadEpisodeScripts(episodeId)
     if (!script) throw new Error('本集没有剧本内容，请先完成改写')
 
     const existingHint = await loadExistingHint(target, dramaId)
@@ -291,34 +172,46 @@ export function startExtraction(episodeId: number, dramaId: number, target: Extr
       ...agentContextFromAd(ad),
     })
 
-    logTaskProgress('Extract', `${target}-structured`, { episodeId, scriptLength: script.length })
-    const result: any = await agent.generate(
-      [{ role: 'user', content: extractUserMessage(target, script, existingHint, opts.locale, ad.genre, ad.spec?.form) }],
-      {
-        requestContext,
-        maxSteps: 1,
-        toolChoice: 'none',
-        instructions: STRUCTURED_INSTRUCTIONS,
-        structuredOutput: {
-          schema: extractSchema(target),
-          jsonPromptInjection: true,
-        },
-      },
-    )
-
-    const payload = await payloadFromGenerateResult(result)
-    const items = itemsFromPayload(target, payload)
+    const userMessage = extractUserMessage(target, script, existingHint, opts.locale, ad.genre, ad.spec?.form, original)
+    const saveTool = `save_dedup_${target}`
+    logTaskProgress('Extract', `${target}-structured`, { episodeId, scriptLength: script.length, originalLength: original.length })
+    const forceSave = target === 'scenes'
+    const result: any = await agent.generate([{ role: 'user', content: userMessage }], {
+      requestContext,
+      maxSteps: forceSave ? 4 : 1,
+      toolChoice: forceSave ? { type: 'tool', toolName: saveTool } : 'none',
+      instructions: forceSave
+        ? `Call ${saveTool} with every scene found in the screenplay. Do not call other tools.`
+        : 'Return JSON only. Do not call tools. Do not invent names from tool lists. If the original draft names people, include them.',
+    })
+    let items = itemsFromGenerateResult(target, result)
+    if (!items.length && target === 'scenes') {
+      items = scenesFromFormattedScript(script)
+      if (items.length) logTaskProgress('Extract', 'scenes-header-fallback', { episodeId, parsed: items.length })
+    }
+    if (!items.length && target === 'characters') {
+      items = charactersFromSourceScript([formatted, original].filter(Boolean).join('\n\n'))
+      if (items.length) logTaskProgress('Extract', 'characters-source-fallback', { episodeId, parsed: items.length, names: items.map((row) => row.name).join(',') })
+    }
+    if (!items.length) {
+      logTaskProgress('Extract', `${target}-empty-model`, summarizeExtractResult(result))
+    }
     await persistExtracted(target, episodeId, dramaId, items)
     const linked = await countLinked(target, episodeId)
+    const needsCast = isAdPromoCategory(ad.genre) && (ad.spec?.form === 'talent_explain' || ad.spec?.form === 'drama_promo')
+    const namedInSource = charactersFromSourceScript([formatted, original].filter(Boolean).join('\n\n')).length > 0
     logTaskProgress('Extract', `${target}-direct-save`, {
       episodeId,
       parsed: items.length,
       linked,
-      finishReason: result?.finishReason,
+      ...summarizeExtractResult(result),
     })
 
-    if (target !== 'props' && linked === 0) {
-      throw new Error(`提取完成但未写入任何${target === 'characters' ? '角色' : '场景'}，请确认剧本后重试`)
+    if (target === 'scenes' && linked === 0) {
+      throw new Error('提取完成但未写入任何场景，请确认剧本后重试')
+    }
+    if (target === 'characters' && linked === 0 && (!isAdPromoCategory(ad.genre) || needsCast || namedInSource)) {
+      throw new Error('提取完成但未写入任何角色，请确认剧本后重试')
     }
     return { result, linked, parsed: items.length }
   })()

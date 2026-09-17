@@ -9,6 +9,7 @@ import type { RequestContext } from '@mastra/core/request-context'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAI } from '@ai-sdk/openai'
 import { getTextConfig, getTextProviderBaseUrl, getConfigById } from '../services/ai.js'
+import { createGeminiProxyFetch, isOfficialGeminiHost } from '../services/adapters/gemini-auth.js'
 import { logTaskProgress } from '../utils/task-logger.js'
 import { scriptTools } from './tools/script-tools.js'
 import { extractTools } from './tools/extract-tools.js'
@@ -159,12 +160,13 @@ let lastLoggedTextEndpointKey = ''
  *
  * - 默认开启;AI_DISABLE_THINKING=false 可关闭注入
  * - 官方 OpenAI / Gemini 端点跳过(官方 API 会拒绝未知参数)
+ * - APIMart Gemini native 跳过 thinkingBudget:0（会 400：warning prompt violated the rules）
  * - AI_THINKING_OFF_PATCH 可传 JSON 覆盖注入的 OpenAI 风格参数(适配不同中转站)
  */
 const thinkingOffEnabled = (process.env.AI_DISABLE_THINKING ?? 'true').toLowerCase() !== 'false'
 
 function isOfficialTextHost(baseURL: string) {
-  return /api\.openai\.com|generativelanguage\.googleapis\.com/.test(baseURL)
+  return /api\.openai\.com|generativelanguage\.googleapis\.com|api\.apimart\.ai/.test(baseURL)
 }
 
 function openaiThinkingOffPatch(): Record<string, any> {
@@ -301,9 +303,13 @@ async function getModel(fileModel: string | undefined, modelOverride?: string, t
   const tempFetch = temperature !== null
     ? createTemperatureFetch(providerName, temperature, thinkingOffFetch)
     : thinkingOffFetch
-  const fetchImpl = isOfficialOpenAIHost(resolvedBaseURL)
+  let fetchImpl = isOfficialOpenAIHost(resolvedBaseURL)
     ? tempFetch
     : createMaxTokensFetch(providerName, tempFetch)
+
+  if (providerName === 'gemini' && !isOfficialGeminiHost(resolvedBaseURL)) {
+    fetchImpl = createGeminiProxyFetch(textConfig.apiKey, fetchImpl)
+  }
 
   if (providerName === 'gemini') {
     const googleProvider = createGoogleGenerativeAI({

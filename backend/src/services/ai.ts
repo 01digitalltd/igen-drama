@@ -5,6 +5,7 @@ import { db, schema } from '../db/index.js'
 import { eq } from '../db/query.js'
 import { logTaskProgress, logTaskWarn } from '../utils/task-logger.js'
 import { joinProviderUrl } from './adapters/url.js'
+import { normalizeGeminiBaseUrl } from './adapters/gemini-auth.js'
 
 export type ServiceType = 'text' | 'image' | 'video'
 
@@ -47,7 +48,7 @@ export function getTextProviderBaseUrl(config: AIConfig) {
   }
 
   if (provider === 'gemini') {
-    return joinProviderUrl(config.baseUrl, '/v1beta', '')
+    return joinProviderUrl(normalizeGeminiBaseUrl(config.baseUrl), '/v1beta', '')
   }
 
   if (provider === 'volcengine') {

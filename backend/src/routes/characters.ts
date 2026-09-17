@@ -80,6 +80,8 @@ app.put('/:id', async (c) => {
 app.delete('/:id', async (c) => {
   const id = Number(c.req.param('id'))
   await loadOwnedCharacter(c, id)
+  await db.delete(schema.episodeCharacters).where(eq(schema.episodeCharacters.characterId, id))
+  await db.delete(schema.storyboardCharacters).where(eq(schema.storyboardCharacters.characterId, id))
   await db.update(schema.characters).set({ deletedAt: now() }).where(eq(schema.characters.id, id))
   return success(c)
 })

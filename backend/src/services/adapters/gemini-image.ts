@@ -18,6 +18,7 @@ import type {
   ImagePollResponse,
 } from './types'
 import { joinProviderUrl } from './url'
+import { applyGeminiAuth, normalizeGeminiBaseUrl, unwrapGeminiProxyPayload } from './gemini-auth'
 import { parseDataUrl } from '../../utils/storage.js'
 
 const INTERACTIONS_API_REVISION = '2026-05-20'
@@ -75,21 +76,22 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
       },
     }
 
-    const url = new URL(joinProviderUrl(config.baseUrl, '/v1beta', `/${model}:generateContent`))
-    url.searchParams.set('key', config.apiKey)
+    const url = new URL(joinProviderUrl(normalizeGeminiBaseUrl(config.baseUrl), '/v1beta', `/${model}:generateContent`))
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    applyGeminiAuth(url, headers, config.baseUrl, config.apiKey)
 
     return {
       url: url.toString(),
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': config.apiKey,
-      },
+      headers,
       body,
     }
   }
 
   parseGenerateResponse(result: any): ImageGenResponse {
+    result = unwrapGeminiProxyPayload(result)
     const firstCandidate = result?.candidates?.[0]
     const finishReason = firstCandidate?.finishReason || firstCandidate?.finish_reason
     const finishMessage = firstCandidate?.finishMessage || firstCandidate?.finish_message
@@ -125,6 +127,7 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
   }
 
   parsePollResponse(result: any): ImagePollResponse {
+    result = unwrapGeminiProxyPayload(result)
     const status = String(result?.status || result?.state || '').toLowerCase()
     const imageUrl = this.extractImageUrl(result) || undefined
     const hasImage = Boolean(imageUrl || this.extractImageBase64(result))
@@ -148,20 +151,21 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
   }
 
   buildPollRequest(config: AIConfig, taskId: string): ProviderRequest {
-    const url = new URL(joinProviderUrl(config.baseUrl, '/v1beta', this.interactionPollPath(taskId)))
-    url.searchParams.set('key', config.apiKey)
+    const url = new URL(joinProviderUrl(normalizeGeminiBaseUrl(config.baseUrl), '/v1beta', this.interactionPollPath(taskId)))
+    const headers: Record<string, string> = {
+      'Api-Revision': INTERACTIONS_API_REVISION,
+    }
+    applyGeminiAuth(url, headers, config.baseUrl, config.apiKey)
     return {
       url: url.toString(),
       method: 'GET',
-      headers: {
-        'x-goog-api-key': config.apiKey,
-        'Api-Revision': INTERACTIONS_API_REVISION,
-      },
+      headers,
       body: undefined,
     }
   }
 
   extractImageUrl(result: any): string | null {
+    result = unwrapGeminiProxyPayload(result)
     return result?.data?.[0]?.url
       || result?.image_url
       || result?.url
@@ -171,7 +175,7 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
   }
 
   extractImageBase64(result: any): { data: string; mimeType: string } | null {
-    return findInlineImage(result)
+    return findInlineImage(unwrapGeminiProxyPayload(result))
   }
 
   private interactionId(result: any): string | undefined {

@@ -6,6 +6,7 @@ import { validAgentTypes } from '../agents/index.js'
 import { buildAgentRequestContext } from '../agents/context.js'
 import { mastra } from '../mastra/index.js'
 import { withContentLanguage } from '../utils/content-language.js'
+import { agentJobErrorMessage } from '../utils/provider-error.js'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
@@ -152,7 +153,7 @@ export function startAgentJob(params: {
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(1)
       job.status = 'error'
       job.finished_at = new Date().toISOString()
-      job.error = err?.message || 'Agent execution failed'
+      job.error = agentJobErrorMessage(err)
       emitAgentJob(job)
       logTaskError('Agent', agentType, { elapsedSeconds: elapsed, jobId: job.id, error: job.error })
       console.error(err.stack || err)

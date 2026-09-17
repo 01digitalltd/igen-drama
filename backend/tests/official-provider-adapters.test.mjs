@@ -36,6 +36,13 @@ test('text agents use the official Gemini provider for gemini configs', () => {
   assert.match(agents, /googleProvider\(\s*modelName\s*\)/)
 })
 
+test('APIMart Gemini native skips thinkingBudget-off injection', () => {
+  const agents = read('src/agents/index.ts')
+  assert.match(agents, /function isOfficialTextHost/)
+  assert.match(agents, /api\\.apimart\\.ai/)
+  assert.match(agents, /thinkingBudget:\s*0/)
+})
+
 test('text agents keep OpenAI provider routing for non-Gemini configs', () => {
   const agents = read('src/agents/index.ts')
 
@@ -48,7 +55,8 @@ test('text provider base URL handling uses official Gemini v1beta endpoint', () 
   const ai = read('src/services/ai.ts')
 
   assert.match(ai, /provider === 'gemini'/)
-  assert.match(ai, /return joinProviderUrl\(config\.baseUrl,\s*'\/v1beta',\s*''\)/)
+  assert.match(ai, /normalizeGeminiBaseUrl\(config\.baseUrl\)/)
+  assert.match(ai, /return joinProviderUrl\(normalizeGeminiBaseUrl\(config\.baseUrl\),\s*'\/v1beta',\s*''\)/)
 })
 
 test('backend rejects unsupported providers at DB and route boundaries', () => {
@@ -111,7 +119,9 @@ test('AI config probe uses provider-specific auth schemes', () => {
   const geminiHeaders = route.slice(geminiHeadersStart, buildProbeStart)
 
   assert.match(geminiHeaders, /x-goog-api-key/)
-  assert.doesNotMatch(geminiHeaders, /Authorization\s*=\s*`Bearer/)
+  assert.match(geminiHeaders, /Authorization = `Bearer \$\{apiKey\}`/)
+  assert.match(geminiHeaders, /isOfficialGeminiHost/)
+  assert.match(route, /applyGeminiAuth/)
   assert.match(route, /:generateContent/)
   assert.match(route, /contents: \[\{ parts: \[\{ text: 'hi' \}\] \}\]/)
   assert.match(route, /function bearerHeaders/)
@@ -171,6 +181,7 @@ test('new image and video models use their current API shapes', () => {
 
   const minimaxVideo = read('src/services/adapters/minimax-video.ts')
   const configSeed = read('src/services/config-seed.ts')
+  const agents = read('src/agents/index.ts')
 
   assert.match(openaiImage, /isGptImage2/)
   assert.match(openaiImage, /normalizeGptImage2Size/)
@@ -178,7 +189,8 @@ test('new image and video models use their current API shapes', () => {
   assert.match(geminiImage, /responseModalities/)
   assert.match(geminiImage, /\/interactions\//)
   assert.doesNotMatch(geminiImage, /\$\{taskId\}`\)/)
-  assert.doesNotMatch(geminiImage, /Authorization': `Bearer/)
+  assert.match(geminiImage, /applyGeminiAuth/)
+  assert.match(agents, /createGeminiProxyFetch/)
   assert.match(registry, /GeminiVideoAdapter/)
   assert.match(geminiVideo, /gemini-omni-1\.1-flash/)
   assert.match(geminiVideo, /\/interactions/)
@@ -199,4 +211,5 @@ test('new image and video models use their current API shapes', () => {
   assert.match(minimaxVideo, /role: 'reference_image'/)
   assert.match(configSeed, /ensureMinimaxVideoConfig/)
   assert.match(configSeed, /MINIMAX_VIDEO_API_KEY/)
+  assert.match(configSeed, /syncActiveConfigsFromEnv/)
 })

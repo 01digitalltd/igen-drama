@@ -16,6 +16,7 @@ import { now } from '../../utils/response.js'
 import { logTaskProgress, logTaskSuccess } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
 import { dramaAdFields, ensureBrandLogoProp, loadDramaAdContext, loadDramaCategory } from '../../services/brand-logo.js'
+import { isInternalToolAssetName } from '../../services/extract-payload.js'
 import { isAdPromoCategory } from '../../utils/project-category.js'
 
 async function adFields(dramaId: number) {
@@ -30,6 +31,24 @@ async function linkCharToEpisode(episodeId: number, characterId: number) {
 
   if (!existing.length) {
     await db.insert(schema.episodeCharacters).values({ episodeId, characterId, createdAt: ts })
+  }
+}
+
+async function pruneInternalCharacterLinks(episodeId: number) {
+  const links = await db.select().from(schema.episodeCharacters)
+    .where(eq(schema.episodeCharacters.episodeId, episodeId))
+  if (!links.length) return
+  const chars = await db.select().from(schema.characters)
+  const byId = new Map(chars.map((row) => [row.id, row]))
+  for (const link of links) {
+    const row = byId.get(link.characterId)
+    const name = String(row?.name || '')
+    if (!row || row.deletedAt || isInternalToolAssetName(name)) {
+      await db.delete(schema.episodeCharacters).where(and(
+        eq(schema.episodeCharacters.episodeId, episodeId),
+        eq(schema.episodeCharacters.characterId, link.characterId),
+      ))
+    }
   }
 }
 
@@ -201,9 +220,10 @@ export async function persistDedupCharacters(
     dramaId,
     names: characters.map(char => char.name).join(','),
   })
+  await pruneInternalCharacterLinks(episodeId)
 
   for (const char of characters) {
-    if (!char?.name?.trim()) continue
+    if (!char?.name?.trim() || isInternalToolAssetName(char.name)) continue
     const charsInProject = (await db.select().from(schema.characters)
       .where(eq(schema.characters.dramaId, dramaId)))
       .filter(c => !c.deletedAt)
@@ -265,7 +285,7 @@ export async function persistDedupScenes(episodeId: number, dramaId: number, sce
   })
 
   for (const scene of scenes) {
-    if (!scene?.location?.trim()) continue
+    if (!scene?.location?.trim() || isInternalToolAssetName(scene.location)) continue
     const scenesInProject = (await db.select().from(schema.scenes)
       .where(eq(schema.scenes.dramaId, dramaId)))
       .filter(s => !s.deletedAt)
@@ -320,7 +340,7 @@ export async function persistDedupProps(episodeId: number, dramaId: number, prop
   })
 
   for (const prop of props) {
-    if (!prop?.name?.trim()) continue
+    if (!prop?.name?.trim() || isInternalToolAssetName(prop.name)) continue
     const propsInProject = (await db.select().from(schema.props)
       .where(eq(schema.props.dramaId, dramaId)))
       .filter(p => !p.deletedAt)

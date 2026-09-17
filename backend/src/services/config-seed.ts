@@ -59,8 +59,48 @@ export async function seedAiConfigsFromEnv() {
     })
     console.log(`[config-seed] inserted ${spec.serviceType} config (${provider} / ${model})`)
   }
+  await syncActiveConfigsFromEnv()
   await ensureGeminiVideoConfig()
   await ensureMinimaxVideoConfig()
+}
+
+async function syncActiveConfigsFromEnv() {
+  for (const spec of SPECS) {
+    const apiKey = readEnv(spec.envPrefix, 'API_KEY')
+    const baseUrl = readEnv(spec.envPrefix, 'BASE_URL')
+    const model = readEnv(spec.envPrefix, 'MODEL')
+    const provider = (readEnv(spec.envPrefix, 'PROVIDER') || defaultProvider(spec.serviceType)).toLowerCase()
+    if (!apiKey || !baseUrl) continue
+
+    const rows = ((await db.select().from(schema.aiServiceConfigs)
+      .where(eq(schema.aiServiceConfigs.serviceType, spec.serviceType))) as Array<{
+        id?: number
+        provider?: string | null
+        isActive?: unknown
+        baseUrl?: string | null
+        apiKey?: string | null
+        model?: unknown
+      }>)
+      .filter((r) => r.isActive && (r.provider || '').toLowerCase() === provider)
+    const row = rows[0]
+    if (row?.id == null) continue
+
+    const updates: Record<string, unknown> = {}
+    if (row.baseUrl !== baseUrl) updates.baseUrl = baseUrl
+    if (row.apiKey !== apiKey) updates.apiKey = apiKey
+    if (model) {
+      const current = parseConfigModels(row.model)
+      if (current[0] !== model) {
+        updates.model = JSON.stringify([model, ...current.filter((item) => item !== model)])
+      }
+    }
+    if (!Object.keys(updates).length) continue
+    updates.updatedAt = now()
+    await db.update(schema.aiServiceConfigs)
+      .set(updates)
+      .where(eq(schema.aiServiceConfigs.id, row.id))
+    console.log(`[config-seed] updated ${spec.serviceType} config (${provider}) from env`)
+  }
 }
 
 function defaultProvider(serviceType: ServiceType): string {
