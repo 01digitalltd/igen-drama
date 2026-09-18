@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { serve } from '@hono/node-server'
+import { createNodeWebSocket } from '@hono/node-server/ws'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
@@ -18,6 +19,7 @@ import stylePresets from './routes/stylePresets.js'
 import prompts from './routes/prompts.js'
 import agent from './routes/agent.js'
 import merge from './routes/merge.js'
+import { registerEpisodeWebSocket } from './routes/episode-ws.js'
 import skills from './routes/skills.js'
 import props from './routes/props.js'
 import { requestLogger, errorHandler } from './middleware/logger.js'
@@ -31,6 +33,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '../..')
 
 const app = new Hono()
+const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 
 // Middleware
 app.use('*', cors({
@@ -63,6 +66,7 @@ api.route('/merge', merge)
 api.route('/skills', skills)
 api.route('/props', props)
 
+registerEpisodeWebSocket(app, upgradeWebSocket, [serviceAuth, requestLocale])
 app.route('/api/v1', api)
 
 // Serve static files (storage)
@@ -95,4 +99,5 @@ Promise.all([resumeInterruptedTasks(), resumeInterruptedMerges()])
   })
   .catch((err) => console.error('恢复中断任务失败:', err?.message))
 
-serve({ fetch: app.fetch, port })
+const server = serve({ fetch: app.fetch, port })
+injectWebSocket(server)

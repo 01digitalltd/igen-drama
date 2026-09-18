@@ -8,8 +8,8 @@ import { getActiveConfigId, isOfficialProvider } from '../services/ai.js'
 import { getDramaStyleValue } from '../services/style-preset.js'
 import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from '../services/video-model-policy.js'
 import { EXTRACT_TARGETS, getExtractionStatus, startExtraction, type ExtractTarget } from '../services/extraction.js'
-import { listAgentJobsForEpisode, toPublicAgentJob } from '../services/agent-jobs.js'
 import { subscribeEpisodeEvents } from '../services/episode-events.js'
+import { collectEpisodePushEvents } from '../services/episode-live-events.js'
 import { getVideoPromptBatchStatus, startVideoPromptBatch } from '../services/video-prompts.js'
 import { loadOwnedDrama, loadOwnedEpisode, ensureEpisodeUuid } from '../utils/ownership.js'
 import { toPublicEpisode } from '../utils/public-id.js'
@@ -234,15 +234,9 @@ app.get('/:id/events', async (c) => {
       if (stream.aborted || stream.closed) return
       await stream.writeSSE({ event, data: JSON.stringify(payload) })
     }
-    await write('extract', getExtractionStatus(id))
-    for (const job of listAgentJobsForEpisode(id)) {
-      await write('job', toPublicAgentJob(job))
+    for (const event of await collectEpisodePushEvents(id)) {
+      await write(event.type, event.payload)
     }
-    const prompts = getVideoPromptBatchStatus(id)
-    if (prompts) await write('prompts', prompts)
-    const mergeRows = await db.select().from(schema.videoMerges).where(eq(schema.videoMerges.episodeId, id))
-    const latestMerge = mergeRows[mergeRows.length - 1]
-    if (latestMerge) await write('merge', toSnakeCase(latestMerge))
     const unsub = subscribeEpisodeEvents(id, (event) => {
       void write(event.type, event.payload)
     })
@@ -287,9 +281,10 @@ app.get('/:id/video-prompts-status', async (c) => {
 app.get('/:episode_id/storyboards', async (c) => {
   const ep = await episodeFromParam(c)
   const episodeId = ep.id
-  const rows = await db.select().from(schema.storyboards)
+  const rows = (await db.select().from(schema.storyboards)
     .where(eq(schema.storyboards.episodeId, episodeId))
-    .orderBy(schema.storyboards.storyboardNumber)
+    .orderBy(schema.storyboards.storyboardNumber))
+    .filter((row) => !row.deletedAt)
 
   const links = await db.select().from(schema.storyboardCharacters)
   const charIdsByStoryboard = new Map<number, number[]>()

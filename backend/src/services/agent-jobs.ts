@@ -4,12 +4,21 @@
  */
 import { validAgentTypes } from '../agents/index.js'
 import { buildAgentRequestContext } from '../agents/context.js'
+import { db, schema } from '../db/index.js'
+import { eq } from '../db/query.js'
 import { mastra } from '../mastra/index.js'
 import { withContentLanguage } from '../utils/content-language.js'
 import { agentJobErrorMessage } from '../utils/provider-error.js'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
+import { storyboardBreakerFailure } from './storyboard-breaker-job.js'
+
+async function countLiveStoryboards(episodeId: number) {
+  const rows = await db.select().from(schema.storyboards)
+    .where(eq(schema.storyboards.episodeId, episodeId))
+  return rows.filter((row) => !row.deletedAt).length
+}
 
 export interface AgentJob {
   id: string
@@ -126,7 +135,7 @@ export function startAgentJob(params: {
       { maxSteps: 20, requestContext },
     )
   })()
-    .then((result: any) => {
+    .then(async (result: any) => {
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(1)
       const toolCalls = result.toolCalls || []
       const toolResults = result.toolResults || []
@@ -141,8 +150,32 @@ export function startAgentJob(params: {
       job.text = result.text || ''
       job.status = 'done'
       job.finished_at = new Date().toISOString()
+      if (agentType === 'storyboard_breaker') {
+        try {
+          const liveShotCount = await countLiveStoryboards(episodeId)
+          const failure = storyboardBreakerFailure({
+            liveShotCount,
+            toolResults: job.toolResults,
+          })
+          if (failure) {
+            job.status = 'error'
+            job.error = failure
+          }
+        } catch (err: any) {
+          job.status = 'error'
+          job.error = err?.message || '拆分鏡沒有寫入任何鏡頭，請再試一次。'
+        }
+      }
       emitAgentJob(job)
-      logTaskSuccess('Agent', agentType, { elapsedSeconds: elapsed, jobId: job.id })
+      if (job.status === 'error') {
+        logTaskError('Agent', agentType, {
+          elapsedSeconds: elapsed,
+          jobId: job.id,
+          error: job.error,
+        })
+      } else {
+        logTaskSuccess('Agent', agentType, { elapsedSeconds: elapsed, jobId: job.id })
+      }
       logTaskProgress('Agent', 'tool-summary', {
         agentType,
         toolCalls: job.toolCalls.map((tc) => tc.toolName),

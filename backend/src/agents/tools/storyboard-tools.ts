@@ -255,8 +255,18 @@ const readStoryboardContext = createTool({
   },
 })
 
+const nullableCoercedId = z.preprocess((value) => {
+  if (value === null || value === undefined || value === '' || value === 'null') return null
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : value
+  }
+  return value
+}, z.number().nullable().optional())
+
 const storyboardFields = z.object({
-  shot_number: z.number(),
+  shot_number: z.coerce.number(),
   title: z.string().optional(),
   shot_type: z.string().optional(),
   angle: z.string().optional(),
@@ -270,10 +280,10 @@ const storyboardFields = z.object({
   video_prompt: z.string().optional(),
   bgm_prompt: z.string().optional(),
   sound_effect: z.string().optional(),
-  duration: z.number().optional(),
-  scene_id: z.number().nullable().optional(),
-  character_ids: z.array(z.number()).optional(),
-  prop_ids: z.array(z.number()).optional(),
+  duration: z.coerce.number().optional(),
+  scene_id: nullableCoercedId,
+  character_ids: z.array(z.coerce.number()).optional(),
+  prop_ids: z.array(z.coerce.number()).optional(),
 })
 
 const saveStoryboards = createTool({
