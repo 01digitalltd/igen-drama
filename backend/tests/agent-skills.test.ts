@@ -25,6 +25,7 @@ test('ad projects inject purpose, form and creative skills into rewrite/extract/
 
   const prompts = skillDirsForAgent('prompt_generator', 'ad_promo', spec)
   assert.ok(prompts.some(dir => dir.startsWith('prompt-generator/video-prompt')))
+  assert.ok(prompts.includes('prompt-generator/storyboard-image'))
   assert.equal(prompts.some(dir => dir.startsWith('ad-')), false)
   assert.equal(prompts.includes('ad-creative-director'), false)
 })

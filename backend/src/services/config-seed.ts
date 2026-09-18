@@ -64,24 +64,34 @@ export async function seedAiConfigsFromEnv() {
   await ensureMinimaxVideoConfig()
 }
 
+type SeedConfigRow = {
+  id?: number
+  provider?: string | null
+  isActive?: unknown
+  baseUrl?: string | null
+  apiKey?: string | null
+  model?: unknown
+  name?: string | null
+}
+
 async function syncActiveConfigsFromEnv() {
   for (const spec of SPECS) {
     const apiKey = readEnv(spec.envPrefix, 'API_KEY')
     const baseUrl = readEnv(spec.envPrefix, 'BASE_URL')
     const model = readEnv(spec.envPrefix, 'MODEL')
-    const provider = (readEnv(spec.envPrefix, 'PROVIDER') || defaultProvider(spec.serviceType)).toLowerCase()
+    const envProvider = readEnv(spec.envPrefix, 'PROVIDER').toLowerCase()
+    const provider = (envProvider || defaultProvider(spec.serviceType)).toLowerCase()
     if (!apiKey || !baseUrl) continue
+    if (!officialProviders[spec.serviceType].includes(provider)) continue
 
-    const rows = ((await db.select().from(schema.aiServiceConfigs)
-      .where(eq(schema.aiServiceConfigs.serviceType, spec.serviceType))) as Array<{
-        id?: number
-        provider?: string | null
-        isActive?: unknown
-        baseUrl?: string | null
-        apiKey?: string | null
-        model?: unknown
-      }>)
-      .filter((r) => r.isActive && (r.provider || '').toLowerCase() === provider)
+    const all = ((await db.select().from(schema.aiServiceConfigs)
+      .where(eq(schema.aiServiceConfigs.serviceType, spec.serviceType))) as SeedConfigRow[])
+
+    if (envProvider) {
+      await switchActiveProviderFromEnv(spec, all, { provider, apiKey, baseUrl, model })
+    }
+
+    const rows = all.filter((r) => r.isActive && (r.provider || '').toLowerCase() === provider)
     const row = rows[0]
     if (row?.id == null) continue
 
@@ -101,6 +111,83 @@ async function syncActiveConfigsFromEnv() {
       .where(eq(schema.aiServiceConfigs.id, row.id))
     console.log(`[config-seed] updated ${spec.serviceType} config (${provider}) from env`)
   }
+}
+
+/**
+ * When DRAMA_*_PROVIDER is set, activate that vendor and deactivate the others
+ * of the same service type so episode-locked configs can fall back.
+ */
+async function switchActiveProviderFromEnv(
+  spec: SeedSpec,
+  all: SeedConfigRow[],
+  env: { provider: string; apiKey: string; baseUrl: string; model: string },
+) {
+  const ts = now()
+  for (const row of all) {
+    if (row.id == null) continue
+    if ((row.provider || '').toLowerCase() === env.provider) continue
+    if (!row.isActive) continue
+    await db.update(schema.aiServiceConfigs)
+      .set({ isActive: false, isDefault: false, updatedAt: ts })
+      .where(eq(schema.aiServiceConfigs.id, row.id))
+    console.log(`[config-seed] deactivated ${spec.serviceType} config (${row.provider})`)
+    row.isActive = false
+  }
+
+  const same = all.filter((r) => (r.provider || '').toLowerCase() === env.provider)
+  const activeSame = same.find((r) => r.isActive)
+  if (activeSame?.id != null) return
+
+  const reusable = same[0]
+  if (reusable?.id != null) {
+    const current = parseConfigModels(reusable.model)
+    const nextModel = env.model
+      ? JSON.stringify([env.model, ...current.filter((item) => item !== env.model)])
+      : reusable.model
+    await db.update(schema.aiServiceConfigs)
+      .set({
+        isActive: true,
+        isDefault: true,
+        baseUrl: env.baseUrl,
+        apiKey: env.apiKey,
+        model: nextModel,
+        updatedAt: ts,
+      })
+      .where(eq(schema.aiServiceConfigs.id, reusable.id))
+    reusable.isActive = true
+    reusable.baseUrl = env.baseUrl
+    reusable.apiKey = env.apiKey
+    reusable.model = nextModel
+    console.log(`[config-seed] reactivated ${spec.serviceType} config (${env.provider})`)
+    return
+  }
+
+  if (!env.model) {
+    console.warn(`[config-seed] skip switch ${spec.serviceType}: set ${spec.envPrefix}_MODEL`)
+    return
+  }
+
+  await db.insert(schema.aiServiceConfigs).values({
+    serviceType: spec.serviceType,
+    provider: env.provider,
+    name: `platform-${spec.serviceType}`,
+    baseUrl: env.baseUrl,
+    apiKey: env.apiKey,
+    model: JSON.stringify([env.model]),
+    priority: 110,
+    isDefault: true,
+    isActive: true,
+    createdAt: ts,
+    updatedAt: ts,
+  })
+  all.push({
+    provider: env.provider,
+    isActive: true,
+    baseUrl: env.baseUrl,
+    apiKey: env.apiKey,
+    model: JSON.stringify([env.model]),
+  })
+  console.log(`[config-seed] inserted ${spec.serviceType} config (${env.provider} / ${env.model})`)
 }
 
 function defaultProvider(serviceType: ServiceType): string {

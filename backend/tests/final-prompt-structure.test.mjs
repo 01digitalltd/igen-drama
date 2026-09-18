@@ -50,10 +50,14 @@ test('prompt agent instructions reference per-asset skills; skill files define t
   assert.match(sceneSkill, /出入口/)
   assert.match(sceneSkill, /纯中文/)
   const videoSkill = read('workspace/skills/prompt-generator/video-prompt/SKILL.md')
+  const stillSkill = read('workspace/skills/prompt-generator/storyboard-image/SKILL.md')
   const finalPrompt = read('src/services/final-prompt.ts')
   assert.doesNotMatch(agents, /白色6×6网格|白色 6×6 网格/)
   assert.doesNotMatch(videoSkill, /6×6 网格/)
   assert.doesNotMatch(finalPrompt, /6×6 网格/)
+  assert.match(stillSkill, /单帧分镜静帧/)
+  assert.match(stillSkill, /原样复制成 `image_prompt`/)
+  assert.match(agents, /image_prompt/)
 })
 
 test('image generation prefers the stored final prompt with agent generation and legacy fallback', () => {

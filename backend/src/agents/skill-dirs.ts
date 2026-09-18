@@ -11,6 +11,7 @@ export const AGENT_SKILL_MAP: Record<string, string[]> = {
     'prompt-generator/scene-prompt',
     'prompt-generator/prop-prompt',
     'prompt-generator/video-prompt',
+    'prompt-generator/storyboard-image',
   ],
 }
 

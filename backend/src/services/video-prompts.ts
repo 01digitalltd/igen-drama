@@ -17,11 +17,13 @@ import { publishEpisodeEvent } from './episode-events.js'
 import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
 import { firstConfigModel } from './video-clip-policy.js'
 import { now } from '../utils/response.js'
-import { buildShotImageRefs } from './storyboard-prompt.js'
+import { buildShotImageRefs, composeStoryboardImagePrompt } from './storyboard-prompt.js'
 import {
+  looksLikeStillPrompt,
   looksLikeVideoPrompt,
   payloadFromGenerateResult,
   summarizeGenerateResult,
+  imagePromptFromPayload,
   videoPromptFromPayload,
 } from './video-prompt-text.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
@@ -41,10 +43,13 @@ export interface VideoPromptBatchStatus {
 
 const tasks = new Map<number, VideoPromptBatchStatus>()
 const VIDEO_PROMPT_ATTEMPTS = 3
-const VIDEO_PROMPT_SCHEMA = z.object({ video_prompt: z.string() })
-const STRUCTURED_INSTRUCTIONS = `你是视频提示词工程师。只返回 JSON {"video_prompt":"..."}。不要调用工具，不要输出 JSON 以外的说明。
-video_prompt 必须按时间轴分段：Seedance/其他用「0-3秒：」并 @角色名/@场景名/@道具名；Omni 用「[0-3s]」和 image_refs 里的 <IMAGE_REF_N>。
-最后一段结束秒数必须等于该分镜 duration。description 的每个【镜头N】映射为 1-2 个连续分段，不要创作新台词。`
+const VIDEO_PROMPT_SCHEMA = z.object({
+  video_prompt: z.string(),
+  image_prompt: z.string().optional(),
+})
+const STRUCTURED_INSTRUCTIONS = `你是视频提示词与分镜静帧提示词工程师。只返回 JSON {"video_prompt":"...","image_prompt":"..."}。不要调用工具，不要输出 JSON 以外的说明。
+video_prompt 必须按时间轴分段：Seedance/其他用「0-3秒：」并 @角色名/@场景名/@道具名；Omni 用「[0-3s]」和 image_refs 里的 <IMAGE_REF_N>。最后一段结束秒数必须等于该分镜 duration。description 的每个【镜头N】映射为 1-2 个连续分段，不要创作新台词。
+image_prompt 是单帧分镜静帧，只画第一个【镜头N】，必须按参考图锁定绑定角色/场景/道具外形。禁止时间轴、禁止「0-3秒」、禁止旁白配音、禁止把 video_prompt 原样复制过来。`
 
 async function loadShotPromptContext(storyboard: {
   id: number
@@ -87,9 +92,13 @@ function emitPromptStatus(episodeId: number) {
   publishEpisodeEvent(episodeId, { type: 'prompts', payload: getVideoPromptBatchStatus(episodeId) })
 }
 
-async function persistShotVideoPrompt(storyboardId: number, prompt: string) {
+async function persistShotPrompts(storyboardId: number, videoPrompt: string, imagePrompt?: string) {
   await db.update(schema.storyboards)
-    .set({ videoPrompt: prompt, updatedAt: now() })
+    .set({
+      videoPrompt,
+      ...(imagePrompt ? { imagePrompt } : {}),
+      updatedAt: now(),
+    })
     .where(eq(schema.storyboards.id, storyboardId))
 }
 
@@ -169,8 +178,9 @@ export async function startVideoPromptBatch(
           const result = await agent.generate([{
             role: 'user',
             content: [
-              withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})写视频提示词(video_prompt)。视频模型:${videoLabel}。prompt_skill:${clip?.videoGeneration?.prompt_skill || 'seedance'}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。
+              withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})同时写视频提示词(video_prompt)和分镜静帧提示词(image_prompt)。视频模型:${videoLabel}。prompt_skill:${clip?.videoGeneration?.prompt_skill || 'seedance'}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。
 ${omni ? '当前是 Gemini Omni：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_REF_N> 标记参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。' : '当前是 Seedance/其他模型：时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'}
+image_prompt 遵守 Skill storyboard-image：只画 description 第一个【镜头N】的单帧，16:9；有参考图时必须锁定 @角色/@场景/@道具 外形，不要换脸换景换包装。不要时间轴，不要旁白配音。
 ${adHint}
 
 分镜画面描述：
@@ -181,7 +191,7 @@ ${shot.description}
 道具：${shot.propNames.join('、') || '无'}
 image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${ref.kind}:${ref.name}`).join('；') : '无'}
 
-只返回 JSON {"video_prompt":"..."}。必须根据上面的 description 生成，不要调用工具。`, opts.locale),
+只返回 JSON {"video_prompt":"...","image_prompt":"..."}。必须根据上面的 description 生成，不要调用工具。`, opts.locale),
               dialogueLanguageInstruction(spoken),
               voVoiceInstruction(narratorVoice),
               visualStyleInstruction(styleValue),
@@ -196,9 +206,19 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
             },
             requestContext,
           })
-          const drafted = videoPromptFromPayload(await payloadFromGenerateResult(result))
+          const payload = await payloadFromGenerateResult(result)
+          const drafted = videoPromptFromPayload(payload)
           if (looksLikeVideoPrompt(drafted)) {
-            await persistShotVideoPrompt(sb.id, rewriteNarratorLabels(drafted, narratorVoice))
+            const stillDraft = imagePromptFromPayload(payload)
+            const imagePrompt = looksLikeStillPrompt(stillDraft)
+              ? stillDraft
+              : composeStoryboardImagePrompt({
+                description: shot.description,
+                atmosphere: shot.atmosphere,
+                imageRefs: shot.imageRefs,
+                styleValue,
+              })
+            await persistShotPrompts(sb.id, rewriteNarratorLabels(drafted, narratorVoice), imagePrompt)
             saved = true
             break
           }

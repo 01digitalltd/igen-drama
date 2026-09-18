@@ -1,3 +1,4 @@
+import { visualStyleLabel } from './style-preset.js'
 import { clipDurationBounds } from './video-clip-policy.js'
 
 /**
@@ -74,6 +75,38 @@ export function buildShotImageRefs(opts: {
     push('prop', prop.name || '', prop.imageUrl || prop.image_url)
   }
   return ordered
+}
+
+export function firstStoryboardBeat(description?: string | null): string {
+  const text = String(description || '').trim()
+  if (!text) return ''
+  const beats = [...text.matchAll(/【镜头\s*\d+】\s*([\s\S]*?)(?=【镜头\s*\d+】|$)/g)]
+    .map((match) => String(match[1] || '').replace(/(?:女声|男声)?旁白[：:].*$/s, '').trim())
+    .filter(Boolean)
+  if (beats[0]) return beats[0]
+  return text.replace(/(?:女声|男声)?旁白[：:].*$/s, '').trim()
+}
+
+export function composeStoryboardImagePrompt(opts: {
+  description?: string | null
+  atmosphere?: string | null
+  imageRefs?: ShotImageRef[]
+  styleValue?: string | null
+}): string {
+  const beat = firstStoryboardBeat(opts.description)
+  const names = (opts.imageRefs || []).map((ref) => String(ref.name || '').trim()).filter(Boolean)
+  const lock = names.length
+    ? `严格按参考图锁定外形：${names.map((name) => `@${name}`).join('、')}。不要换脸、换服装、换场景陈设或产品包装。`
+    : '按画面描述绘制，不要发明无关角色。'
+  const style = visualStyleLabel(opts.styleValue)
+  const atmosphere = String(opts.atmosphere || '').trim()
+  return [
+    `单帧分镜静帧，16:9 横图${style ? `，${style}` : ''}。`,
+    lock,
+    beat,
+    atmosphere ? `氛围光线：${atmosphere}。` : '',
+    '不要时间轴、不要配音旁白、不要字幕文字。',
+  ].filter(Boolean).join('')
 }
 
 export function resolveVideoGenerationDuration(opts: {

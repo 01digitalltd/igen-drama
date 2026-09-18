@@ -7,6 +7,7 @@ import { and, eq } from '../db/query.js'
 import { getActiveConfig, getActiveConfigId, getConfigById, isOfficialProvider } from './ai.js'
 import { now } from '../utils/response.js'
 import { downloadFile, generateImageThumb, readImageAsCompressedDataUrl, saveBase64Image, saveBase64Video } from '../utils/storage.js'
+import { toLocalStaticPath } from '../utils/media-path.js'
 import { isS3Enabled, toVendorFetchableUrl } from '../utils/s3-media.js'
 import { extractVideoPoster } from '../utils/video-poster.js'
 import { getImageAdapter, getVideoAdapter } from './adapters/registry'
@@ -1045,8 +1046,8 @@ async function normalizeReferenceImages(refs: string[] | null | undefined): Prom
 
   const normalized = await Promise.all(deduped.map(async (value) => {
     if (value.startsWith('data:image/')) return value
-    if (value.startsWith('static/') || value.startsWith('/static/')) {
-      const localPath = value.startsWith('/static/') ? value.slice(1) : value
+    const localPath = toLocalStaticPath(value)
+    if (localPath) {
       try {
         return await readImageAsCompressedDataUrl(localPath, {
           maxWidth: 768,
@@ -1068,8 +1069,8 @@ async function normalizeVideoReferenceUrl(value: string | null | undefined): Pro
   const raw = String(value || '').trim()
   if (!raw) return null
   if (raw.startsWith('data:image/')) return raw
-  if (raw.startsWith('static/') || raw.startsWith('/static/')) {
-    const localPath = raw.startsWith('/static/') ? raw.slice(1) : raw
+  const localPath = toLocalStaticPath(raw)
+  if (localPath) {
     try {
       return await readImageAsCompressedDataUrl(localPath, {
         maxWidth: 768,

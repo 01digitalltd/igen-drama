@@ -170,6 +170,8 @@ test('OpenAI image adapter uses GPT Image request shape and keeps DALL-E respons
   assert.match(adapter, /'1024x1024'/)
   assert.match(adapter, /'auto'/)
   assert.match(adapter, /if \(!isGptImage\)[\s\S]*response_format = 'url'/)
+  assert.match(adapter, /\/tasks\/\$\{taskId\}/)
+  assert.match(adapter, /\/images\/task\/\$\{taskId\}/)
 })
 
 test('new image and video models use their current API shapes', () => {
@@ -212,4 +214,5 @@ test('new image and video models use their current API shapes', () => {
   assert.match(configSeed, /ensureMinimaxVideoConfig/)
   assert.match(configSeed, /MINIMAX_VIDEO_API_KEY/)
   assert.match(configSeed, /syncActiveConfigsFromEnv/)
+  assert.match(configSeed, /switchActiveProviderFromEnv/)
 })

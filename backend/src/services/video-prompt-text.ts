@@ -74,6 +74,23 @@ export function videoPromptFromPayload(payload: unknown): string {
   return ''
 }
 
+export function imagePromptFromPayload(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return ''
+  const record = payload as Record<string, unknown>
+  for (const key of ['image_prompt', 'imagePrompt']) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+export function looksLikeStillPrompt(text: string) {
+  const raw = String(text || '').trim()
+  if (raw.length < 12) return false
+  if (looksLikeVideoPrompt(raw)) return false
+  return true
+}
+
 export function summarizeGenerateResult(result: unknown): Record<string, unknown> {
   if (!result || typeof result !== 'object') return { empty: true }
   const row = result as Record<string, unknown>
