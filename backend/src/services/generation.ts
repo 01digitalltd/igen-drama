@@ -511,13 +511,15 @@ async function processTask(id: number, config: AIConfig) {
     if (await isCancelled(id)) return
 
     const maxGenerateAttempts = type === 'image' ? 3 : 1
+    // Image retries must fail fast; a 10-minute hang made the wizard look frozen.
+    const generateFetchTimeoutMs = type === 'image' ? 45_000 : 600_000
     let result: any = null
     for (let attempt = 1; attempt <= maxGenerateAttempts; attempt++) {
       const resp = await fetch(url, {
         method,
         headers,
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(600_000),
+        signal: AbortSignal.timeout(generateFetchTimeoutMs),
       })
       const rawText = await resp.text()
       if (!resp.ok) {

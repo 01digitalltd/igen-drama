@@ -68,6 +68,8 @@ test('video poll fails fast on non-retryable HTTP errors instead of exhausting a
   assert.match(generation, /parseProviderErrorText/)
   assert.match(generation, /isRetryableProviderStatus/)
   assert.match(generation, /generate-retry/)
+  assert.match(generation, /const maxGenerateAttempts = type === 'image' \? 3 : 1/)
+  assert.match(generation, /type === 'image' \? 45_000 : 600_000/)
   assert.doesNotMatch(generation, /if \(!resp\.ok\) continue/)
 })
 
