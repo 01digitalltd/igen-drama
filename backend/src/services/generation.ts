@@ -15,7 +15,7 @@ import type { AIConfig } from './adapters/types'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn, redactUrl } from '../utils/task-logger.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
-import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective } from './style-preset.js'
+import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, appendAssetRestyleDirective } from './style-preset.js'
 import { appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
 import { assertSeedanceAllowedForStyle, expectedVideoProvider, isRealisticDramaStyle, MINIMAX_H3_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
@@ -26,6 +26,8 @@ import {
   overlayOrangeGridOnRef,
 } from './character-grid.js'
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
+import { appendBrandLogoDirective, brandLogoPropIfNeeded } from './brand-logo.js'
+import { isBrandLogoProp } from '../utils/project-category.js'
 import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
 import { pickLatestActiveTask } from '../utils/generation-task-status.js'
 import {
@@ -97,7 +99,41 @@ interface GenerateVideoParams {
   configId?: number
 }
 
+async function loadAssetStillUrl(kind: 'character' | 'scene' | 'prop', id: number) {
+  if (kind === 'character') {
+    const [row] = await db.select().from(schema.characters).where(eq(schema.characters.id, id))
+    return String(row?.imageUrl || row?.localPath || '').trim()
+  }
+  if (kind === 'scene') {
+    const [row] = await db.select().from(schema.scenes).where(eq(schema.scenes.id, id))
+    return String(row?.imageUrl || row?.localPath || '').trim()
+  }
+  const [row] = await db.select().from(schema.props).where(eq(schema.props.id, id))
+  return String(row?.imageUrl || row?.localPath || '').trim()
+}
+
+async function attachAssetStillForRestyle(params: GenerateImageParams): Promise<GenerateImageParams> {
+  const kind = params.characterId ? 'character' as const : params.sceneId ? 'scene' as const : params.propId ? 'prop' as const : null
+  const id = Number(params.characterId || params.sceneId || params.propId)
+  if (!kind || !Number.isInteger(id) || id <= 0) return params
+  if (kind === 'prop') {
+    const [row] = await db.select().from(schema.props).where(eq(schema.props.id, id))
+    if (isBrandLogoProp(row)) return params
+  }
+  const still = await loadAssetStillUrl(kind, id)
+  if (!still) return params
+  const refs = Array.isArray(params.referenceImages) ? [...params.referenceImages] : []
+  if (!refs.includes(still)) refs.unshift(still)
+  const visual = await loadDramaVisualStyle(params.dramaId)
+  return {
+    ...params,
+    referenceImages: refs,
+    prompt: appendAssetRestyleDirective(params.prompt, kind, visual.value),
+  }
+}
+
 export async function generateImage(params: GenerateImageParams): Promise<number> {
+  params = await attachAssetStillForRestyle(params)
   // 指定配置（集锁定）可能已停用/删除/厂商收敛，失效时回退到当前启用配置，避免生成被旧引用卡死
   let config = params.configId ? await getConfigById(params.configId) : null
   let configId = params.configId ?? null
@@ -482,7 +518,10 @@ async function processTask(id: number, config: AIConfig) {
       const stillsForLock = continuity
         ? [...boundStills.slice(0, assetBudget), continuity]
         : boundStills.slice(0, assetBudget)
-      const labeledRefs = await labeledStoryboardReferenceImages(stillsForLock, clientRefs)
+      const assetKind = record.characterId ? 'character' as const : record.sceneId ? 'scene' as const : record.propId ? 'prop' as const : null
+      const labeledRefs = assetKind
+        ? await labeledAssetReferenceImages(clientRefs, assetKind)
+        : await labeledStoryboardReferenceImages(stillsForLock, clientRefs)
       logTaskProgress(label, 'reference-images', {
         id,
         bound: boundStills.length,
@@ -537,6 +576,12 @@ async function processTask(id: number, config: AIConfig) {
       }
       const visual = await loadDramaVisualStyle(await resolveVideoDramaId(record))
       prompt = appendVisualStyleDirective(prompt, visual.value, visual.prompt)
+      if (record.storyboardId) {
+        const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
+        const dramaId = await resolveVideoDramaId(record)
+        const logo = dramaId && sb ? await brandLogoPropIfNeeded(dramaId, sb) : null
+        prompt = appendBrandLogoDirective(prompt, Boolean(logo))
+      }
       const videoPrompt = (() => {
         const composed = composeVideoPromptAfterCharacterGrid(prompt, overlaidCount)
         return isOmniVideoConfig(config.provider, record.model)
@@ -1133,6 +1178,25 @@ async function normalizeReferenceImages(refs: string[] | null | undefined): Prom
   return normalized.filter((item): item is string => !!item).slice(0, 6)
 }
 
+async function labeledAssetReferenceImages(
+  clientRefs: string[],
+  kind: 'character' | 'scene' | 'prop',
+) {
+  const kindLabel = kind === 'character' ? '角色' : kind === 'scene' ? '场景' : '道具'
+  const out: { url: string; caption: string }[] = []
+  const seen = new Set<string>()
+  for (const extra of clientRefs) {
+    const [url] = await normalizeReferenceImages([String(extra || '')])
+    if (!url || seen.has(url) || out.length >= 6) continue
+    seen.add(url)
+    out.push({
+      url,
+      caption: `${geminiImageOrdinal(out.length)}是用户提供的${kindLabel}原图。先分析外形，再转成项目画风，禁止原样贴图。`,
+    })
+  }
+  return out
+}
+
 async function labeledStoryboardReferenceImages(
   boundStills: ShotImageRef[],
   clientRefs: string[],
@@ -1222,6 +1286,12 @@ async function storyboardBoundStills(storyboardId: unknown) {
     const [prop] = await db.select().from(schema.props).where(eq(schema.props.id, link.propId))
     if (!prop || prop.deletedAt) continue
     props.push(prop)
+  }
+  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId))
+  const dramaId = Number(ep?.dramaId) || 0
+  const logo = dramaId ? await brandLogoPropIfNeeded(dramaId, sb) : null
+  if (logo && !props.some((item) => Number((item as { id?: number }).id) === logo.id)) {
+    props.push(logo)
   }
   return buildShotImageRefs({ scene, characters, props })
 }

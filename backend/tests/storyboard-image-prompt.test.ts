@@ -24,7 +24,7 @@ test('composeStoryboardImagePrompt locks named asset refs and refuses a timeline
   })
   assert.match(prompt, /单帧分镜静帧/)
   assert.match(prompt, /同一部短片/)
-  assert.match(prompt, /3D 漫剧/)
+  assert.match(prompt, /3D Chibi/)
   assert.match(prompt, /第一张图是场景空镜（辦公室）/)
   assert.match(prompt, /第二张图是角色设定（小華）/)
   assert.match(prompt, /小華把手放在產品包裝上/)

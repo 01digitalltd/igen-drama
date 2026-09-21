@@ -13,7 +13,7 @@ import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
 import { logTaskProgress, logTaskSuccess, logTaskWarn } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
 import { buildShotImageRefs } from '../../services/storyboard-prompt.js'
-import { dramaAdFields, loadDramaAdContext } from '../../services/brand-logo.js'
+import { applyBrandLogoPlacement, dramaAdFields, loadDramaAdContext, logoPlacementFromMetadata, logoPlacementInstruction } from '../../services/brand-logo.js'
 
 async function syncStoryboardCharacters(storyboardId: number, characterIds: number[]) {
   await db.delete(schema.storyboardCharacters)
@@ -219,8 +219,12 @@ const readStoryboardContext = createTool({
     const savedTotal = savedLive.reduce((sum, sb) => sum + (sb.duration || 0), 0)
     const maxShots = clip?.videoGeneration?.estimated_shot_count?.max || null
     const targetSeconds = clip?.videoGeneration?.target_duration_seconds || null
+    const ad = await loadDramaAdContext(dramaId)
+    const [drama] = await db.select().from(schema.dramas).where(eq(schema.dramas.id, dramaId))
     const payload = {
-      ...dramaAdFields(await loadDramaAdContext(dramaId)),
+      ...dramaAdFields(ad),
+      logo_placement: logoPlacementFromMetadata(drama?.metadata),
+      logo_placement_instruction: logoPlacementInstruction(drama?.metadata),
       episode: {
         id: ep.id,
         title: ep.title,
@@ -444,6 +448,8 @@ const saveStoryboards = createTool({
     await db.update(schema.episodes)
       .set({ duration: Math.ceil(totalDuration / 60), updatedAt: ts })
       .where(eq(schema.episodes.id, episodeId))
+
+    await applyBrandLogoPlacement(dramaId, episodeId)
 
     logTaskSuccess('StoryboardTool', 'save-complete', {
       episodeId,

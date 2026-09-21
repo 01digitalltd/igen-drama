@@ -10,6 +10,29 @@ import {
   type ProjectCategory,
 } from '../utils/project-category.js'
 import { adContextFields, taxonomyFromMetadata, type AdTaxonomy } from '../utils/ad-taxonomy.js'
+import {
+  appendBrandLogoDirective,
+  logoPlacementFromMetadata,
+  logoPlacementInstruction,
+  mergeLogoPlacementMetadata,
+  normalizeLogoPlacement,
+  shotNeedsBrandLogo,
+  LOGO_PLACEMENT_ALL,
+  LOGO_PLACEMENT_END,
+  type LogoPlacement,
+} from './brand-logo-placement.js'
+
+export {
+  appendBrandLogoDirective,
+  logoPlacementFromMetadata,
+  logoPlacementInstruction,
+  mergeLogoPlacementMetadata,
+  normalizeLogoPlacement,
+  shotNeedsBrandLogo,
+  LOGO_PLACEMENT_ALL,
+  LOGO_PLACEMENT_END,
+}
+export type { LogoPlacement }
 
 export type DramaAdContext = {
   genre: ProjectCategory
@@ -73,4 +96,53 @@ export async function ensureBrandLogoProp(dramaId: number, episodeId?: number | 
   }
   if (episodeId && logo) await linkPropToEpisode(episodeId, logo.id)
   return logo
+}
+
+export async function brandLogoPropIfNeeded(dramaId: number, shot: {
+  episodeId: number
+  storyboardNumber?: number | null
+}) {
+  const logo = await findBrandLogoProp(dramaId)
+  const url = String(logo?.imageUrl || logo?.localPath || '').trim()
+  if (!logo || !url) return null
+  const [drama] = await db.select().from(schema.dramas).where(eq(schema.dramas.id, dramaId))
+  const rows = (await db.select().from(schema.storyboards)
+    .where(eq(schema.storyboards.episodeId, shot.episodeId)))
+    .filter((row) => !row.deletedAt)
+  const maxNo = Math.max(0, ...rows.map((row) => Number(row.storyboardNumber) || 0))
+  if (!shotNeedsBrandLogo(logoPlacementFromMetadata(drama?.metadata), shot.storyboardNumber, maxNo)) {
+    return null
+  }
+  return logo
+}
+
+export async function applyBrandLogoPlacement(dramaId: number, episodeId?: number) {
+  const logo = await findBrandLogoProp(dramaId)
+  if (!logo) return
+  const [drama] = await db.select().from(schema.dramas).where(eq(schema.dramas.id, dramaId))
+  const placement = logoPlacementFromMetadata(drama?.metadata)
+  const episodes = episodeId
+    ? [{ id: episodeId, deletedAt: null as string | null }]
+    : await db.select().from(schema.episodes).where(eq(schema.episodes.dramaId, dramaId))
+  for (const episode of episodes) {
+    if (episode.deletedAt) continue
+    const rows = (await db.select().from(schema.storyboards)
+      .where(eq(schema.storyboards.episodeId, episode.id)))
+      .filter((row) => !row.deletedAt)
+    const maxNo = Math.max(0, ...rows.map((row) => Number(row.storyboardNumber) || 0))
+    for (const row of rows) {
+      const want = shotNeedsBrandLogo(placement, row.storyboardNumber, maxNo)
+      const links = await db.select().from(schema.storyboardProps)
+        .where(eq(schema.storyboardProps.storyboardId, row.id))
+      const has = links.some((link) => Number(link.propId) === logo.id)
+      if (want && !has) {
+        await db.insert(schema.storyboardProps).values({ storyboardId: row.id, propId: logo.id })
+      } else if (!want && has) {
+        await db.delete(schema.storyboardProps).where(and(
+          eq(schema.storyboardProps.storyboardId, row.id),
+          eq(schema.storyboardProps.propId, logo.id),
+        ))
+      }
+    }
+  }
 }

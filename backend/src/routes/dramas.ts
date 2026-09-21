@@ -9,7 +9,7 @@ import { defaultDialogueLanguageFromLocale, normalizeDialogueLanguage } from '..
 import { DEFAULT_VO_VOICE, normalizeVoVoice } from '../services/vo-voice.js'
 import { defaultAspectRatioForCategory, normalizeProjectCategory, isAdPromoCategory } from '../utils/project-category.js'
 import { mergeAdTaxonomyMetadata, normalizeAdTaxonomy, adContextFields, taxonomyFromMetadata } from '../utils/ad-taxonomy.js'
-import { ensureBrandLogoProp } from '../services/brand-logo.js'
+import { ensureBrandLogoProp, applyBrandLogoPlacement, logoPlacementFromMetadata, mergeLogoPlacementMetadata } from '../services/brand-logo.js'
 import type { DramaRow } from '../db/schema.js'
 
 const app = new Hono()
@@ -31,6 +31,7 @@ function enrichDrama(drama: DramaRow, extra: Record<string, unknown> = {}) {
     ...toPublicDrama(drama),
     tags: drama.tags ? JSON.parse(drama.tags) : [],
     ...adContextFields(spec, genre),
+    logo_placement: logoPlacementFromMetadata(drama.metadata),
     ...extra,
   }
 }
@@ -84,8 +85,8 @@ app.post('/', async (c) => {
   const ts = now()
   const genre = normalizeProjectCategory(body.genre)
   const metadata = isAdPromoCategory(genre)
-    ? mergeAdTaxonomyMetadata(body.metadata, normalizeAdTaxonomy(body))
-    : serializeMetadata(body.metadata)
+    ? mergeLogoPlacementMetadata(mergeAdTaxonomyMetadata(body.metadata, normalizeAdTaxonomy(body)), body.logo_placement)
+    : mergeLogoPlacementMetadata(serializeMetadata(body.metadata), body.logo_placement)
   const res = await db.insert(schema.dramas).values({
     title: body.title,
     description: body.description,
@@ -178,7 +179,8 @@ app.put('/:id', async (c) => {
     body.ad_purpose !== undefined ||
     body.ad_form !== undefined ||
     body.ad_angle !== undefined ||
-    body.genre !== undefined
+    body.genre !== undefined ||
+    body.logo_placement !== undefined
   ) {
     if (isAdPromoCategory(nextGenre)) {
       const current = taxonomyFromMetadata(updates.metadata ?? drama.metadata)
@@ -191,10 +193,16 @@ app.put('/:id', async (c) => {
     } else if (body.metadata !== undefined) {
       updates.metadata = serializeMetadata(body.metadata)
     }
+    if (body.logo_placement !== undefined) {
+      updates.metadata = mergeLogoPlacementMetadata(updates.metadata ?? drama.metadata, body.logo_placement)
+    }
   }
   await db.update(schema.dramas).set(updates).where(eq(schema.dramas.id, id))
   if (updates.genre && isAdPromoCategory(updates.genre)) {
     await ensureBrandLogoProp(id)
+  }
+  if (body.logo_placement !== undefined) {
+    await applyBrandLogoPlacement(id)
   }
   return success(c)
 })

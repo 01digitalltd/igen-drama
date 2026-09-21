@@ -8,7 +8,7 @@
  */
 
 const STYLE_LABELS: Record<string, string> = {
-  '3d': '3D 漫剧',
+  '3d': '3D Chibi',
   anime: '日漫赛璐璐',
   ghibli: '吉卜力手绘',
   watercolor: '水彩绘本',
@@ -18,7 +18,7 @@ const STYLE_LABELS: Record<string, string> = {
 
 /** Video-only guards. Avoid body/skin/human wording — MiniMax 1027 flags those then blocks the clip. */
 const VIDEO_STYLE_GUARDS: Record<string, string> = {
-  '3d': '3D CG animated short-drama, Unreal Engine game-cinematic render, stylized 3D CGI characters. Reference stills supply product silhouette, label layout and official logo only — restyle rooms and packaging as matching 3D CGI; keep the logo mark readable. Not live-action camera footage, not a photoreal product commercial.',
+  '3d': '3D chibi CG animated short, Unreal Engine game-cinematic render, super-deformed cute 3D CGI characters with oversized heads and small bodies. Reference stills supply product silhouette, label layout and official logo only — restyle rooms, people and packaging as matching 3D chibi CGI; keep the logo mark readable. Not live-action camera footage, not photoreal, not semi-realistic adult proportions.',
   anime: '2D Japanese anime, cel shading, clean line art. Restyle reference stills into this look. Not live-action camera footage.',
   ghibli: 'Hand-drawn Studio Ghibli animation, painted backgrounds. Restyle reference stills into this look. Not live-action camera footage.',
   watercolor: 'Watercolor illustrated animation, paper texture. Restyle reference stills into this look. Not live-action camera footage.',
@@ -28,7 +28,7 @@ const VIDEO_STYLE_GUARDS: Record<string, string> = {
 
 function styleLockTrailer(key: string) {
   if (key === '3d') {
-    return '[STYLE_LOCK] Restyle every reference still into 3D CGI. Keep logo artwork and product silhouette. Not live-action camera footage.'
+    return '[STYLE_LOCK] Restyle every reference still into 3D chibi CGI (big head, small body). Keep logo artwork and product silhouette. Not live-action camera footage.'
   }
   return '[STYLE_LOCK] Restyle every reference still into the VISUAL_STYLE look. Keep logo artwork and product silhouette. Not live-action camera footage.'
 }
@@ -59,9 +59,33 @@ export function visualStyleInstruction(styleValue?: string | null) {
     return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 与 image_prompt 全程真人实拍质感，不要改成动画或 3D。`
   }
   if (key === '3d') {
-    return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 与 image_prompt 全程是 3D CG 动画（游戏引擎渲染、风格化三维角色）。@场景/@角色/@道具 只提供外形、包装与 Logo，必须写成「转成 3D CG」，禁止按实拍照片还原办公室或桌面广告。禁止写成真人实拍。每一段画面都保持这个画风。`
+    return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 与 image_prompt 全程是 3D Q版／Chibi CG（头大身小、圆润可爱、游戏引擎渲染）。@场景/@角色/@道具 只提供外形、包装与 Logo，必须写成「转成 3D Chibi CG」，禁止按实拍照片还原办公室或桌面广告。禁止写成真人实拍或半写实成人比例。每一段画面都保持这个画风。`
   }
   return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 与 image_prompt 全程保持该画风。参考图只锁外形，必须转成该画风，禁止按实拍照片还原成真人实拍。`
+}
+
+export function assetRestyleKindLabel(kind: 'character' | 'scene' | 'prop') {
+  if (kind === 'character') return '角色'
+  if (kind === 'scene') return '场景'
+  return '道具'
+}
+
+export function assetRestyleDirective(kind: 'character' | 'scene' | 'prop', styleValue?: string | null) {
+  const label = visualStyleLabel(styleValue) || '项目视觉风格'
+  const kindLabel = assetRestyleKindLabel(kind)
+  return `【转风格｜必须遵守】第一张图是用户提供的${kindLabel}原图。先分析外形、服装、构图与关键细节，再整张重绘成「${label}」。保留可辨识特征，禁止原样贴照片，禁止改成另一种画风。`
+}
+
+export function appendAssetRestyleDirective(
+  prompt: string,
+  kind: 'character' | 'scene' | 'prop',
+  styleValue?: string | null,
+) {
+  const body = String(prompt || '').trim()
+  const line = assetRestyleDirective(kind, styleValue)
+  if (!line) return body
+  if (body.includes('【转风格')) return body
+  return [line, body].filter(Boolean).join('\n')
 }
 
 export function appendVisualStyleDirective(

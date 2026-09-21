@@ -26,7 +26,7 @@ import {
   imagePromptFromPayload,
   videoPromptFromPayload,
 } from './video-prompt-text.js'
-import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
+import { agentContextFromAd, brandLogoPropIfNeeded, loadDramaAdContext, logoPlacementFromMetadata, logoPlacementInstruction } from './brand-logo.js'
 import { isAdPromoCategory } from '../utils/project-category.js'
 import { z } from 'zod'
 
@@ -53,11 +53,13 @@ image_prompt 是给 Gemini 图片模型的单帧分镜静帧，只画第一个�
 
 async function loadShotPromptContext(storyboard: {
   id: number
+  episodeId: number
+  storyboardNumber?: number | null
   description?: string | null
   atmosphere?: string | null
   duration?: number | null
   sceneId?: number | null
-}) {
+}, dramaId: number) {
   const charLinks = await db.select().from(schema.storyboardCharacters)
     .where(eq(schema.storyboardCharacters.storyboardId, storyboard.id))
   const propLinks = await db.select().from(schema.storyboardProps)
@@ -73,6 +75,8 @@ async function loadShotPromptContext(storyboard: {
   const scene = storyboard.sceneId
     ? (await db.select().from(schema.scenes).where(eq(schema.scenes.id, storyboard.sceneId)))[0] || null
     : null
+  const logo = await brandLogoPropIfNeeded(dramaId, storyboard)
+  if (logo && !props.some((row) => row.id === logo.id)) props.push(logo)
   return {
     description: String(storyboard.description || '').trim(),
     atmosphere: String(storyboard.atmosphere || '').trim(),
@@ -139,8 +143,12 @@ export async function startVideoPromptBatch(
   const clip = await loadEpisodeClipPolicy(episodeId)
   const bounds = clip?.bounds
   const ad = await loadDramaAdContext(dramaId)
+  const [drama] = await db.select().from(schema.dramas).where(eq(schema.dramas.id, dramaId))
+  const logoHint = isAdPromoCategory(ad.genre)
+    ? logoPlacementInstruction(logoPlacementFromMetadata(drama?.metadata))
+    : ''
   const adHint = isAdPromoCategory(ad.genre)
-    ? '当前是广告项目。视频提示词仍按 video-prompt 技能写时间轴（0-3秒：或 [0-3s]），不要改写成脚本或分场；产品/品牌Logo 出镜用 @道具名。'
+    ? `当前是广告项目。视频提示词仍按 video-prompt 技能写时间轴（0-3秒：或 [0-3s]），不要改写成脚本或分场；产品/品牌Logo 出镜用 @道具名。\n${logoHint}`
     : ''
 
   const task: VideoPromptBatchStatus = {
@@ -162,7 +170,7 @@ export async function startVideoPromptBatch(
       task.current_storyboard_id = sb.id
       logTaskProgress('VideoPrompt', 'batch-shot', { episodeId, storyboardId: sb.id, index: task.completed + task.failed + 1, total: task.total })
       try {
-        const shot = await loadShotPromptContext(sb)
+        const shot = await loadShotPromptContext(sb, dramaId)
         if (!shot.description) throw new Error('分镜没有画面描述，无法生成视频提示词')
         let saved = false
         const omni = clip?.videoGeneration?.prompt_skill === 'omni'
