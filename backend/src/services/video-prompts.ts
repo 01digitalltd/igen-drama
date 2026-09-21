@@ -49,7 +49,7 @@ const VIDEO_PROMPT_SCHEMA = z.object({
 })
 const STRUCTURED_INSTRUCTIONS = `你是视频提示词与分镜静帧提示词工程师。只返回 JSON {"video_prompt":"...","image_prompt":"..."}。不要调用工具，不要输出 JSON 以外的说明。
 video_prompt 必须按时间轴分段：Seedance/其他用「0-3秒：」并 @角色名/@场景名/@道具名；Omni 用「[0-3s]」和 image_refs 里的 <IMAGE_REF_N>。最后一段结束秒数必须等于该分镜 duration。description 的每个【镜头N】映射为 1-2 个连续分段，不要创作新台词。
-image_prompt 是单帧分镜静帧，只画第一个【镜头N】，必须按参考图锁定绑定角色/场景/道具外形。禁止时间轴、禁止「0-3秒」、禁止旁白配音、禁止把 video_prompt 原样复制过来。`
+image_prompt 是单帧分镜静帧，只画第一个【镜头N】。有 image_refs 时必须写成「参考图N」锁定已上传的人物／场景／道具图像素（参考图1=<IMAGE_REF_0>），禁止只写 @角色名、禁止时间轴、禁止把 video_prompt 原样复制过来。`
 
 async function loadShotPromptContext(storyboard: {
   id: number
@@ -81,9 +81,11 @@ async function loadShotPromptContext(storyboard: {
     characterNames: characters.map(row => row.name).filter(Boolean),
     propNames: props.map(row => row.name).filter(Boolean),
     imageRefs: buildShotImageRefs({
-      scene: scene && !scene.deletedAt ? { location: scene.location, image_url: scene.imageUrl } : null,
-      characters: characters.map(row => ({ name: row.name, image_url: row.imageUrl })),
-      props: props.map(row => ({ name: row.name, image_url: row.imageUrl })),
+      scene: scene && !scene.deletedAt
+        ? { location: scene.location, image_url: scene.imageUrl, local_path: scene.localPath }
+        : null,
+      characters: characters.map(row => ({ name: row.name, image_url: row.imageUrl, local_path: row.localPath })),
+      props: props.map(row => ({ name: row.name, image_url: row.imageUrl, local_path: row.localPath })),
     }),
   }
 }
@@ -180,7 +182,7 @@ export async function startVideoPromptBatch(
             content: [
               withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})同时写视频提示词(video_prompt)和分镜静帧提示词(image_prompt)。视频模型:${videoLabel}。prompt_skill:${clip?.videoGeneration?.prompt_skill || 'seedance'}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。
 ${omni ? '当前是 Gemini Omni：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_REF_N> 标记参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。' : '当前是 Seedance/其他模型：时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'}
-image_prompt 遵守 Skill storyboard-image：只画 description 第一个【镜头N】的单帧，16:9；有参考图时必须锁定 @角色/@场景/@道具 外形，不要换脸换景换包装。不要时间轴，不要旁白配音。
+image_prompt 遵守 Skill storyboard-image：只画 description 第一个【镜头N】的单帧，16:9。有 image_refs 时必须写「参考图N」（参考图1=<IMAGE_REF_0>）锁定已上传的人物图／场景图／道具图像素，禁止只写 @角色名，禁止换脸换景换包装。不要时间轴，不要旁白配音。
 ${adHint}
 
 分镜画面描述：

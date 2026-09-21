@@ -28,6 +28,8 @@ test('video prompt batch service runs per-shot async agent loop', () => {
   assert.match(svc, /image_prompt/)
   assert.match(svc, /composeStoryboardImagePrompt/)
   assert.match(svc, /looksLikeStillPrompt/)
+  assert.match(svc, /参考图N/)
+  assert.match(svc, /禁止只写 @角色名/)
   assert.match(svc, /task\.failed > 0 && task\.completed === 0/)
   assert.match(svc, /视频提示词仍按 video-prompt/)
   // 进度跟踪与文本模型覆盖

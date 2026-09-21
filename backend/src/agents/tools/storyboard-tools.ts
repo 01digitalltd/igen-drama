@@ -152,7 +152,7 @@ const readStoryboardContext = createTool({
         description: c.description || '',
         appearance: c.appearance || '',
         styling: c.styling || '',
-        image_url: c.imageUrl || '',
+        image_url: c.imageUrl || c.localPath || '',
         reference_images: c.referenceImages || '',
       }))
 
@@ -165,7 +165,7 @@ const readStoryboardContext = createTool({
         time: s.time,
         prompt: s.prompt || '',
         lighting: s.lighting || '',
-        image_url: s.imageUrl || '',
+        image_url: s.imageUrl || s.localPath || '',
         storyboard_count: s.storyboardCount || 0,
       }))
 
@@ -177,7 +177,7 @@ const readStoryboardContext = createTool({
         name: p.name,
         type: p.type || '',
         description: p.description || '',
-        image_url: p.imageUrl || '',
+        image_url: p.imageUrl || p.localPath || '',
       }))
 
     const charsById = new Map(characters.map(c => [c.id, c]))

@@ -42,15 +42,49 @@ export type ShotImageRef = {
   tag: string
   kind: 'scene' | 'character' | 'prop'
   name: string
+  url: string
 }
 
 const OMNI_REF_LIMIT = 10
 
+function assetStillUrl(asset?: {
+  imageUrl?: string | null
+  image_url?: string | null
+  localPath?: string | null
+  local_path?: string | null
+} | null) {
+  return String(asset?.imageUrl || asset?.image_url || asset?.localPath || asset?.local_path || '').trim()
+}
+
+const REF_KIND_LABEL: Record<ShotImageRef['kind'], string> = {
+  scene: '场景空镜',
+  character: '角色设定',
+  prop: '道具单品',
+}
+
 /** Same order as generation: scene still, then character stills, then prop stills. */
 export function buildShotImageRefs(opts: {
-  scene?: { location?: string | null; imageUrl?: string | null; image_url?: string | null } | null
-  characters?: Array<{ name?: string | null; imageUrl?: string | null; image_url?: string | null }>
-  props?: Array<{ name?: string | null; imageUrl?: string | null; image_url?: string | null }>
+  scene?: {
+    location?: string | null
+    imageUrl?: string | null
+    image_url?: string | null
+    localPath?: string | null
+    local_path?: string | null
+  } | null
+  characters?: Array<{
+    name?: string | null
+    imageUrl?: string | null
+    image_url?: string | null
+    localPath?: string | null
+    local_path?: string | null
+  }>
+  props?: Array<{
+    name?: string | null
+    imageUrl?: string | null
+    image_url?: string | null
+    localPath?: string | null
+    local_path?: string | null
+  }>
 }): ShotImageRef[] {
   const ordered: ShotImageRef[] = []
   const seen = new Set<string>()
@@ -64,17 +98,43 @@ export function buildShotImageRefs(opts: {
       tag: `<IMAGE_REF_${index}>`,
       kind,
       name: String(name || '').trim(),
+      url: image,
     })
   }
   const scene = opts.scene
-  push('scene', scene?.location || '', scene?.imageUrl || scene?.image_url)
+  push('scene', scene?.location || '', assetStillUrl(scene))
   for (const character of opts.characters || []) {
-    push('character', character.name || '', character.imageUrl || character.image_url)
+    push('character', character.name || '', assetStillUrl(character))
   }
   for (const prop of opts.props || []) {
-    push('prop', prop.name || '', prop.imageUrl || prop.image_url)
+    push('prop', prop.name || '', assetStillUrl(prop))
   }
   return ordered
+}
+
+export function storyboardStillRefLine(ref: ShotImageRef) {
+  const n = ref.index + 1
+  const label = REF_KIND_LABEL[ref.kind]
+  const name = ref.name || label
+  if (ref.kind === 'character') {
+    return `参考图${n}（${label}：${name}）是已上传的人物图，必须用同一张脸、发型与服装，禁止换人换脸。`
+  }
+  if (ref.kind === 'scene') {
+    return `参考图${n}（${label}：${name}）是已上传的场景空镜，只取空间与陈设，把角色放进这个空间。`
+  }
+  return `参考图${n}（${label}：${name}）是已上传的道具图，保留包装、Logo 与比例。`
+}
+
+/** Prefix the still prompt so gpt-image / APIMart maps image_urls[n] to 参考图N. */
+export function lockStoryboardStillPrompt(prompt: string, refs: ShotImageRef[]) {
+  const body = String(prompt || '').trim()
+  if (!refs.length) return body
+  if (refs.every((ref) => body.includes(`参考图${ref.index + 1}`))) return body
+  return [
+    '图生图合成。输入图顺序与下列参考图编号一致，必须使用这些图像素，不要重新发明脸或产品外观。',
+    ...refs.map(storyboardStillRefLine),
+    body,
+  ].filter(Boolean).join('')
 }
 
 export function firstStoryboardBeat(description?: string | null): string {
@@ -94,9 +154,12 @@ export function composeStoryboardImagePrompt(opts: {
   styleValue?: string | null
 }): string {
   const beat = firstStoryboardBeat(opts.description)
-  const names = (opts.imageRefs || []).map((ref) => String(ref.name || '').trim()).filter(Boolean)
-  const lock = names.length
-    ? `严格按参考图锁定外形：${names.map((name) => `@${name}`).join('、')}。不要换脸、换服装、换场景陈设或产品包装。`
+  const refs = opts.imageRefs || []
+  const lock = refs.length
+    ? [
+        '图生图合成，输入图顺序与参考图编号一致。',
+        ...refs.map(storyboardStillRefLine),
+      ].join('')
     : '按画面描述绘制，不要发明无关角色。'
   const style = visualStyleLabel(opts.styleValue)
   const atmosphere = String(opts.atmosphere || '').trim()

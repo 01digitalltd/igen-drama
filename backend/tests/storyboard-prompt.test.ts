@@ -71,10 +71,19 @@ test('Omni image_refs follow scene then character then prop order', () => {
       props: [{ name: '信', image_url: 'static/letter.png' }],
     }),
     [
-      { index: 0, tag: '<IMAGE_REF_0>', kind: 'scene', name: '咖啡厅' },
-      { index: 1, tag: '<IMAGE_REF_1>', kind: 'character', name: '小明' },
-      { index: 2, tag: '<IMAGE_REF_2>', kind: 'prop', name: '信' },
+      { index: 0, tag: '<IMAGE_REF_0>', kind: 'scene', name: '咖啡厅', url: 'static/cafe.png' },
+      { index: 1, tag: '<IMAGE_REF_1>', kind: 'character', name: '小明', url: 'static/ming.png' },
+      { index: 2, tag: '<IMAGE_REF_2>', kind: 'prop', name: '信', url: 'static/letter.png' },
     ],
+  )
+})
+
+test('image_refs fall back to uploaded local_path when image_url is empty', () => {
+  assert.deepEqual(
+    buildShotImageRefs({
+      characters: [{ name: '小華', image_url: '', local_path: 'static/upload.png' }],
+    }),
+    [{ index: 0, tag: '<IMAGE_REF_0>', kind: 'character', name: '小華', url: 'static/upload.png' }],
   )
 })
 

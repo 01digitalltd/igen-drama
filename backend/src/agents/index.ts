@@ -140,7 +140,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 
 ## 分镜静帧提示词
 
-与视频提示词同一请求时遵守 Skill storyboard-image：只画第一个【镜头N】的单帧；用 image_refs 对应的 @角色/@场景/@道具 锁定参考图外形；不要时间轴、不要旁白配音、不要复制 video_prompt。
+与视频提示词同一请求时遵守 Skill storyboard-image：只画第一个【镜头N】的单帧；有 image_refs 时必须写「参考图N」（与输入图顺序一致）锁定已上传的人物／场景／道具图像素，不要只写 @角色名，不要时间轴、不要旁白配音、不要复制 video_prompt。
 
 通用规范：
 - 画面／运镜／氛围描述跟产品写作语言；「角色名说：「…」」与旁白跟项目对白语言（粤语／国语／普通话／英文），不要把整段提示词都改成对白语言

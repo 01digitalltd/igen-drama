@@ -25,7 +25,7 @@ import {
   isCharacterMediaRef,
   overlayOrangeGridOnRef,
 } from './character-grid.js'
-import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs } from './storyboard-prompt.js'
+import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt } from './storyboard-prompt.js'
 import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
 import { pickLatestActiveTask } from '../utils/generation-task-status.js'
 import {
@@ -436,9 +436,10 @@ async function processTask(id: number, config: AIConfig) {
     if (type === 'image') {
       const adapter = getImageAdapter(config.provider)
       const clientRefs = Array.isArray(params.referenceImages) ? params.referenceImages : []
-      const boundRefs = record.storyboardId
-        ? await storyboardBoundStillUrls(record.storyboardId)
+      const boundStills = record.storyboardId && !record.characterId && !record.sceneId && !record.propId
+        ? await storyboardBoundStills(record.storyboardId)
         : []
+      const boundRefs = boundStills.map((item) => item.url)
       const resolvedReferenceImages = await normalizeReferenceImages(
         mergeVideoReferenceUrls(boundRefs, clientRefs),
       )
@@ -450,7 +451,9 @@ async function processTask(id: number, config: AIConfig) {
       })
       const imagePrompt = record.characterId
         ? stripCharacterFaceGridPrompt(record.prompt || '')
-        : record.prompt
+        : boundStills.length
+          ? lockStoryboardStillPrompt(record.prompt || '', boundStills)
+          : record.prompt
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
@@ -1114,36 +1117,37 @@ async function resolveVideoDramaStyle(record: { dramaId?: unknown; storyboardId?
   return getDramaStyleValue(await resolveVideoDramaId(record))
 }
 
-async function storyboardBoundStillUrls(storyboardId: unknown): Promise<string[]> {
+async function storyboardBoundStills(storyboardId: unknown) {
   const id = Number(storyboardId)
   if (!Number.isInteger(id) || id <= 0) return []
   const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id))
   if (!sb) return []
-  const urls: string[] = []
-  const push = (value?: string | null) => {
-    const raw = String(value || '').trim()
-    if (!raw || urls.includes(raw) || urls.length >= 9) return
-    urls.push(raw)
-  }
+  let scene: { location?: string | null; imageUrl?: string | null; localPath?: string | null } | null = null
   if (sb.sceneId) {
-    const [scene] = await db.select().from(schema.scenes).where(eq(schema.scenes.id, sb.sceneId))
-    if (scene && !scene.deletedAt) push(scene.imageUrl || scene.localPath)
+    const [row] = await db.select().from(schema.scenes).where(eq(schema.scenes.id, sb.sceneId))
+    if (row && !row.deletedAt) scene = row
   }
+  const characters: Array<{ name?: string | null; imageUrl?: string | null; localPath?: string | null }> = []
   const charLinks = await db.select().from(schema.storyboardCharacters)
     .where(eq(schema.storyboardCharacters.storyboardId, id))
   for (const link of charLinks) {
     const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, link.characterId))
     if (!char || char.deletedAt) continue
-    push(char.imageUrl || char.localPath)
+    characters.push(char)
   }
+  const props: Array<{ name?: string | null; imageUrl?: string | null; localPath?: string | null }> = []
   const propLinks = await db.select().from(schema.storyboardProps)
     .where(eq(schema.storyboardProps.storyboardId, id))
   for (const link of propLinks) {
     const [prop] = await db.select().from(schema.props).where(eq(schema.props.id, link.propId))
     if (!prop || prop.deletedAt) continue
-    push(prop.imageUrl || prop.localPath)
+    props.push(prop)
   }
-  return urls
+  return buildShotImageRefs({ scene, characters, props })
+}
+
+async function storyboardBoundStillUrls(storyboardId: unknown): Promise<string[]> {
+  return (await storyboardBoundStills(storyboardId)).map((item) => item.url)
 }
 
 function mergeVideoReferenceUrls(bound: string[], extras: string[]) {
