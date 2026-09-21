@@ -112,27 +112,36 @@ export function buildShotImageRefs(opts: {
   return ordered
 }
 
-export function storyboardStillRefLine(ref: ShotImageRef) {
-  const n = ref.index + 1
-  const label = REF_KIND_LABEL[ref.kind]
-  const name = ref.name || label
-  if (ref.kind === 'character') {
-    return `参考图${n}（${label}：${name}）是已上传的人物图，必须用同一张脸、发型与服装，禁止换人换脸。`
-  }
-  if (ref.kind === 'scene') {
-    return `参考图${n}（${label}：${name}）是已上传的场景空镜，只取空间与陈设，把角色放进这个空间。`
-  }
-  return `参考图${n}（${label}：${name}）是已上传的道具图，保留包装、Logo 与比例。`
+export function geminiImageOrdinal(index: number) {
+  const digits = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+  return `第${digits[index] || String(index + 1)}张图`
 }
 
-/** Prefix the still prompt so gpt-image / APIMart maps image_urls[n] to 参考图N. */
+export function geminiStillCaption(ref: Pick<ShotImageRef, 'kind' | 'name'>, index: number) {
+  const ordinal = geminiImageOrdinal(index)
+  const label = REF_KIND_LABEL[ref.kind]
+  const name = String(ref.name || '').trim() || label
+  if (ref.kind === 'character') {
+    return `${ordinal}是角色设定（${name}）。必须用这张图里的同一张脸、发型与服装，禁止换人换脸。`
+  }
+  if (ref.kind === 'scene') {
+    return `${ordinal}是场景空镜（${name}）。只用这张图的空间与陈设，把人物放进这个空间。`
+  }
+  return `${ordinal}是道具（${name}）。保留这张图的包装、Logo 与比例。`
+}
+
+export function storyboardStillRefLine(ref: ShotImageRef) {
+  return geminiStillCaption(ref, ref.index)
+}
+
+/** Prefix so Gemini maps attached parts[0..] to 第一张图 / 第二张图. */
 export function lockStoryboardStillPrompt(prompt: string, refs: ShotImageRef[]) {
   const body = String(prompt || '').trim()
   if (!refs.length) return body
-  if (refs.every((ref) => body.includes(`参考图${ref.index + 1}`))) return body
+  if (refs.every((ref) => body.includes(geminiImageOrdinal(ref.index)))) return body
   return [
-    '图生图合成。输入图顺序与下列参考图编号一致，必须使用这些图像素，不要重新发明脸或产品外观。',
-    ...refs.map(storyboardStillRefLine),
+    '根据前面按顺序附上的参考图做图生图合成，必须使用这些图像素，不要重新发明脸或产品外观。',
+    ...refs.map((ref, index) => geminiStillCaption(ref, index)),
     body,
   ].filter(Boolean).join('')
 }
@@ -157,8 +166,8 @@ export function composeStoryboardImagePrompt(opts: {
   const refs = opts.imageRefs || []
   const lock = refs.length
     ? [
-        '图生图合成，输入图顺序与参考图编号一致。',
-        ...refs.map(storyboardStillRefLine),
+        '根据前面按顺序附上的参考图做图生图合成。',
+        ...refs.map((ref, index) => geminiStillCaption(ref, index)),
       ].join('')
     : '按画面描述绘制，不要发明无关角色。'
   const style = visualStyleLabel(opts.styleValue)

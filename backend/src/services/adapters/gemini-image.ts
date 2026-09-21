@@ -45,22 +45,16 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
     const model = modelName.startsWith('models/') ? modelName : `models/${modelName}`
 
     const parts: any[] = []
-    if (record.referenceImages) {
-      try {
-        const refs = JSON.parse(record.referenceImages)
-        for (const ref of refs) {
-          const parsed = parseDataUrl(String(ref || ''))
-          if (parsed) {
-            parts.push({
-              inline_data: {
-                mime_type: parsed.mimeType,
-                data: parsed.data,
-              },
-            })
-          }
-        }
-      } catch {}
-    }
+    const refs = parseGeminiImageRefs(record.referenceImages)
+    refs.forEach((ref, index) => {
+      parts.push({ text: ref.caption || geminiPartLabel(index) })
+      parts.push({
+        inline_data: {
+          mime_type: ref.mimeType,
+          data: ref.data,
+        },
+      })
+    })
     parts.push({ text: record.prompt || 'Generate an image' })
 
     const body = {
@@ -216,6 +210,41 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
   private gcd(a: number, b: number): number {
     return b === 0 ? a : this.gcd(b, a % b)
   }
+}
+
+function geminiPartLabel(index: number) {
+  const digits = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+  return `这是第${digits[index] || String(index + 1)}张图。`
+}
+
+function parseGeminiImageRefs(raw?: string | null) {
+  if (!raw) return [] as Array<{ mimeType: string; data: string; caption?: string }>
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+  const refs: Array<{ mimeType: string; data: string; caption?: string }> = []
+  for (const item of parsed) {
+    const dataUrl = typeof item === 'string'
+      ? item
+      : item && typeof item === 'object'
+        ? String((item as { url?: string; dataUrl?: string }).url || (item as { dataUrl?: string }).dataUrl || '')
+        : ''
+    const caption = item && typeof item === 'object'
+      ? String((item as { caption?: string }).caption || '').trim()
+      : ''
+    const parsedUrl = parseDataUrl(dataUrl)
+    if (!parsedUrl) continue
+    refs.push({
+      mimeType: parsedUrl.mimeType,
+      data: parsedUrl.data,
+      caption: caption || undefined,
+    })
+  }
+  return refs
 }
 
 function looksLikeImageBase64(data: string): boolean {

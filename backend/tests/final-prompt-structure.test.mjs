@@ -57,9 +57,10 @@ test('prompt agent instructions reference per-asset skills; skill files define t
   assert.doesNotMatch(finalPrompt, /6×6 网格/)
   assert.match(stillSkill, /单帧分镜静帧/)
   assert.match(stillSkill, /原样复制成 `image_prompt`/)
-  assert.match(stillSkill, /参考图N/)
-  assert.match(stillSkill, /图生图/)
-  assert.match(stillSkill, /不要只写 `@角色名`/)
+  assert.match(stillSkill, /第一张图/)
+  assert.match(stillSkill, /Gemini/)
+  assert.match(stillSkill, /@角色名/)
+  assert.doesNotMatch(stillSkill, /gpt-image/)
   assert.match(agents, /image_prompt/)
 })
 

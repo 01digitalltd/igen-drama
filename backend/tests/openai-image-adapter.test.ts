@@ -91,3 +91,15 @@ test('APIMart gpt-image-2 sends asset stills as image_urls', () => {
     'data:image/jpeg;base64,bbb',
   ])
 })
+
+test('OpenAI adapter reads labeled Gemini-style reference objects', () => {
+  const req = adapter.buildGenerateRequest(apimart, {
+    id: 1,
+    prompt: '单帧分镜静帧',
+    size: '1920x1080',
+    referenceImages: JSON.stringify([
+      { url: 'data:image/jpeg;base64,aaa', caption: '第一张图是角色设定（小華）。' },
+    ]),
+  })
+  assert.deepEqual(req.body.image_urls, ['data:image/jpeg;base64,aaa'])
+})

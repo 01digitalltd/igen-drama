@@ -24,10 +24,11 @@ test('composeStoryboardImagePrompt locks named asset refs and refuses a timeline
   })
   assert.match(prompt, /单帧分镜静帧/)
   assert.match(prompt, /3D 漫剧/)
-  assert.match(prompt, /参考图1（场景空镜：辦公室）/)
-  assert.match(prompt, /参考图2（角色设定：小華）/)
+  assert.match(prompt, /第一张图是场景空镜（辦公室）/)
+  assert.match(prompt, /第二张图是角色设定（小華）/)
   assert.match(prompt, /小華把手放在產品包裝上/)
   assert.doesNotMatch(prompt, /@辦公室/)
+  assert.doesNotMatch(prompt, /参考图1/)
   assert.equal(looksLikeStillPrompt(prompt), true)
 })
 
@@ -36,10 +37,10 @@ test('lockStoryboardStillPrompt numbers uploaded character stills for image-to-i
     { index: 0, tag: '<IMAGE_REF_0>', kind: 'character' as const, name: '小華', url: 'static/hua.png' },
   ]
   const locked = lockStoryboardStillPrompt('单帧分镜静帧，小華坐在办公桌前。', refs)
-  assert.match(locked, /参考图1（角色设定：小華）/)
-  assert.match(locked, /已上传的人物图/)
+  assert.match(locked, /第一张图是角色设定（小華）/)
+  assert.match(locked, /必须用这张图里的同一张脸/)
   assert.match(locked, /单帧分镜静帧，小華坐在办公桌前。/)
-  assert.equal(lockStoryboardStillPrompt('参考图1已经写过', refs), '参考图1已经写过')
+  assert.equal(lockStoryboardStillPrompt('第一张图已经写过', refs), '第一张图已经写过')
 })
 
 test('looksLikeStillPrompt rejects video timelines', () => {

@@ -25,7 +25,7 @@ import {
   isCharacterMediaRef,
   overlayOrangeGridOnRef,
 } from './character-grid.js'
-import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt } from './storyboard-prompt.js'
+import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, geminiStillCaption, geminiImageOrdinal, type ShotImageRef } from './storyboard-prompt.js'
 import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
 import { pickLatestActiveTask } from '../utils/generation-task-status.js'
 import {
@@ -439,15 +439,12 @@ async function processTask(id: number, config: AIConfig) {
       const boundStills = record.storyboardId && !record.characterId && !record.sceneId && !record.propId
         ? await storyboardBoundStills(record.storyboardId)
         : []
-      const boundRefs = boundStills.map((item) => item.url)
-      const resolvedReferenceImages = await normalizeReferenceImages(
-        mergeVideoReferenceUrls(boundRefs, clientRefs),
-      )
+      const labeledRefs = await labeledStoryboardReferenceImages(boundStills, clientRefs)
       logTaskProgress(label, 'reference-images', {
         id,
-        bound: boundRefs.length,
+        bound: boundStills.length,
         client: clientRefs.length,
-        resolved: resolvedReferenceImages.length,
+        resolved: labeledRefs.length,
       })
       const imagePrompt = record.characterId
         ? stripCharacterFaceGridPrompt(record.prompt || '')
@@ -460,7 +457,7 @@ async function processTask(id: number, config: AIConfig) {
         prompt: imagePrompt,
         size: params.size,
         frameType: params.frameType,
-        referenceImages: resolvedReferenceImages.length ? JSON.stringify(resolvedReferenceImages) : null,
+        referenceImages: labeledRefs.length ? JSON.stringify(labeledRefs) : null,
       }))
     } else {
       const adapter = getVideoAdapter(config.provider)
@@ -1079,6 +1076,27 @@ async function normalizeReferenceImages(refs: string[] | null | undefined): Prom
   }))
 
   return normalized.filter((item): item is string => !!item).slice(0, 6)
+}
+
+async function labeledStoryboardReferenceImages(
+  boundStills: ShotImageRef[],
+  clientRefs: string[],
+) {
+  const out: { url: string; caption: string }[] = []
+  const seen = new Set<string>()
+  const push = async (raw: string, caption: string) => {
+    const [url] = await normalizeReferenceImages([raw])
+    if (!url || seen.has(url) || out.length >= 6) return
+    seen.add(url)
+    out.push({ url, caption })
+  }
+  for (const [index, still] of boundStills.entries()) {
+    await push(still.url, geminiStillCaption(still, index))
+  }
+  for (const extra of clientRefs) {
+    await push(String(extra || ''), `${geminiImageOrdinal(out.length)}是补充参考图。`)
+  }
+  return out
 }
 
 async function normalizeVideoReferenceUrl(value: string | null | undefined): Promise<string | null> {

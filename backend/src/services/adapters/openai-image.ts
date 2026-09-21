@@ -52,7 +52,13 @@ export function parseOpenAiReferenceImages(raw?: string | null): string[] {
   try {
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 16)
+    return parsed.map((item) => {
+      if (typeof item === 'string') return item.trim()
+      if (item && typeof item === 'object') {
+        return String((item as { url?: string; dataUrl?: string }).url || (item as { dataUrl?: string }).dataUrl || '').trim()
+      }
+      return ''
+    }).filter(Boolean).slice(0, 16)
   } catch {
     return []
   }

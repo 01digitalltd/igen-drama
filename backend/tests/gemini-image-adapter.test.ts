@@ -45,6 +45,27 @@ test('APIMart wrapped generateContent image is treated as sync', () => {
   assert.equal(parsed.taskId, undefined)
 })
 
+test('Gemini still generation labels asset images before the prompt', () => {
+  const req = adapter.buildGenerateRequest(config, {
+    id: 1,
+    model: 'gemini-3.1-flash-image',
+    prompt: '单帧分镜静帧，小華坐在办公桌前。',
+    size: '1920x1080',
+    referenceImages: JSON.stringify([
+      { url: 'data:image/jpeg;base64,aaa', caption: '第一张图是角色设定（小華）。' },
+      { url: 'data:image/png;base64,bbb', caption: '第二张图是场景空镜（辦公室）。' },
+    ]),
+  })
+
+  assert.deepEqual(req.body.contents[0].parts, [
+    { text: '第一张图是角色设定（小華）。' },
+    { inline_data: { mime_type: 'image/jpeg', data: 'aaa' } },
+    { text: '第二张图是场景空镜（辦公室）。' },
+    { inline_data: { mime_type: 'image/png', data: 'bbb' } },
+    { text: '单帧分镜静帧，小華坐在办公桌前。' },
+  ])
+})
+
 test('official Gemini image generate uses generateContent, not interactions POST', () => {
   const req = adapter.buildGenerateRequest(config, {
     id: 1,
