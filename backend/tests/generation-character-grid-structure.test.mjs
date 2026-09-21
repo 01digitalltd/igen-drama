@@ -35,6 +35,8 @@ test('character image generation still strips leftover grid copy and never overl
   const image = generation.slice(imageStart, imageEnd)
 
   assert.match(image, /stripCharacterFaceGridPrompt/)
+  assert.match(image, /storyboardBoundStillUrls/)
+  assert.match(image, /mergeVideoReferenceUrls/)
   assert.doesNotMatch(image, /overlayOrangeGridOnRef/)
   assert.doesNotMatch(image, /composeVideoPromptAfterCharacterGrid/)
 })

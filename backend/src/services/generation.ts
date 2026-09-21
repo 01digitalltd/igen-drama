@@ -131,6 +131,7 @@ export async function generateImage(params: GenerateImageParams): Promise<number
     characterId: params.characterId,
     frameType: params.frameType,
     model: params.model || config.model,
+    referenceCount: Array.isArray(params.referenceImages) ? params.referenceImages.length : 0,
   })
   logTaskPayload('ImageTask', 'enqueue params', {
     id,
@@ -434,7 +435,19 @@ async function processTask(id: number, config: AIConfig) {
 
     if (type === 'image') {
       const adapter = getImageAdapter(config.provider)
-      const resolvedReferenceImages = await normalizeReferenceImages(params.referenceImages)
+      const clientRefs = Array.isArray(params.referenceImages) ? params.referenceImages : []
+      const boundRefs = record.storyboardId
+        ? await storyboardBoundStillUrls(record.storyboardId)
+        : []
+      const resolvedReferenceImages = await normalizeReferenceImages(
+        mergeVideoReferenceUrls(boundRefs, clientRefs),
+      )
+      logTaskProgress(label, 'reference-images', {
+        id,
+        bound: boundRefs.length,
+        client: clientRefs.length,
+        resolved: resolvedReferenceImages.length,
+      })
       const imagePrompt = record.characterId
         ? stripCharacterFaceGridPrompt(record.prompt || '')
         : record.prompt
