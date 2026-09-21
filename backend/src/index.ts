@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { serve } from '@hono/node-server'
-import { createNodeWebSocket } from '@hono/node-server/ws'
 import { serveStatic } from '@hono/node-server/serve-static'
+import { createNodeWebSocket } from './lib/node-ws.js'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import path from 'path'
