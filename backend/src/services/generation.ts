@@ -4,7 +4,7 @@
  */
 import { db, getInsertId, schema } from '../db/index.js'
 import { and, eq } from '../db/query.js'
-import { getActiveConfig, getActiveConfigId, getConfigById, isOfficialProvider } from './ai.js'
+import { getActiveConfig, getActiveConfigId, getConfigById, isOfficialProvider, type ActiveConfigOpts } from './ai.js'
 import { now } from '../utils/response.js'
 import { downloadFile, generateImageThumb, readImageAsCompressedDataUrl, saveBase64Image, saveBase64Video } from '../utils/storage.js'
 import { toLocalStaticPath } from '../utils/media-path.js'
@@ -18,7 +18,7 @@ import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective } from './style-preset.js'
 import { appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
-import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from './video-model-policy.js'
+import { assertSeedanceAllowedForStyle, expectedVideoProvider, isRealisticDramaStyle, MINIMAX_H3_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt } from './face-grid.js'
 import {
   composeVideoPromptAfterCharacterGrid,
@@ -152,6 +152,42 @@ async function findActiveVideoTaskForStoryboard(storyboardId: number) {
   return pickLatestActiveTask(rows as Array<{ id: number; status: string | null; createdAt: string | null }>)
 }
 
+async function resolveVideoServiceConfig(opts: {
+  configId?: number | null
+  model?: string | null
+  videoOpts?: ActiveConfigOpts
+}) {
+  let config = opts.configId ? await getConfigById(opts.configId) : null
+  if (!config && opts.configId) {
+    config = await getConfigById(opts.configId, { allowInactive: true })
+  }
+  let configId = config ? Number(opts.configId) || null : null
+  const modelHint = String(opts.model || config?.model || '').trim()
+  const want = expectedVideoProvider(modelHint)
+  if (config && want && !videoModelFitsProvider(config.provider, modelHint)) {
+    config = null
+    configId = null
+  }
+  const providerOpts = want ? { ...opts.videoOpts, providers: [want] } : opts.videoOpts
+  if (!config) {
+    config = await getActiveConfig('video', providerOpts)
+    configId = await getActiveConfigId('video', providerOpts)
+  }
+  if (!config && want !== 'minimax') {
+    config = await getActiveConfig('video', opts.videoOpts)
+    configId = await getActiveConfigId('video', opts.videoOpts)
+  }
+  if (!config) {
+    throw new Error(want === 'minimax' ? MINIMAX_H3_MISSING_MESSAGE : '未配置视频模型，请先到「设置」页添加并启用 AI 服务')
+  }
+  if (want === 'minimax' && String(config.provider || '').toLowerCase() !== 'minimax') {
+    throw new Error(MINIMAX_H3_MISSING_MESSAGE)
+  }
+  const requested = String(opts.model || '').trim()
+  const model = videoModelFitsProvider(config.provider, requested) ? (requested || config.model) : config.model
+  return { config, configId, model }
+}
+
 export async function generateVideo(params: GenerateVideoParams): Promise<number> {
   const storyboardId = Number(params.storyboardId)
   if (Number.isInteger(storyboardId) && storyboardId > 0) {
@@ -189,15 +225,15 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
   const style = visual.value
   const videoOpts = isRealisticDramaStyle(style) ? { excludeProviders: ['volcengine'] } : undefined
 
-  // 指定配置（集锁定）可能已停用/删除/厂商收敛，失效时回退到当前启用配置
-  let config = params.configId ? await getConfigById(params.configId) : null
-  let configId = params.configId ?? null
-  if (!config) {
-    config = await getActiveConfig('video', videoOpts)
-    configId = await getActiveConfigId('video', videoOpts)
-  }
-  if (!config) throw new Error('未配置视频模型，请先到「设置」页添加并启用 AI 服务')
-  assertSeedanceAllowedForStyle(style, config.provider, params.model || config.model)
+  const resolved = await resolveVideoServiceConfig({
+    configId: params.configId,
+    model: params.model,
+    videoOpts,
+  })
+  const config = resolved.config
+  const configId = resolved.configId
+  const model = resolved.model
+  assertSeedanceAllowedForStyle(style, config.provider, model)
 
   let prompt = (params.prompt || '').trim()
   let shotDuration: number | undefined
@@ -212,7 +248,7 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
     prompt,
     shotDuration,
     provider: config.provider,
-    model: params.model || config.model,
+    model,
   })
   const spoken = await getDramaDialogueLanguage(params.dramaId)
   const narratorVoice = await getDramaVoVoice(params.dramaId)
@@ -221,7 +257,7 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
   prompt = appendVoVoiceDirective(prompt, narratorVoice)
   prompt = appendVisualStyleDirective(prompt, visual.value, visual.prompt)
 
-  const bounds = clipDurationBounds(config.provider, params.model || config.model)
+  const bounds = clipDurationBounds(config.provider, model)
   assertClipSecondsFit(parseVideoPromptDurationSeconds(prompt), bounds, 'prompt')
   assertClipSecondsFit(shotDuration, bounds, 'shot')
 
@@ -229,7 +265,7 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
     storyboardId: params.storyboardId,
     dramaId: params.dramaId,
     prompt,
-    model: params.model || config.model,
+    model,
   }, {
     referenceMode: params.referenceMode || 'reference',
     imageUrl: params.imageUrl,
@@ -796,12 +832,19 @@ async function resolveConfigForTask(record: SysTaskRecord): Promise<AIConfig | n
   const params = parseTaskParams(record.params)
   const type = record.type as TaskType
   const configId = Number(params.configId || 0)
+  let config: AIConfig | null = null
   if (Number.isInteger(configId) && configId > 0) {
-    const byId = await getConfigById(configId, { allowInactive: true })
-    if (byId) return byId
+    config = await getConfigById(configId, { allowInactive: true })
   }
 
-  const provider = String(record.provider || '').trim().toLowerCase()
+  const model = String(record.model || '').trim()
+  const want = type === 'video' ? expectedVideoProvider(model) : null
+  if (want && (!config || !videoModelFitsProvider(config.provider, model))) {
+    config = await getActiveConfig(type, { providers: [want] })
+  }
+  if (config) return config
+
+  const provider = String(want || record.provider || '').trim().toLowerCase()
   if (provider) {
     const rows = (await db.select().from(schema.aiServiceConfigs)
       .where(eq(schema.aiServiceConfigs.serviceType, type))) as Array<{

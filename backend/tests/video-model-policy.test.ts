@@ -1,10 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  MINIMAX_H3_MISSING_MESSAGE,
   SEEDANCE_BLOCKED_FOR_REALISTIC_MESSAGE,
   assertSeedanceAllowedForStyle,
+  expectedVideoProvider,
   isRealisticDramaStyle,
   isSeedanceVideoConfig,
+  videoModelFitsProvider,
 } from '../src/services/video-model-policy.ts'
 
 test('realistic live-action style blocks Seedance video configs', () => {
@@ -21,4 +24,12 @@ test('realistic live-action style blocks Seedance video configs', () => {
     () => assertSeedanceAllowedForStyle('realistic', 'volcengine', 'doubao-seedance-2-0-fast-260128'),
     (err: Error) => err.message === SEEDANCE_BLOCKED_FOR_REALISTIC_MESSAGE,
   )
+})
+
+test('MiniMax-H3 must not ride a Gemini video config', () => {
+  assert.equal(expectedVideoProvider('MiniMax-H3'), 'minimax')
+  assert.equal(expectedVideoProvider('gemini-omni-1.1-flash'), 'gemini')
+  assert.equal(videoModelFitsProvider('gemini', 'MiniMax-H3'), false)
+  assert.equal(videoModelFitsProvider('minimax', 'MiniMax-H3'), true)
+  assert.equal(MINIMAX_H3_MISSING_MESSAGE.includes('MiniMax-H3'), true)
 })

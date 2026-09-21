@@ -28,6 +28,16 @@ test('video processTask overlays character stills only for realistic dramas', ()
   assert.match(generation, /overlayOrangeGridOnRef/)
 })
 
+test('video enqueue keeps MiniMax-H3 on the MiniMax adapter', () => {
+  const generation = read('src/services/generation.ts')
+  const uniqStart = generation.indexOf('async function generateVideoUniq')
+  const uniq = generation.slice(uniqStart, generation.indexOf('async function createTask', uniqStart))
+  assert.match(uniq, /resolveVideoServiceConfig/)
+  assert.match(generation, /expectedVideoProvider/)
+  assert.match(generation, /MINIMAX_H3_MISSING_MESSAGE/)
+  assert.match(generation, /providers: \[want\]/)
+})
+
 test('character image generation still strips leftover grid copy and never overlays', () => {
   const generation = read('src/services/generation.ts')
   const imageStart = generation.indexOf("if (type === 'image')")

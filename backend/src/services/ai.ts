@@ -64,10 +64,12 @@ const lastLoggedConfigByIdKey = new Map<number, string>()
 
 export type ActiveConfigOpts = {
   excludeProviders?: string[]
+  providers?: string[]
 }
 
 async function listActiveOfficialConfigs(serviceType: ServiceType, opts?: ActiveConfigOpts) {
   const exclude = new Set((opts?.excludeProviders || []).map((p) => p.toLowerCase()))
+  const allow = (opts?.providers || []).map((p) => p.toLowerCase()).filter(Boolean)
   return (await db.select().from(schema.aiServiceConfigs)
     .where(eq(schema.aiServiceConfigs.serviceType, serviceType))
   )
@@ -75,6 +77,7 @@ async function listActiveOfficialConfigs(serviceType: ServiceType, opts?: Active
       r.isActive
       && isOfficialProvider(serviceType, r.provider)
       && !exclude.has((r.provider || '').toLowerCase())
+      && (!allow.length || allow.includes((r.provider || '').toLowerCase()))
     ))
     .sort((a, b) => (b.priority || 0) - (a.priority || 0))
 }
