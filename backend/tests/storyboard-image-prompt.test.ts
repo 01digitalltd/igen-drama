@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { composeStoryboardImagePrompt, firstStoryboardBeat, lockStoryboardStillPrompt } from '../src/services/storyboard-prompt.ts'
+import { composeStoryboardImagePrompt, firstStoryboardBeat, lockStoryboardStillPrompt, pickPreviousStoryboardStill } from '../src/services/storyboard-prompt.ts'
 import { imagePromptFromPayload, looksLikeStillPrompt } from '../src/services/video-prompt-text.ts'
 
 test('firstStoryboardBeat uses the first sub-shot and drops narrator lines', () => {
@@ -23,6 +23,7 @@ test('composeStoryboardImagePrompt locks named asset refs and refuses a timeline
     ],
   })
   assert.match(prompt, /单帧分镜静帧/)
+  assert.match(prompt, /同一部短片/)
   assert.match(prompt, /3D 漫剧/)
   assert.match(prompt, /第一张图是场景空镜（辦公室）/)
   assert.match(prompt, /第二张图是角色设定（小華）/)
@@ -37,10 +38,37 @@ test('lockStoryboardStillPrompt numbers uploaded character stills for image-to-i
     { index: 0, tag: '<IMAGE_REF_0>', kind: 'character' as const, name: '小華', url: 'static/hua.png' },
   ]
   const locked = lockStoryboardStillPrompt('单帧分镜静帧，小華坐在办公桌前。', refs)
+  assert.match(locked, /同一部短片/)
   assert.match(locked, /第一张图是角色设定（小華）/)
   assert.match(locked, /必须用这张图里的同一张脸/)
   assert.match(locked, /单帧分镜静帧，小華坐在办公桌前。/)
-  assert.equal(lockStoryboardStillPrompt('第一张图已经写过', refs), '第一张图已经写过')
+  const alreadyNumbered = lockStoryboardStillPrompt('第一张图已经写过', refs)
+  assert.match(alreadyNumbered, /同一部短片/)
+  assert.match(alreadyNumbered, /第一张图已经写过/)
+})
+
+test('continuity still caption asks Gemini to stay in the same short film', () => {
+  const prompt = composeStoryboardImagePrompt({
+    description: '【镜头1】小華转身。',
+    imageRefs: [
+      { index: 0, tag: '<IMAGE_REF_0>', kind: 'character', name: '小華', url: 'static/hua.png' },
+      { index: 1, tag: '<IMAGE_REF_1>', kind: 'continuity', name: '分镜1', url: 'static/shot1.png' },
+    ],
+  })
+  assert.match(prompt, /同一部短片/)
+  assert.match(prompt, /第二张图是本片已生成的分镜静帧（分镜1）/)
+})
+
+test('pickPreviousStoryboardStill prefers the nearest earlier composed still', () => {
+  const current = { id: 3, storyboardNumber: 3, composedImage: null, firstFrameImage: null }
+  const pick = pickPreviousStoryboardStill(current, [
+    { id: 1, storyboardNumber: 1, composedImage: 'static/1.png', firstFrameImage: null },
+    { id: 2, storyboardNumber: 2, composedImage: 'static/2.png', firstFrameImage: null },
+    current,
+    { id: 4, storyboardNumber: 4, composedImage: 'static/4.png', firstFrameImage: null },
+  ])
+  assert.equal(pick?.id, 2)
+  assert.equal(pickPreviousStoryboardStill(current, [current]), null)
 })
 
 test('looksLikeStillPrompt rejects video timelines', () => {

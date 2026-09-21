@@ -25,7 +25,7 @@ import {
   isCharacterMediaRef,
   overlayOrangeGridOnRef,
 } from './character-grid.js'
-import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, geminiStillCaption, geminiImageOrdinal, type ShotImageRef } from './storyboard-prompt.js'
+import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
 import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
 import { pickLatestActiveTask } from '../utils/generation-task-status.js'
 import {
@@ -475,17 +475,29 @@ async function processTask(id: number, config: AIConfig) {
       const boundStills = record.storyboardId && !record.characterId && !record.sceneId && !record.propId
         ? await storyboardBoundStills(record.storyboardId)
         : []
-      const labeledRefs = await labeledStoryboardReferenceImages(boundStills, clientRefs)
+      const continuity = record.storyboardId && !record.characterId && !record.sceneId && !record.propId
+        ? await episodeContinuityStill(record.storyboardId, Math.min(boundStills.length, 5))
+        : null
+      const assetBudget = continuity ? 5 : 6
+      const stillsForLock = continuity
+        ? [...boundStills.slice(0, assetBudget), continuity]
+        : boundStills.slice(0, assetBudget)
+      const labeledRefs = await labeledStoryboardReferenceImages(stillsForLock, clientRefs)
       logTaskProgress(label, 'reference-images', {
         id,
         bound: boundStills.length,
+        continuity: continuity ? 1 : 0,
         client: clientRefs.length,
         resolved: labeledRefs.length,
       })
       const imagePrompt = record.characterId
         ? stripCharacterFaceGridPrompt(record.prompt || '')
-        : boundStills.length
-          ? lockStoryboardStillPrompt(record.prompt || '', boundStills)
+        : record.storyboardId && !record.sceneId && !record.propId
+          ? lockStoryboardStillPrompt(
+            record.prompt || '',
+            stillsForLock,
+            await resolveVideoDramaStyle(record),
+          )
           : record.prompt
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
@@ -1133,8 +1145,15 @@ async function labeledStoryboardReferenceImages(
     seen.add(url)
     out.push({ url, caption })
   }
-  for (const [index, still] of boundStills.entries()) {
+  const continuity = boundStills.filter((item) => item.kind === 'continuity')
+  const assets = boundStills.filter((item) => item.kind !== 'continuity')
+  const assetBudget = continuity.length ? 5 : 6
+  for (const [index, still] of assets.entries()) {
+    if (out.length >= assetBudget) break
     await push(still.url, geminiStillCaption(still, index))
+  }
+  for (const still of continuity) {
+    await push(still.url, geminiStillCaption(still, out.length))
   }
   for (const extra of clientRefs) {
     await push(String(extra || ''), `${geminiImageOrdinal(out.length)}是补充参考图。`)
@@ -1205,6 +1224,24 @@ async function storyboardBoundStills(storyboardId: unknown) {
     props.push(prop)
   }
   return buildShotImageRefs({ scene, characters, props })
+}
+
+async function episodeContinuityStill(storyboardId: number, startIndex = 0): Promise<ShotImageRef | null> {
+  const [current] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, storyboardId))
+  if (!current) return null
+  const rows = await db.select().from(schema.storyboards)
+    .where(eq(schema.storyboards.episodeId, current.episodeId))
+  const pick = pickPreviousStoryboardStill(current, rows)
+  const url = String(pick?.composedImage || pick?.firstFrameImage || '').trim()
+  if (!pick || !url) return null
+  const index = Math.max(0, startIndex)
+  return {
+    index,
+    tag: `<IMAGE_REF_${index}>`,
+    kind: 'continuity',
+    name: `分镜${pick.storyboardNumber || ''}`.trim(),
+    url,
+  }
 }
 
 async function storyboardBoundStillUrls(storyboardId: unknown): Promise<string[]> {

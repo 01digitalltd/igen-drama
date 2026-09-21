@@ -48,6 +48,7 @@ test('character image generation still strips leftover grid copy and never overl
   assert.match(image, /storyboardBoundStills/)
   assert.match(image, /lockStoryboardStillPrompt/)
   assert.match(image, /labeledStoryboardReferenceImages/)
+  assert.match(image, /episodeContinuityStill/)
   assert.doesNotMatch(image, /overlayOrangeGridOnRef/)
   assert.doesNotMatch(image, /composeVideoPromptAfterCharacterGrid/)
 })

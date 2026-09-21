@@ -40,7 +40,7 @@ export function rewriteSeedancePromptRefs(prompt: string) {
 export type ShotImageRef = {
   index: number
   tag: string
-  kind: 'scene' | 'character' | 'prop'
+  kind: 'scene' | 'character' | 'prop' | 'continuity'
   name: string
   url: string
 }
@@ -60,6 +60,7 @@ const REF_KIND_LABEL: Record<ShotImageRef['kind'], string> = {
   scene: '场景空镜',
   character: '角色设定',
   prop: '道具单品',
+  continuity: '本片已生成分镜',
 }
 
 /** Same order as generation: scene still, then character stills, then prop stills. */
@@ -127,7 +128,40 @@ export function geminiStillCaption(ref: Pick<ShotImageRef, 'kind' | 'name'>, ind
   if (ref.kind === 'scene') {
     return `${ordinal}是场景空镜（${name}）。只用这张图的空间与陈设，把人物放进这个空间。`
   }
+  if (ref.kind === 'continuity') {
+    return `${ordinal}是本片已生成的分镜静帧（${name}）。必须保持同一部短片的画风、色温、镜头质感、服装与发型；只改这一镜的动作、景别与机位，不要换成另一部电影。`
+  }
   return `${ordinal}是道具（${name}）。保留这张图的包装、Logo 与比例。`
+}
+
+export function filmContinuityLine(styleValue?: string | null) {
+  const style = visualStyleLabel(styleValue)
+  return [
+    '这是同一部短片里的一镜，不是另一部影片或独立插画。',
+    style ? `全片保持${style}。` : '',
+    '同一色温、镜头质感、服装与发型；禁止换脸换装、另造空间或改成另一种媒介。',
+  ].filter(Boolean).join('')
+}
+
+/** Prefer the nearest earlier composed still so later shots lock to the same film. */
+export function pickPreviousStoryboardStill<T extends {
+  id: number
+  storyboardNumber?: number | null
+  deletedAt?: unknown
+  composedImage?: string | null
+  firstFrameImage?: string | null
+}>(current: T, rows: T[]): T | null {
+  const withStill = rows.filter((row) => {
+    if (row.id === current.id || row.deletedAt) return false
+    return Boolean(String(row.composedImage || row.firstFrameImage || '').trim())
+  })
+  if (!withStill.length) return null
+  const currentNo = Number(current.storyboardNumber) || 0
+  const previous = withStill
+    .filter((row) => (Number(row.storyboardNumber) || 0) < currentNo)
+    .sort((a, b) => (Number(b.storyboardNumber) || 0) - (Number(a.storyboardNumber) || 0))[0]
+  if (previous) return previous
+  return [...withStill].sort((a, b) => (Number(a.storyboardNumber) || 0) - (Number(b.storyboardNumber) || 0))[0] || null
 }
 
 export function storyboardStillRefLine(ref: ShotImageRef) {
@@ -135,11 +169,19 @@ export function storyboardStillRefLine(ref: ShotImageRef) {
 }
 
 /** Prefix so Gemini maps attached parts[0..] to 第一张图 / 第二张图. */
-export function lockStoryboardStillPrompt(prompt: string, refs: ShotImageRef[]) {
+export function lockStoryboardStillPrompt(prompt: string, refs: ShotImageRef[], styleValue?: string | null) {
   const body = String(prompt || '').trim()
-  if (!refs.length) return body
-  if (refs.every((ref) => body.includes(geminiImageOrdinal(ref.index)))) return body
+  const film = filmContinuityLine(styleValue)
+  if (!refs.length) {
+    if (!body) return film
+    if (body.includes('同一部短片')) return body
+    return [film, body].filter(Boolean).join('')
+  }
+  if (refs.every((ref) => body.includes(geminiImageOrdinal(ref.index)))) {
+    return body.includes('同一部短片') ? body : [film, body].filter(Boolean).join('')
+  }
   return [
+    film,
     '根据前面按顺序附上的参考图做图生图合成，必须使用这些图像素，不要重新发明脸或产品外观。',
     ...refs.map((ref, index) => geminiStillCaption(ref, index)),
     body,
@@ -173,6 +215,7 @@ export function composeStoryboardImagePrompt(opts: {
   const style = visualStyleLabel(opts.styleValue)
   const atmosphere = String(opts.atmosphere || '').trim()
   return [
+    filmContinuityLine(opts.styleValue),
     `单帧分镜静帧，16:9 横图${style ? `，${style}` : ''}。`,
     lock,
     beat,
