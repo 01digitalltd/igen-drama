@@ -2,7 +2,11 @@
  * Gemini image generation adapter.
  *
  * Official Gemini image models (Nano Banana / gemini-3.*-image) are generated
- * with generateContent, same as mkt-ai's GeminiImageService (@google/genai).
+ * with generateContent. Request parts must use camelCase `inlineData` /
+ * `fileData` per
+ * https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/models/inference
+ * Snake_case `inline_data` is dropped by Gemini Enterprise / many proxies, so
+ * the model only sees the text prompt and ignores asset stills.
  * The Interactions API POST always returns an `id`; treating that as an async
  * task and polling GET /v1beta/{id} is wrong (timeout after 10 minutes).
  *
@@ -48,17 +52,27 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
     const refs = parseGeminiImageRefs(record.referenceImages)
     refs.forEach((ref, index) => {
       parts.push({ text: ref.caption || geminiPartLabel(index) })
-      parts.push({
-        inline_data: {
-          mime_type: ref.mimeType,
-          data: ref.data,
-        },
-      })
+      if (ref.inline) {
+        parts.push({
+          inlineData: {
+            mimeType: ref.inline.mimeType,
+            data: ref.inline.data,
+          },
+        })
+      } else if (ref.file) {
+        parts.push({
+          fileData: {
+            mimeType: ref.file.mimeType,
+            fileUri: ref.file.fileUri,
+          },
+        })
+      }
     })
     parts.push({ text: record.prompt || 'Generate an image' })
 
     const body = {
       contents: [{
+        role: 'user',
         parts,
       }],
       generationConfig: {
@@ -217,8 +231,19 @@ function geminiPartLabel(index: number) {
   return `这是第${digits[index] || String(index + 1)}张图。`
 }
 
+function guessImageMime(url: string) {
+  if (/\.png(\?|#|$)/i.test(url)) return 'image/png'
+  if (/\.webp(\?|#|$)/i.test(url)) return 'image/webp'
+  if (/\.gif(\?|#|$)/i.test(url)) return 'image/gif'
+  return 'image/jpeg'
+}
+
 function parseGeminiImageRefs(raw?: string | null) {
-  if (!raw) return [] as Array<{ mimeType: string; data: string; caption?: string }>
+  if (!raw) return [] as Array<{
+    caption?: string
+    inline?: { mimeType: string; data: string }
+    file?: { mimeType: string; fileUri: string }
+  }>
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
@@ -226,7 +251,11 @@ function parseGeminiImageRefs(raw?: string | null) {
     return []
   }
   if (!Array.isArray(parsed)) return []
-  const refs: Array<{ mimeType: string; data: string; caption?: string }> = []
+  const refs: Array<{
+    caption?: string
+    inline?: { mimeType: string; data: string }
+    file?: { mimeType: string; fileUri: string }
+  }> = []
   for (const item of parsed) {
     const dataUrl = typeof item === 'string'
       ? item
@@ -237,12 +266,20 @@ function parseGeminiImageRefs(raw?: string | null) {
       ? String((item as { caption?: string }).caption || '').trim()
       : ''
     const parsedUrl = parseDataUrl(dataUrl)
-    if (!parsedUrl) continue
-    refs.push({
-      mimeType: parsedUrl.mimeType,
-      data: parsedUrl.data,
-      caption: caption || undefined,
-    })
+    if (parsedUrl) {
+      refs.push({
+        caption: caption || undefined,
+        inline: { mimeType: parsedUrl.mimeType, data: parsedUrl.data },
+      })
+      continue
+    }
+    const trimmed = String(dataUrl || '').trim()
+    if (/^https?:\/\//i.test(trimmed)) {
+      refs.push({
+        caption: caption || undefined,
+        file: { mimeType: guessImageMime(trimmed), fileUri: trimmed },
+      })
+    }
   }
   return refs
 }

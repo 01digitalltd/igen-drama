@@ -57,12 +57,30 @@ test('Gemini still generation labels asset images before the prompt', () => {
     ]),
   })
 
+  assert.equal(req.body.contents[0].role, 'user')
   assert.deepEqual(req.body.contents[0].parts, [
     { text: '第一张图是角色设定（小華）。' },
-    { inline_data: { mime_type: 'image/jpeg', data: 'aaa' } },
+    { inlineData: { mimeType: 'image/jpeg', data: 'aaa' } },
     { text: '第二张图是场景空镜（辦公室）。' },
-    { inline_data: { mime_type: 'image/png', data: 'bbb' } },
+    { inlineData: { mimeType: 'image/png', data: 'bbb' } },
     { text: '单帧分镜静帧，小華坐在办公桌前。' },
+  ])
+})
+
+test('Gemini stills send public HTTP asset URLs as fileData', () => {
+  const req = adapter.buildGenerateRequest(config, {
+    id: 1,
+    model: 'gemini-3.1-flash-image',
+    prompt: '单帧分镜静帧',
+    size: '1920x1080',
+    referenceImages: JSON.stringify([
+      { url: 'https://cdn.example.com/char.png', caption: '第一张图是角色设定（小華）。' },
+    ]),
+  })
+  assert.deepEqual(req.body.contents[0].parts, [
+    { text: '第一张图是角色设定（小華）。' },
+    { fileData: { mimeType: 'image/png', fileUri: 'https://cdn.example.com/char.png' } },
+    { text: '单帧分镜静帧' },
   ])
 })
 
@@ -79,6 +97,7 @@ test('official Gemini image generate uses generateContent, not interactions POST
   assert.doesNotMatch(req.url, /\/interactions/)
   assert.match(req.url, /key=test-key/)
   assert.equal(req.headers['x-goog-api-key'], 'test-key')
+  assert.equal(req.body.contents[0].role, 'user')
   assert.equal(req.body.generationConfig.imageConfig.aspectRatio, '16:9')
   assert.equal(req.body.generationConfig.imageConfig.imageSize, '2K')
   assert.deepEqual(req.body.generationConfig.responseModalities, ['IMAGE', 'TEXT'])
