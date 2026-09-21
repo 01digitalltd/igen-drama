@@ -44,6 +44,7 @@ test('prompt agent instructions reference per-asset skills; skill files define t
   assert.doesNotMatch(charSkill, /白色 6×6 网格/)
   assert.doesNotMatch(charSkill, /橙色 6×6/)
   assert.doesNotMatch(charSkill, /五官分拆/)
+  assert.match(charSkill, /视觉必须跟剧本一致/)
   assert.match(charSkill, /纯中文/)
   assert.match(sceneSkill, /固定机位广角镜头/)
   assert.match(sceneSkill, /前景（\[前景元素\]）、中景（\[中景主体空间\]）、后景（\[后景纵深\]）/)
@@ -82,18 +83,23 @@ test('image generation prefers the stored final prompt with agent generation and
   assert.match(service, /if \(scene\.finalPrompt && !force\) return scene\.finalPrompt/)
   assert.match(service, /force = false/)
 
-  // generate-image enqueues immediately; prompt agent is generate-prompt only
+  // generate-image writes a script-grounded final prompt first, then falls back to local stitch
   const imageRoute = characters.slice(characters.indexOf("generate-image"))
   const imageEnd = imageRoute.indexOf("generate-prompt")
-  assert.match(imageRoute.slice(0, imageEnd), /char\.finalPrompt \|\| characterImagePrompt/)
-  assert.doesNotMatch(imageRoute.slice(0, imageEnd), /ensureCharacterFinalPrompt/)
+  assert.match(imageRoute.slice(0, imageEnd), /resolveCharacterImagePrompt/)
+  assert.match(characters, /ensureCharacterFinalPrompt\(char, episodeId/)
+  assert.match(characters, /characterScriptExcerpt/)
+  assert.match(characters, /剧本外貌依据/)
+  assert.match(service, /buildCharacterFinalPromptMessage/)
+  assert.match(read('src/services/character-prompt-message.ts'), /剧本原文摘录/)
+  assert.match(service, /characterScriptExcerpt/)
   assert.match(scenes, /scene\.finalPrompt \|\|/)
   assert.match(props, /prop\.finalPrompt \|\| propImagePrompt/)
 
   // generate-prompt still runs the prompt agent
   assert.match(characters, /ensureCharacterFinalPrompt\(char, ep\.id, /)
   assert.match(characters, /text_model/)
-  assert.match(characters, /finalPrompt \|\| characterImagePrompt\(char, stylePrompt\)/)
+  assert.match(characters, /drafted \|\| characterImagePrompt\(char, stylePrompt, excerpt\)/)
   assert.match(scenes, /ensureSceneFinalPrompt\(scene, ep\.id, /)
   assert.match(characters, /updates\.finalPrompt = body\.final_prompt \|\| null/)
   assert.match(scenes, /updates\.finalPrompt = body\.final_prompt \|\| null/)

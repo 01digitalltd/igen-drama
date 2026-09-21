@@ -7,6 +7,7 @@ import { generateImage } from '../services/generation.js'
 import { getDramaStylePrompt } from '../services/style-preset.js'
 import { stripCharacterFaceGridPrompt } from '../services/face-grid.js'
 import { ensureCharacterFinalPrompt } from '../services/final-prompt.js'
+import { characterScriptExcerpt } from '../services/script-excerpts.js'
 import { logTaskError, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { loadOwnedCharacter, loadOwnedDrama, loadOwnedEpisode } from '../utils/ownership.js'
 import { getRequestLocale } from '../middleware/request-locale.js'
@@ -44,18 +45,31 @@ app.post('/', async (c) => {
   return created(c, toSnakeCase(row))
 })
 
-function characterImagePrompt(char: typeof schema.characters.$inferSelect, stylePrompt = '') {
+function characterImagePrompt(char: typeof schema.characters.$inferSelect, stylePrompt = '', excerpt = '') {
+  const clip = String(excerpt || '').replace(/\s+/g, ' ').trim().slice(0, 800)
   return [
     stylePrompt || '',
     char.name,
     char.appearance || char.description || '人物立绘',
     char.styling || '',
+    clip ? `剧本外貌依据：${clip}` : '',
     '16:9 横版角色定妆照',
     '半身角色海报构图',
     '正面',
     '高质量',
     '白色背景',
   ].filter(Boolean).join(', ')
+}
+
+async function resolveCharacterImagePrompt(
+  char: typeof schema.characters.$inferSelect,
+  episodeId: number,
+  opts?: { model?: string; configId?: number; locale?: string },
+) {
+  const stylePrompt = await getDramaStylePrompt(char.dramaId)
+  const excerpt = await characterScriptExcerpt(episodeId, char.name || '')
+  const drafted = await ensureCharacterFinalPrompt(char, episodeId, false, opts)
+  return stripCharacterFaceGridPrompt(drafted || characterImagePrompt(char, stylePrompt, excerpt))
 }
 
 // PUT /characters/:id
@@ -96,8 +110,11 @@ app.post('/:id/generate-image', async (c) => {
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
   const ep = await loadOwnedEpisode(c, body.episode_id)
 
-  const stylePrompt = await getDramaStylePrompt(char.dramaId)
-  const prompt = stripCharacterFaceGridPrompt(char.finalPrompt || characterImagePrompt(char, stylePrompt))
+  const prompt = await resolveCharacterImagePrompt(char, ep.id, {
+    model: body.text_model,
+    configId: body.text_config_id ?? undefined,
+    locale: getRequestLocale(c, body.locale),
+  })
   try {
     logTaskStart('CharacterImage', 'generate', { characterId: id, episodeId: ep.id, dramaId: char.dramaId })
     const genId = await generateImage({ characterId: id, dramaId: char.dramaId, episodeId: ep.id, prompt, model: body.model, size: CHARACTER_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })
@@ -135,11 +152,14 @@ app.post('/batch-generate-images', async (c) => {
   const ids: number[] = body.character_ids || []
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
   const ep = await loadOwnedEpisode(c, body.episode_id)
-  const stylePrompt = await getDramaStylePrompt(ep.dramaId)
   const results = await Promise.all(ids.map(async (cid) => {
     const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, cid))
     if (!char) return 0
-    const prompt = stripCharacterFaceGridPrompt(char.finalPrompt || characterImagePrompt(char, stylePrompt))
+    const prompt = await resolveCharacterImagePrompt(char, ep.id, {
+      model: body.text_model,
+      configId: body.text_config_id ?? undefined,
+      locale: getRequestLocale(c, body.locale),
+    })
     try {
       return await generateImage({ characterId: cid, dramaId: char.dramaId, episodeId: ep.id, prompt, model: body.model, size: CHARACTER_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })
     } catch {

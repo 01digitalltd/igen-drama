@@ -22,6 +22,8 @@ import { logTaskError, logTaskProgress } from '../utils/task-logger.js'
 import { withContentLanguage } from '../utils/content-language.js'
 import { isBrandLogoProp } from '../utils/project-category.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
+import { buildCharacterFinalPromptMessage } from './character-prompt-message.js'
+import { characterScriptExcerpt } from './script-excerpts.js'
 import { z } from 'zod'
 
 type CharacterRow = typeof schema.characters.$inferSelect
@@ -125,22 +127,19 @@ async function generateStructuredPrompt(episodeId: number, dramaId: number, mess
   return promptFromPayload(await payloadFromGenerateResult(result))
 }
 
+export { buildCharacterFinalPromptMessage } from './character-prompt-message.js'
+
 /** 确保角色拥有三视图最终提示词，返回最终提示词（失败返回 ''）；force 时忽略已有提示词强制重新生成 */
 export async function ensureCharacterFinalPrompt(char: CharacterRow, episodeId: number, force = false, opts?: PromptAgentOptions): Promise<string> {
   if (char.finalPrompt && !force) return char.finalPrompt
   try {
     logTaskProgress('FinalPrompt', 'character-generate', { characterId: char.id, episodeId })
+    const excerpt = await characterScriptExcerpt(episodeId, char.name || '')
     const drafted = await withTimeout(
       generateStructuredPrompt(
         episodeId,
         char.dramaId,
-        [
-          `为角色「${char.name}」(character_id=${char.id}) 写一张角色设定参考图的最终提示词。`,
-          '构图：左侧正脸特写，右侧并列正面、90 度侧面、背面三张等高全身视图；同一张脸、同一发型、同一服装；纯白背景、均匀棚拍光。',
-          '只输出纯中文单段描述，不要风格词、不要英文。',
-          `身份：${char.role || ''}；外貌：${char.appearance || char.description || ''}；妆造：${char.styling || ''}`,
-          'Return JSON {"prompt":"..."} only.',
-        ].join('\n'),
+        buildCharacterFinalPromptMessage(char, excerpt),
         opts,
       ),
       PROMPT_TIMEOUT_MS,

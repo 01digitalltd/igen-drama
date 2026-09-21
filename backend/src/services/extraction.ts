@@ -22,6 +22,7 @@ import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess } from '../
 import { publishEpisodeEvent } from './episode-events.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
 import { charactersFromSourceScript, isInternalToolAssetName, itemsFromGenerateResult, scenesFromFormattedScript, summarizeExtractResult } from './extract-payload.js'
+import { loadEpisodeScripts } from './script-excerpts.js'
 
 export type ExtractTarget = 'characters' | 'scenes' | 'props'
 export const EXTRACT_TARGETS: ExtractTarget[] = ['characters', 'scenes', 'props']
@@ -62,13 +63,6 @@ async function persistExtracted(target: ExtractTarget, episodeId: number, dramaI
   if (target === 'characters') return persistDedupCharacters(episodeId, dramaId, items)
   if (target === 'scenes') return persistDedupScenes(episodeId, dramaId, items)
   return persistDedupProps(episodeId, dramaId, items)
-}
-
-async function loadEpisodeScripts(episodeId: number): Promise<{ formatted: string; original: string; script: string }> {
-  const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, episodeId))
-  const original = String(ep?.content || '').trim()
-  const formatted = String(ep?.scriptContent || '').trim()
-  return { formatted, original, script: formatted || original }
 }
 
 async function loadExistingHint(target: ExtractTarget, dramaId: number): Promise<string> {
@@ -112,7 +106,7 @@ function extractUserMessage(
           ? 'This is an ad-promo project in short-drama form. You MUST extract the on-camera characters who act or speak in the mini-story. Empty array is not valid.'
           : 'This is an ad-promo project in talent-explain form. You MUST extract the on-camera presenter/expert who speaks. Empty array is not valid.')
         : 'This is an ad-promo project in product-showcase form. Extract every named on-camera person from the formatted screenplay and the original draft (人物/角色 lines, spoken names). Empty array is valid only when neither text names talent.')
-      : 'Extract every character who has dialogue or an important action. Each item needs name, and preferably role, appearance (look + temperament), and styling (hair, makeup, costume).')
+      : 'Extract every character who has dialogue or an important action. Each item needs name, role, appearance (look + temperament), and styling (hair, makeup, costume).')
     : target === 'scenes'
       ? 'Extract every distinct location+time. Each item needs location, and preferably time, prompt (empty space and set dressing only — no people, actions, or handheld plot props), and lighting.'
       : (ad
@@ -123,6 +117,9 @@ function extractUserMessage(
     `project_category=${ad ? 'ad_promo' : 'short_drama'}`,
     adForm ? `ad_form=${adForm}` : '',
     rules,
+    target === 'characters'
+      ? 'appearance and styling must quote visual facts from the screenplay (age, gender, occupation, uniform, hair, clothes). If clothing is not stated, infer from occupation or workplace. Do not invent a celebrity face or a different ethnicity/age.'
+      : '',
     existingHint,
     contentLanguageInstruction(locale),
     'Screenplay:',
