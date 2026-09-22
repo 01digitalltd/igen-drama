@@ -33,6 +33,59 @@ function styleLockTrailer(key: string) {
   return '[STYLE_LOCK] Restyle every reference still into the VISUAL_STYLE look. Keep logo artwork and product silhouette. Not live-action camera footage.'
 }
 
+/** Image-only. Video keeps Unreal motion language; stills must look like vinyl chibi, not cinematic CG. */
+const IMAGE_STYLE_GUARDS: Record<string, string> = {
+  '3d': '3D chibi still, Pop Mart vinyl-figure look, super-deformed 1:2 head-to-body ratio, oversized round head, short chubby limbs, huge glossy toy eyes, tiny nose and mouth, smooth plastic/resin, even studio CG lighting. People, rooms and products all match this blind-box toy 3D. Not Unreal cinematic photoreal, not live-action camera footage, not skin pores, not 35mm film, not product photography.',
+  anime: '2D Japanese anime still, cel shading, clean line art. Not live-action camera footage.',
+  ghibli: 'Hand-drawn Studio Ghibli still, painted backgrounds. Not live-action camera footage.',
+  watercolor: 'Watercolor illustrated still, paper texture. Not live-action camera footage.',
+  comic: 'Western comic-book still, bold ink outlines, halftone. Not live-action camera footage.',
+  realistic: 'Photorealistic live-action cinematic still, natural lighting, 35mm film look.',
+}
+
+export function imageVisualStyleText(styleValue?: string | null, _stylePrompt?: string | null) {
+  const key = normalizeStyleValue(styleValue)
+  if (key === '3d') return IMAGE_STYLE_GUARDS['3d']
+  const guard = IMAGE_STYLE_GUARDS[key] || ''
+  const fragment = String(_stylePrompt || '').trim()
+  if (key && key !== 'realistic') return [guard, fragment].filter(Boolean).join(' ')
+  return [fragment, guard].filter(Boolean).join(' ')
+}
+
+export function stripImageStyleWrappers(prompt: string) {
+  return String(prompt || '')
+    .replace(/\[VISUAL_STYLE:[^\]]*\]\s*/g, '')
+    .replace(/\[STYLE_LOCK\][^\n]*/g, '')
+    .replace(/【画面风格｜必须遵守】[^\n]*/g, '')
+    .replace(/【画面风格｜结尾再锁一次】[^\n]*/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+export function scrubPhotorealForChibi(prompt: string, styleValue?: string | null) {
+  if (normalizeStyleValue(styleValue) !== '3d') return prompt
+  return String(prompt || '')
+    .replace(/电影质感/g, '三维卡通光')
+    .replace(/真人皮肤/g, '光滑脸部')
+    .replace(/皮肤毛孔/g, '')
+    .replace(/肤质清晰可见/g, '五官清晰、光滑无毛孔')
+    .replace(/肤质清晰/g, '光滑脸部')
+    .replace(/写实棚拍/g, '三维棚灯')
+    .replace(/均匀棚拍光/g, '均匀三维棚灯')
+    .replace(/柔和均匀的光线/g, '均匀三维棚灯')
+    .replace(/标准产品摄影(?:视角)?/g, '三维单品渲染')
+    .replace(/产品摄影棚拍/g, '三维产品渲染')
+    .replace(/cinematic lighting/gi, 'even studio CG lighting')
+    .replace(/photoreal(?:istic)?(?: live-action)?/gi, 'stylized 3D')
+    .replace(/35mm film look/gi, '')
+    .replace(/skin pores/gi, '')
+    .replace(/natural skin texture/gi, 'smooth resin')
+    .replace(/Unreal Engine(?: \/ game-engine)? cinematic render/gi, 'stylized chibi game render')
+    .replace(/game-cinematic render/gi, 'stylized chibi render')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/，{2,}/g, '，')
+}
+
 export function normalizeStyleValue(raw?: string | null) {
   return String(raw || '').trim().toLowerCase()
 }
@@ -59,7 +112,7 @@ export function visualStyleInstruction(styleValue?: string | null) {
     return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 与 image_prompt 全程真人实拍质感，不要改成动画或 3D。`
   }
   if (key === '3d') {
-    return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 与 image_prompt 全程是 3D Q版／Chibi CG（头大身小、圆润可爱、游戏引擎渲染）。角色必须写成头大身小；场景空镜必须是同款三维空间，禁止实拍办公室或街道；道具单品必须是同款三维产品渲染，禁止真人产品摄影。禁止「电影质感」「真人皮肤」「毛孔」「写实棚拍」。@场景/@角色/@道具 只提供外形、包装与 Logo，必须写成「转成 3D Chibi CG」，禁止按实拍照片还原。禁止写成真人实拍或半写实成人比例。每一段画面都保持这个画风。`
+    return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 与 image_prompt 全程是盲盒风 3D Chibi CG：头身比约 1:2，头大身小，四肢短圆，大眼睛，光滑树脂／塑料，均匀三维棚灯。角色必须写成头身比约 1:2；场景空镜必须是同款圆润卡通三维空间，禁止实拍办公室或街道；道具单品必须是同款三维玩具产品，禁止真人产品摄影。禁止「电影质感」「真人皮肤」「毛孔」「写实棚拍」「Unreal 写实」。@场景/@角色/@道具 只提供外形、包装与 Logo，必须写成「转成 3D Chibi 盲盒风」，禁止按实拍照片还原。禁止写成真人实拍或半写实成人比例。每一段画面都保持这个画风。`
   }
   return `【视觉风格｜必须遵守】本项目是${label}。video_prompt 与 image_prompt 全程保持该画风。参考图只锁外形，必须转成该画风，禁止按实拍照片还原成真人实拍。`
 }
@@ -72,13 +125,20 @@ export function assetRestyleKindLabel(kind: 'character' | 'scene' | 'prop') {
 
 export function assetRestyleDirective(kind: 'character' | 'scene' | 'prop', styleValue?: string | null) {
   const label = visualStyleLabel(styleValue) || '项目视觉风格'
+  const chibi = normalizeStyleValue(styleValue) === '3d'
   if (kind === 'scene') {
-    return `【转风格｜必须遵守】第一张图是用户提供的场景原图。先分析空间布局、出入口与陈设，再整张重绘成「${label}」空场景。保留可辨识布局，禁止原样贴实拍，禁止改成另一种画风。`
+    return chibi
+      ? `【转风格｜必须遵守】第一张图是用户提供的场景原图。先分析空间布局、出入口与陈设，再整张重绘成 3D Chibi 盲盒风三维空场景：圆润卡通家具、简化空间、均匀三维棚灯。保留可辨识布局，禁止原样贴实拍，禁止保留照片质感。`
+      : `【转风格｜必须遵守】第一张图是用户提供的场景原图。先分析空间布局、出入口与陈设，再整张重绘成「${label}」空场景。保留可辨识布局，禁止原样贴实拍，禁止改成另一种画风。`
   }
   if (kind === 'prop') {
-    return `【转风格｜必须遵守】第一张图是用户提供的道具原图。先分析外形、包装与 Logo，再整张重绘成「${label}」单品。保留可辨识特征，禁止原样贴产品照片，禁止改成另一种画风。`
+    return chibi
+      ? `【转风格｜必须遵守】第一张图是用户提供的道具原图。先分析外形、包装与 Logo，再整张重绘成 3D Chibi 盲盒风三维单品：圆润简化、光滑树脂。保留可辨识特征，禁止原样贴产品照片，禁止保留照片质感。`
+      : `【转风格｜必须遵守】第一张图是用户提供的道具原图。先分析外形、包装与 Logo，再整张重绘成「${label}」单品。保留可辨识特征，禁止原样贴产品照片，禁止改成另一种画风。`
   }
-  return `【转风格｜必须遵守】第一张图是用户提供的角色原图。先分析外形、服装、构图与关键细节，再整张重绘成「${label}」。保留可辨识特征，禁止原样贴照片，禁止改成另一种画风。`
+  return chibi
+    ? `【转风格｜必须遵守】第一张图是用户提供的角色原图。先分析外形、服装与关键细节，再整张重绘成 3D Chibi 盲盒风三维角色：头身比约 1:2，头大身小，光滑树脂，没有毛孔。保留可辨识特征，禁止原样贴照片，禁止保留照片质感。`
+    : `【转风格｜必须遵守】第一张图是用户提供的角色原图。先分析外形、服装、构图与关键细节，再整张重绘成「${label}」。保留可辨识特征，禁止原样贴照片，禁止改成另一种画风。`
 }
 
 export function appendAssetRestyleDirective(
@@ -86,10 +146,9 @@ export function appendAssetRestyleDirective(
   kind: 'character' | 'scene' | 'prop',
   styleValue?: string | null,
 ) {
-  const body = String(prompt || '').trim()
+  const body = String(prompt || '').replace(/【转风格｜必须遵守】[^\n]*\n?/g, '').trim()
   const line = assetRestyleDirective(kind, styleValue)
   if (!line) return body
-  if (body.includes('【转风格')) return body
   return [line, body].filter(Boolean).join('\n')
 }
 
@@ -111,15 +170,15 @@ export function imageStyleLock(styleValue?: string | null, kind?: ImageStyleKind
   }
   if (key === '3d') {
     if (kind === 'scene') {
-      return `【画面风格｜必须遵守】这是空场景参考图。整张必须画成 3D Chibi CG 游戏引擎三维空间：家具、墙面、灯光都是同款 Q 版三维。禁止真人实拍办公室、街道或室内摄影。画面中不要有人物。`
+      return `【画面风格｜必须遵守】这是空场景参考图。整张必须画成 3D Chibi 盲盒风三维空间：圆润卡通家具、简化墙面与灯光、均匀三维棚灯，像游戏里的 Q 版场景。禁止真人实拍办公室、街道或室内摄影，禁止 Unreal 写实光影。画面中不要有人物。`
     }
     if (kind === 'prop') {
-      return `【画面风格｜必须遵守】这是白底单品图。整张必须画成 3D Chibi CG 三维产品渲染，保留可辨识外形、包装与 Logo。禁止真人产品摄影，禁止实拍静物棚拍。`
+      return `【画面风格｜必须遵守】这是白底单品图。整张必须画成 3D Chibi 盲盒风三维产品：圆润简化外形、光滑树脂／塑料，保留可辨识外形、包装与 Logo。禁止真人产品摄影，禁止实拍静物棚拍。`
     }
     if (kind === 'still') {
-      return `【画面风格｜必须遵守】整张必须画成 3D Chibi CG：人物头大身小，场景与道具也是同款游戏引擎三维，禁止真人照片、禁止电影质感、禁止写实棚拍。`
+      return `【画面风格｜必须遵守】整张必须画成 3D Chibi 盲盒风：人物头身比约 1:2、头大身小、光滑树脂；场景与道具也是同款圆润三维。禁止真人照片、禁止电影质感、禁止 Unreal 写实。`
     }
-    return `【画面风格｜必须遵守】整张必须画成 3D Chibi CG：头大身小、四肢短圆、Q版可爱、游戏引擎三维渲染。禁止真人照片、禁止电影质感皮肤毛孔、禁止半写实成人比例、禁止写实棚拍。`
+    return `【画面风格｜必须遵守】整张必须画成 3D Chibi 盲盒风三维角色：头身比约 1:2，头大身小，头约占身高一半，四肢短圆，大而亮的卡通眼睛，小鼻子小嘴，光滑树脂／塑料材质，没有皮肤毛孔。均匀三维棚灯，纯白背景。禁止真人照片、禁止电影质感、禁止半写实成人比例、禁止 Unreal 写实。`
   }
   if (kind === 'scene') {
     return `【画面风格｜必须遵守】这是空场景参考图。整张必须画成「${label}」，禁止改成真人实拍或其他画风。画面中不要有人物。`
@@ -130,16 +189,35 @@ export function imageStyleLock(styleValue?: string | null, kind?: ImageStyleKind
   return `【画面风格｜必须遵守】整张必须画成「${label}」，禁止改成真人实拍或其他画风。`
 }
 
+function imageStyleLockTrailer(key: string, kind?: ImageStyleKind | null) {
+  if (key !== '3d') {
+    return key && key !== 'realistic' && key !== 'unset'
+      ? '\n\n[STYLE_LOCK] Restyle every reference still into the VISUAL_STYLE look. Keep logo artwork and product silhouette. Not live-action camera footage.'
+      : ''
+  }
+  if (kind === 'scene') {
+    return '\n\n【画面风格｜结尾再锁一次】空场景必须是 3D Chibi 盲盒风三维空间，圆润卡通家具，禁止实拍与电影质感。'
+  }
+  if (kind === 'prop') {
+    return '\n\n【画面风格｜结尾再锁一次】单品必须是 3D Chibi 盲盒风三维产品，光滑树脂，禁止真人产品摄影。'
+  }
+  return '\n\n【画面风格｜结尾再锁一次】必须是 3D Chibi 盲盒风：头身比约 1:2，头大身小，光滑树脂，禁止真人照片与电影质感。'
+}
+
 export function appendImageStyleDirective(
   prompt: string,
   styleValue?: string | null,
   stylePrompt?: string | null,
   kind?: ImageStyleKind | null,
 ) {
-  const body = String(prompt || '').trim()
-  const lock = imageStyleLock(styleValue, kind)
-  const withLock = lock && !body.includes('【画面风格') ? [lock, body].filter(Boolean).join('\n') : body
-  return appendVisualStyleDirective(withLock, styleValue, stylePrompt)
+  const key = normalizeStyleValue(styleValue) || 'unset'
+  const body = scrubPhotorealForChibi(stripImageStyleWrappers(prompt), key)
+  const lock = imageStyleLock(key, kind)
+  const withLock = lock ? [lock, body].filter(Boolean).join('\n') : body
+  const fragment = imageVisualStyleText(key === 'unset' ? '' : key, stylePrompt)
+  if (!fragment) return withLock
+  const tag = `[VISUAL_STYLE: ${key} | ${fragment} Keep this look in every shot.]`
+  return `${tag}\n\n${withLock}${imageStyleLockTrailer(key, kind)}`
 }
 
 export function appendVisualStyleDirective(

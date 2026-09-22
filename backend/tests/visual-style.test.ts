@@ -6,6 +6,7 @@ import {
   appendImageStyleDirective,
   appendVisualStyleDirective,
   imageStyleLock,
+  stripImageStyleWrappers,
   videoVisualStyleText,
   visualStyleInstruction,
 } from '../src/services/style-preset.ts'
@@ -25,10 +26,11 @@ test('3D video style forbids live-action even if the image preset says semi-real
 test('video prompt instruction pins 3D and skips empty style', () => {
   const threeD = visualStyleInstruction('3d')
   assert.match(threeD, /3D Chibi/)
-  assert.match(threeD, /场景空镜必须是同款三维空间/)
-  assert.match(threeD, /道具单品必须是同款三维产品渲染/)
+  assert.match(threeD, /头身比约 1:2/)
+  assert.match(threeD, /场景空镜必须是同款圆润卡通三维空间/)
+  assert.match(threeD, /道具单品必须是同款三维玩具产品/)
   assert.match(threeD, /禁止写成真人实拍/)
-  assert.match(threeD, /转成 3D Chibi CG/)
+  assert.match(threeD, /转成 3D Chibi 盲盒风/)
   assert.equal(visualStyleInstruction(''), '')
   assert.match(visualStyleInstruction('realistic'), /写实真人/)
 })
@@ -56,8 +58,10 @@ test('uploaded asset stills get a analyze-then-restyle prompt', () => {
   assert.match(first, /用户提供的角色原图/)
   assert.match(first, /分析外形/)
   assert.match(first, /3D Chibi/)
+  assert.match(first, /头身比约 1:2/)
   assert.match(first, /半身角色海报构图/)
-  assert.equal(appendAssetRestyleDirective(first, 'character', 'anime'), first)
+  assert.equal(appendAssetRestyleDirective(first, 'character', '3d'), first)
+  assert.match(appendAssetRestyleDirective(first, 'character', 'anime'), /日漫赛璐璐/)
 })
 
 test('image generation restyles existing asset stills and skips brand logos', () => {
@@ -71,15 +75,24 @@ test('image generation restyles existing asset stills and skips brand logos', ()
   assert.match(src, /项目画风的单品/)
 })
 
-test('3D Chibi image prompts lock chibi CG over cinematic live-action wording', () => {
+test('3D Chibi image prompts lock vinyl chibi over cinematic live-action wording', () => {
   const drafted = '角色设定参考图，左侧为正脸特写，纯白背景，柔和均匀的光线，电影质感'
-  const sent = appendImageStyleDirective(drafted, '3d', '3D chibi CG animation style', 'character')
+  const sent = appendImageStyleDirective(drafted, '3d', 'Unreal Engine / game-engine cinematic render, cinematic lighting', 'character')
   assert.match(sent, /^\[VISUAL_STYLE: 3d \|/)
   assert.match(sent, /【画面风格｜必须遵守】/)
-  assert.match(sent, /头大身小/)
-  assert.match(sent, /3D Chibi CG/)
+  assert.match(sent, /头身比约 1:2/)
+  assert.match(sent, /盲盒风/)
+  assert.match(sent, /Pop Mart/)
+  assert.match(sent, /vinyl-figure/)
+  assert.match(sent, /3D Chibi/)
   assert.match(sent, /禁止真人照片/)
-  assert.match(sent, /电影质感/)
+  assert.match(sent, /均匀三维棚灯/)
+  assert.match(sent, /三维卡通光/)
+  assert.match(sent, /禁止电影质感/)
+  assert.doesNotMatch(stripImageStyleWrappers(sent), /电影质感/)
+  assert.doesNotMatch(sent, /cinematic lighting/)
+  assert.doesNotMatch(sent, /Unreal Engine game-cinematic/)
+  assert.match(sent, /Not Unreal cinematic photoreal/)
   assert.match(imageStyleLock('3d', 'character'), /头大身小/)
   assert.equal(appendImageStyleDirective(sent, '3d', '3D chibi CG animation style', 'character'), sent)
 })
@@ -92,7 +105,7 @@ test('3D Chibi scene and prop prompts lock CG rooms and products, not live-actio
   assert.doesNotMatch(imageStyleLock('3d', 'scene'), /头大身小/)
   const prop = appendImageStyleDirective('单品产品图，标准产品摄影视角', '3d', '3D chibi CG animation style', 'prop')
   assert.match(prop, /白底单品图/)
-  assert.match(prop, /三维产品渲染/)
+  assert.match(prop, /盲盒风三维产品/)
   assert.match(prop, /禁止真人产品摄影/)
   const restyleScene = appendAssetRestyleDirective('办公室实拍', 'scene', '3d')
   assert.match(restyleScene, /场景原图/)

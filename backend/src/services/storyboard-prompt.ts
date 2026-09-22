@@ -137,7 +137,7 @@ export function geminiStillCaption(ref: Pick<ShotImageRef, 'kind' | 'name'>, ind
 export function filmContinuityLine(styleValue?: string | null) {
   const style = visualStyleLabel(styleValue)
   const chibi = normalizeStyleValue(styleValue) === '3d'
-    ? '人物头大身小、四肢短圆、Q版三维 CG，场景与道具也是同款游戏引擎渲染，禁止真人照片与电影质感皮肤。'
+    ? '人物头身比约 1:2、头大身小、四肢短圆、盲盒风三维，场景与道具也是同款圆润卡通三维，禁止真人照片与电影质感。'
     : ''
   return [
     '这是同一部短片里的一镜，不是另一部影片或独立插画。',
@@ -221,7 +221,7 @@ export function composeStoryboardImagePrompt(opts: {
   return [
     filmContinuityLine(opts.styleValue),
     `单帧分镜静帧，16:9 横图${style ? `，${style}` : ''}。`,
-    normalizeStyleValue(opts.styleValue) === '3d' ? '头大身小的 3D Chibi CG，禁止电影质感真人。' : '',
+    normalizeStyleValue(opts.styleValue) === '3d' ? '头身比约 1:2 的 3D Chibi 盲盒风三维，光滑树脂，禁止电影质感真人。' : '',
     lock,
     beat,
     atmosphere ? `氛围光线：${atmosphere}。` : '',

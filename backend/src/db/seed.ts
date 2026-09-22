@@ -4,7 +4,7 @@ import { now } from '../utils/response.js'
 import { isPublicUuid, newPublicUuid } from '../utils/public-id.js'
 
 const stylePresetSeeds = [
-  { name: '3D Chibi', value: '3d', sortOrder: 1, prompt: '3D chibi CG animation style, super-deformed cute 3D characters with oversized heads and small bodies, round simplified features, Unreal Engine / game-engine cinematic render, detailed 3D materials and textures, cinematic lighting, not photoreal live-action, not semi-realistic adult proportions', description: '游戏引擎级 3D Q版渲染，头大身小的可爱角色，不是半写实短剧也不是真人实拍' },
+  { name: '3D Chibi', value: '3d', sortOrder: 1, prompt: '3D chibi CG, Pop Mart vinyl-figure look, super-deformed 1:2 head-to-body ratio, oversized round head, short chubby limbs, huge glossy toy eyes, tiny nose and mouth, smooth plastic/resin, even studio CG lighting, stylized toy-like 3D, not Unreal cinematic photoreal, not live-action, not skin pores, not semi-realistic adult proportions', description: '盲盒风 3D Q版，头身比约 1:2，光滑树脂材质，不是 Unreal 写实也不是真人实拍' },
   { name: '日漫赛璐璐', value: 'anime', sortOrder: 2, prompt: 'Japanese anime style, cel shading, clean crisp line art, vivid saturated colors, expressive character designs, detailed painted backgrounds', description: '日式赛璐璐动画风格' },
   { name: '吉卜力手绘', value: 'ghibli', sortOrder: 3, prompt: 'Studio Ghibli style, hand-drawn animation, soft watercolor painted backgrounds, warm nostalgic lighting, gentle natural palette, whimsical cozy atmosphere', description: '吉卜力手绘治愈风' },
   { name: '水彩绘本', value: 'watercolor', sortOrder: 4, prompt: 'watercolor illustration style, soft translucent washes, visible paper texture, delicate fluid brushwork, light airy atmosphere, hand-painted storybook feel', description: '水彩插画质感' },
