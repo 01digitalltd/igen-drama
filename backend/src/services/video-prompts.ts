@@ -119,6 +119,7 @@ async function persistShotPrompts(storyboardId: number, videoPrompt: string, ima
   await db.update(schema.storyboards)
     .set({
       videoPrompt,
+      voAudioUrls: null,
       ...(imagePrompt ? { imagePrompt } : {}),
       updatedAt: now(),
     })

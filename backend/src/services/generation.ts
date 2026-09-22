@@ -38,6 +38,14 @@ import {
   parseProviderErrorText,
 } from '../utils/provider-error.js'
 import { splitVideoQueueByConcurrency } from './video-queue.js'
+import { ensureStoryboardVoAudio } from './tts/vo-audio.js'
+import {
+  appendAudioRefDirective,
+  canUseReferenceAudio,
+  parseVoAudioClips,
+  shouldSynthesizeAutoTts,
+  type VoAudioClip,
+} from './tts/vo-speech.js'
 
 type TaskType = 'image' | 'video'
 
@@ -384,6 +392,41 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
   prompt = appendVoVoiceDirective(prompt, narratorVoice)
   prompt = appendVisualStyleDirective(prompt, visual.value, visual.prompt)
 
+  const clientAudios = Array.isArray(params.referenceAudioUrls)
+    ? params.referenceAudioUrls.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+  let referenceAudioUrls = clientAudios
+  let voAudioClips: VoAudioClip[] = []
+  let ttsWarning: string | undefined
+  if (!canUseReferenceAudio(config.provider, model)) {
+    referenceAudioUrls = []
+  } else if (shouldSynthesizeAutoTts(clientAudios.length) && params.storyboardId) {
+    try {
+      const ensured = await ensureStoryboardVoAudio({
+        storyboardId: params.storyboardId,
+        dramaId: params.dramaId,
+        prompt,
+      })
+      voAudioClips = ensured.clips
+      referenceAudioUrls = voAudioClips.map((clip) => clip.url)
+      ttsWarning = ensured.warning
+      if (voAudioClips.length) prompt = appendAudioRefDirective(prompt, voAudioClips)
+    } catch (err: any) {
+      ttsWarning = String(err?.message || err || 'MiniMax TTS failed')
+      logTaskWarn('VideoTask', 'tts-skip', { storyboardId: params.storyboardId, error: ttsWarning })
+      referenceAudioUrls = []
+    }
+  } else if (clientAudios.length) {
+    voAudioClips = clientAudios.map((url, index) => ({
+      speaker: `參考音${index + 1}`,
+      kind: 'narrator',
+      url,
+      voiceId: '',
+      text: '',
+    }))
+    prompt = appendAudioRefDirective(prompt, voAudioClips)
+  }
+
   const bounds = clipDurationBounds(config.provider, model)
   assertClipSecondsFit(parseVideoPromptDurationSeconds(prompt), bounds, 'prompt')
   assertClipSecondsFit(shotDuration, bounds, 'shot')
@@ -400,7 +443,9 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
     lastFrameUrl: params.lastFrameUrl,
     referenceImageUrls: params.referenceImageUrls,
     referenceVideoUrls: params.referenceVideoUrls,
-    referenceAudioUrls: params.referenceAudioUrls,
+    referenceAudioUrls,
+    voAudioClips,
+    ttsWarning,
     generateAudio: params.generateAudio === false ? 0 : 1,
     duration,
     aspectRatio: params.aspectRatio || '16:9',
@@ -712,7 +757,15 @@ async function processTask(id: number, config: AIConfig) {
       )
       // 参考视频/音频文件较大，不适合 dataURL 内联，需解析为公网可访问 URL
       const resolvedReferenceVideoUrls = await resolvePublicMediaUrls(params.referenceVideoUrls, 'video')
-      const resolvedReferenceAudioUrls = await resolvePublicMediaUrls(params.referenceAudioUrls, 'audio')
+      let resolvedReferenceAudioUrls = await resolvePublicMediaUrls(params.referenceAudioUrls, 'audio')
+      const hasVisualRefs = resolvedReferenceImageUrls.length
+        + resolvedReferenceVideoUrls.length
+        + (resolvedImageUrl ? 1 : 0)
+        + (resolvedFirstFrameUrl ? 1 : 0)
+        + (resolvedLastFrameUrl ? 1 : 0) > 0
+      if (!canUseReferenceAudio(config.provider, record.model) || !hasVisualRefs) {
+        resolvedReferenceAudioUrls = []
+      }
       let prompt = (record.prompt || '').trim()
       if (!prompt && record.storyboardId) {
         const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
@@ -725,6 +778,18 @@ async function processTask(id: number, config: AIConfig) {
         const dramaId = await resolveVideoDramaId(record)
         const logo = dramaId && sb ? await brandLogoPropIfNeeded(dramaId, sb) : null
         prompt = appendBrandLogoDirective(prompt, Boolean(logo))
+      }
+      const voClips = parseVoAudioClips(params.voAudioClips).length
+        ? parseVoAudioClips(params.voAudioClips)
+        : resolvedReferenceAudioUrls.map((url, index) => ({
+          speaker: `參考音${index + 1}`,
+          kind: 'narrator' as const,
+          url,
+          voiceId: '',
+          text: '',
+        }))
+      if (resolvedReferenceAudioUrls.length) {
+        prompt = appendAudioRefDirective(prompt, voClips)
       }
       const videoPrompt = (() => {
         const composed = composeVideoPromptAfterCharacterGrid(prompt, overlaidCount)

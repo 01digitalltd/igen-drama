@@ -150,6 +150,7 @@ export type StoryboardRow = {
   videoUrl: string | null
   subtitleUrl: string | null
   composedVideoUrl: string | null
+  voAudioUrls: string | null
   status: string | null
   createdAt: string
   updatedAt: string
@@ -331,7 +332,7 @@ export const storyboards = defineTable<StoryboardRow>('storyboards', [
   'id', 'episodeId', 'sceneId', 'storyboardNumber', 'title', 'location', 'time', 'shotType', 'angle',
   'movement', 'result', 'atmosphere', 'imagePrompt', 'videoPrompt', 'bgmPrompt', 'soundEffect', 'description',
   'duration', 'composedImage', 'firstFrameImage', 'lastFrameImage', 'referenceImages', 'videoUrl',
-  'subtitleUrl', 'composedVideoUrl', 'status', 'createdAt', 'updatedAt', 'deletedAt',
+  'subtitleUrl', 'composedVideoUrl', 'voAudioUrls', 'status', 'createdAt', 'updatedAt', 'deletedAt',
 ])
 
 export const storyboardCharacters = defineTable<StoryboardCharacterRow>('storyboard_characters', [

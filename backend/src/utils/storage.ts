@@ -125,6 +125,10 @@ export async function saveBase64Video(base64Data: string, mimeType: string, subD
   return persistBuffer(Buffer.from(base64Data, 'base64'), subDir, ext, mimeType || 'video/mp4')
 }
 
+export async function saveAudioBuffer(buffer: Buffer): Promise<string> {
+  return persistBuffer(buffer, 'audio', '.mp3', 'audio/mpeg')
+}
+
 export async function persistLocalFile(absPath: string, subDir: string): Promise<string> {
   const buffer = fs.readFileSync(absPath)
   const ext = path.extname(absPath) || '.bin'

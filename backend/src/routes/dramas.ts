@@ -10,6 +10,12 @@ import { DEFAULT_VO_VOICE, normalizeVoVoice } from '../services/vo-voice.js'
 import { defaultAspectRatioForCategory, normalizeProjectCategory, isAdPromoCategory } from '../utils/project-category.js'
 import { mergeAdTaxonomyMetadata, normalizeAdTaxonomy, adContextFields, taxonomyFromMetadata } from '../utils/ad-taxonomy.js'
 import { ensureBrandLogoProp, applyBrandLogoPlacement, logoPlacementFromMetadata, mergeLogoPlacementMetadata } from '../services/brand-logo.js'
+import { mergeVoTtsMetadata, voTtsSettingsFromMetadata } from '../services/tts/vo-tts-settings.js'
+import { clearVoAudioForDrama } from '../services/tts/vo-audio.js'
+import { isMiniMaxTtsConfigured, synthesizeMiniMaxMp3 } from '../services/tts/minimax-tts.js'
+import { previewSampleText } from '../services/tts/vo-speech.js'
+import { publicMediaUrl, saveAudioBuffer } from '../utils/storage.js'
+import { emotionFromAtmosphere, resolveSystemVoiceId, resolveTtsSpeed } from '../services/tts/minimax-voice.js'
 import type { DramaRow } from '../db/schema.js'
 
 const app = new Hono()
@@ -27,11 +33,14 @@ function serializeMetadata(value: unknown): string | null {
 function enrichDrama(drama: DramaRow, extra: Record<string, unknown> = {}) {
   const genre = normalizeProjectCategory(drama.genre)
   const spec = isAdPromoCategory(genre) ? taxonomyFromMetadata(drama.metadata) : null
+  const voTts = voTtsSettingsFromMetadata(drama.metadata)
   return {
     ...toPublicDrama(drama),
     tags: drama.tags ? JSON.parse(drama.tags) : [],
     ...adContextFields(spec, genre),
     logo_placement: logoPlacementFromMetadata(drama.metadata),
+    vo_emotion: voTts.emotion,
+    vo_speed: voTts.speed,
     ...extra,
   }
 }
@@ -87,6 +96,9 @@ app.post('/', async (c) => {
   const metadata = isAdPromoCategory(genre)
     ? mergeLogoPlacementMetadata(mergeAdTaxonomyMetadata(body.metadata, normalizeAdTaxonomy(body)), body.logo_placement)
     : mergeLogoPlacementMetadata(serializeMetadata(body.metadata), body.logo_placement)
+  const metadataWithVo = (body.vo_emotion !== undefined || body.vo_speed !== undefined)
+    ? mergeVoTtsMetadata(metadata, { emotion: body.vo_emotion, speed: body.vo_speed })
+    : metadata
   const res = await db.insert(schema.dramas).values({
     title: body.title,
     description: body.description,
@@ -98,7 +110,7 @@ app.post('/', async (c) => {
     ),
     voVoice: normalizeVoVoice(body.vo_voice || body.voVoice || DEFAULT_VO_VOICE),
     tags: body.tags ? JSON.stringify(body.tags) : null,
-    metadata,
+    metadata: metadataWithVo,
     ownerUserId: getOwnerUserId(c),
     ownerTenantId: getOwnerTenantId(c),
     status: 'draft',
@@ -197,6 +209,12 @@ app.put('/:id', async (c) => {
       updates.metadata = mergeLogoPlacementMetadata(updates.metadata ?? drama.metadata, body.logo_placement)
     }
   }
+  if (body.vo_emotion !== undefined || body.vo_speed !== undefined) {
+    updates.metadata = mergeVoTtsMetadata(updates.metadata ?? drama.metadata, {
+      emotion: body.vo_emotion,
+      speed: body.vo_speed,
+    })
+  }
   await db.update(schema.dramas).set(updates).where(eq(schema.dramas.id, id))
   if (updates.genre && isAdPromoCategory(updates.genre)) {
     await ensureBrandLogoProp(id)
@@ -204,7 +222,43 @@ app.put('/:id', async (c) => {
   if (body.logo_placement !== undefined) {
     await applyBrandLogoPlacement(id)
   }
+  const voiceChanged = updates.voVoice !== undefined && updates.voVoice !== drama.voVoice
+  const langChanged = updates.dialogueLanguage !== undefined && updates.dialogueLanguage !== drama.dialogueLanguage
+  if (voiceChanged || langChanged || body.vo_emotion !== undefined || body.vo_speed !== undefined) {
+    await clearVoAudioForDrama(id)
+  }
   return success(c)
+})
+
+// POST /dramas/:id/vo-preview — MiniMax TTS sample for the narrator settings
+app.post('/:id/vo-preview', async (c) => {
+  const drama = await loadOwnedDrama(c, c.req.param('id'))
+  if (!isMiniMaxTtsConfigured()) return badRequest(c, '未設定 MiniMax TTS（MINIMAX_API_KEY）')
+  const body = await c.req.json().catch(() => ({}))
+  const language = normalizeDialogueLanguage(body.dialogue_language || drama.dialogueLanguage)
+  const voice = normalizeVoVoice(body.vo_voice ?? drama.voVoice)
+  const settings = voTtsSettingsFromMetadata(
+    mergeVoTtsMetadata(drama.metadata, {
+      emotion: body.vo_emotion,
+      speed: body.vo_speed,
+    }),
+  )
+  const emotion = settings.emotion === 'auto' ? emotionFromAtmosphere('') : settings.emotion
+  const speed = settings.speed ?? 1
+  const text = String(body.text || previewSampleText(language)).trim() || previewSampleText(language)
+  try {
+    const buffer = await synthesizeMiniMaxMp3({
+      text,
+      voiceId: resolveSystemVoiceId({ languageCode: language, gender: voice }),
+      languageCode: language,
+      speed: resolveTtsSpeed(speed),
+      emotion,
+    })
+    const stored = await saveAudioBuffer(buffer)
+    return success(c, { url: publicMediaUrl(stored) })
+  } catch (err: any) {
+    return badRequest(c, err?.message || 'TTS preview failed')
+  }
 })
 
 // DELETE /dramas/:id - Soft delete
