@@ -39,6 +39,7 @@ test('drama creation stores spoken dialogue language independently of UI locale'
   assert.match(generation, /appendVoVoiceDirective\(prompt, narratorVoice\)/)
   assert.match(generation, /rewriteNarratorLabels\(prompt, narratorVoice\)/)
   assert.match(generation, /appendVisualStyleDirective\(prompt, visual\.value, visual\.prompt\)/)
+  assert.match(generation, /appendImageStyleDirective\(params\.prompt, visual\.value, visual\.prompt, kind\)/)
 })
 
 test('style presets route is mounted and implements CRUD', () => {

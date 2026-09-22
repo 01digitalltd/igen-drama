@@ -77,10 +77,21 @@ function sceneImagePrompt(scene: typeof schema.scenes.$inferSelect, stylePrompt 
     scene.location,
     scene.time || '',
     scene.prompt || '高质量场景',
-    scene.lighting || '电影感光影',
+    scene.lighting || '均匀光线',
     '前景中景后景分层，出入口、地面、墙面与固定陈设位置清晰',
     '画面中没有任何人物，没有角色背影或剪影，没有可手持的剧情道具，空场景',
+    '空间、家具与灯光跟项目视觉风格同一套画风，禁止实拍摄影',
   ].filter(Boolean).join(', ')
+}
+
+async function resolveSceneImagePrompt(
+  scene: typeof schema.scenes.$inferSelect,
+  episodeId: number,
+  opts?: { model?: string; configId?: number; locale?: string },
+) {
+  const stylePrompt = await getDramaStylePrompt(scene.dramaId)
+  const drafted = await ensureSceneFinalPrompt(scene, episodeId, false, opts)
+  return appendEmptySceneGuard(drafted || sceneImagePrompt(scene, stylePrompt), true)
 }
 
 // POST /scenes/:id/generate-image — enqueue immediately; wait via SSE + task poll
@@ -91,8 +102,11 @@ app.post('/:id/generate-image', async (c) => {
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
   const ep = await loadOwnedEpisode(c, body.episode_id)
 
-  const stylePrompt = await getDramaStylePrompt(scene.dramaId)
-  const prompt = appendEmptySceneGuard(scene.finalPrompt || sceneImagePrompt(scene, stylePrompt), true)
+  const prompt = await resolveSceneImagePrompt(scene, ep.id, {
+    model: body.text_model,
+    configId: body.text_config_id ?? undefined,
+    locale: getRequestLocale(c, body.locale),
+  })
   try {
     logTaskStart('SceneImage', 'generate', { sceneId: id, episodeId: ep.id, dramaId: scene.dramaId, location: scene.location })
     await db.update(schema.scenes).set({ status: 'processing', updatedAt: now() }).where(eq(schema.scenes.id, id))

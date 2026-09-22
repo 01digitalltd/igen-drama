@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
   appendAssetRestyleDirective,
+  appendImageStyleDirective,
   appendVisualStyleDirective,
+  imageStyleLock,
   videoVisualStyleText,
   visualStyleInstruction,
 } from '../src/services/style-preset.ts'
@@ -23,6 +25,8 @@ test('3D video style forbids live-action even if the image preset says semi-real
 test('video prompt instruction pins 3D and skips empty style', () => {
   const threeD = visualStyleInstruction('3d')
   assert.match(threeD, /3D Chibi/)
+  assert.match(threeD, /场景空镜必须是同款三维空间/)
+  assert.match(threeD, /道具单品必须是同款三维产品渲染/)
   assert.match(threeD, /禁止写成真人实拍/)
   assert.match(threeD, /转成 3D Chibi CG/)
   assert.equal(visualStyleInstruction(''), '')
@@ -62,4 +66,38 @@ test('image generation restyles existing asset stills and skips brand logos', ()
   assert.match(src, /if \(isBrandLogoProp\(row\)\) return params/)
   assert.match(src, /labeledAssetReferenceImages/)
   assert.match(src, /先分析外形，再转成项目画风/)
+  assert.match(src, /appendImageStyleDirective\(params\.prompt, visual\.value, visual\.prompt, kind\)/)
+  assert.match(src, /项目画风的空场景/)
+  assert.match(src, /项目画风的单品/)
+})
+
+test('3D Chibi image prompts lock chibi CG over cinematic live-action wording', () => {
+  const drafted = '角色设定参考图，左侧为正脸特写，纯白背景，柔和均匀的光线，电影质感'
+  const sent = appendImageStyleDirective(drafted, '3d', '3D chibi CG animation style', 'character')
+  assert.match(sent, /^\[VISUAL_STYLE: 3d \|/)
+  assert.match(sent, /【画面风格｜必须遵守】/)
+  assert.match(sent, /头大身小/)
+  assert.match(sent, /3D Chibi CG/)
+  assert.match(sent, /禁止真人照片/)
+  assert.match(sent, /电影质感/)
+  assert.match(imageStyleLock('3d', 'character'), /头大身小/)
+  assert.equal(appendImageStyleDirective(sent, '3d', '3D chibi CG animation style', 'character'), sent)
+})
+
+test('3D Chibi scene and prop prompts lock CG rooms and products, not live-action photos', () => {
+  const scene = appendImageStyleDirective('固定机位广角镜头，办公室空场景，电影质感', '3d', '3D chibi CG animation style', 'scene')
+  assert.match(scene, /空场景参考图/)
+  assert.match(scene, /三维空间/)
+  assert.match(scene, /禁止真人实拍办公室/)
+  assert.doesNotMatch(imageStyleLock('3d', 'scene'), /头大身小/)
+  const prop = appendImageStyleDirective('单品产品图，标准产品摄影视角', '3d', '3D chibi CG animation style', 'prop')
+  assert.match(prop, /白底单品图/)
+  assert.match(prop, /三维产品渲染/)
+  assert.match(prop, /禁止真人产品摄影/)
+  const restyleScene = appendAssetRestyleDirective('办公室实拍', 'scene', '3d')
+  assert.match(restyleScene, /场景原图/)
+  assert.match(restyleScene, /空间布局/)
+  const restyleProp = appendAssetRestyleDirective('护手霜包装', 'prop', '3d')
+  assert.match(restyleProp, /道具原图/)
+  assert.match(restyleProp, /包装与 Logo/)
 })

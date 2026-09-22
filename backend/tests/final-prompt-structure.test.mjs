@@ -20,7 +20,8 @@ test('grid prompt agent tools save agent-written final prompts with style inject
   assert.match(tools, /save_character_final_prompt/)
   assert.match(tools, /save_scene_final_prompt/)
   // 保存时注入项目视觉风格并落库
-  assert.match(tools, /getDramaStylePrompt/)
+  assert.match(tools, /appendImageStyleDirective/)
+  assert.match(tools, /loadDramaVisualStyle/)
   assert.match(tools, /set\(\{ finalPrompt, updatedAt: now\(\) \}\)/)
   // 提示词由 Agent 创作，不再由工具机械拼接
   assert.doesNotMatch(tools, /generate_character_prompt/)
@@ -45,7 +46,8 @@ test('prompt agent instructions reference per-asset skills; skill files define t
   assert.doesNotMatch(charSkill, /橙色 6×6/)
   assert.doesNotMatch(charSkill, /五官分拆/)
   assert.match(charSkill, /视觉必须跟剧本一致/)
-  assert.match(charSkill, /纯中文/)
+  assert.match(charSkill, /头大身小/)
+  assert.doesNotMatch(charSkill, /光线，电影质感/)
   assert.match(sceneSkill, /固定机位广角镜头/)
   assert.match(sceneSkill, /前景（\[前景元素\]）、中景（\[中景主体空间\]）、后景（\[后景纵深\]）/)
   assert.match(sceneSkill, /出入口/)
@@ -94,8 +96,10 @@ test('image generation prefers the stored final prompt with agent generation and
   assert.match(service, /buildCharacterFinalPromptMessage/)
   assert.match(read('src/services/character-prompt-message.ts'), /剧本原文摘录/)
   assert.match(service, /characterScriptExcerpt/)
-  assert.match(scenes, /scene\.finalPrompt \|\|/)
-  assert.match(props, /prop\.finalPrompt \|\| propImagePrompt/)
+  assert.match(scenes, /drafted \|\| sceneImagePrompt\(scene, stylePrompt\)/)
+  assert.match(props, /drafted \|\| propImagePrompt\(prop, stylePrompt\)/)
+  assert.match(scenes, /resolveSceneImagePrompt/)
+  assert.match(props, /resolvePropImagePrompt/)
 
   // generate-prompt still runs the prompt agent
   assert.match(characters, /ensureCharacterFinalPrompt\(char, ep\.id, /)
@@ -116,7 +120,7 @@ test('scene stills are empty establishing plates without people or hero props', 
   assert.match(service, /空镜场景参考图/)
   assert.match(service, /不能有任何人物/)
   assert.match(service, /可手持或推动剧情的道具/)
-  assert.match(scenes, /appendEmptySceneGuard\(scene\.finalPrompt \|\| sceneImagePrompt\(scene, stylePrompt\), true\)/)
+  assert.match(scenes, /appendEmptySceneGuard\(drafted \|\| sceneImagePrompt\(scene, stylePrompt\), true\)/)
   assert.match(scenes, /没有可手持的剧情道具/)
   assert.match(tools, /appendEmptySceneGuard\(withStyle\)/)
   assert.match(skill, /可手持或推动剧情的道具/)

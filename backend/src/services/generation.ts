@@ -15,7 +15,7 @@ import type { AIConfig } from './adapters/types'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn, redactUrl } from '../utils/task-logger.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
-import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, appendAssetRestyleDirective } from './style-preset.js'
+import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, appendAssetRestyleDirective, appendImageStyleDirective } from './style-preset.js'
 import { appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
 import { assertSeedanceAllowedForStyle, expectedVideoProvider, isRealisticDramaStyle, MINIMAX_H3_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
@@ -134,6 +134,12 @@ async function attachAssetStillForRestyle(params: GenerateImageParams): Promise<
 
 export async function generateImage(params: GenerateImageParams): Promise<number> {
   params = await attachAssetStillForRestyle(params)
+  const visual = await loadDramaVisualStyle(params.dramaId)
+  const kind = params.characterId ? 'character' as const : params.sceneId ? 'scene' as const : params.propId ? 'prop' as const : 'still' as const
+  params = {
+    ...params,
+    prompt: appendImageStyleDirective(params.prompt, visual.value, visual.prompt, kind),
+  }
   // 指定配置（集锁定）可能已停用/删除/厂商收敛，失效时回退到当前启用配置，避免生成被旧引用卡死
   let config = params.configId ? await getConfigById(params.configId) : null
   let configId = params.configId ?? null
@@ -529,7 +535,8 @@ async function processTask(id: number, config: AIConfig) {
         client: clientRefs.length,
         resolved: labeledRefs.length,
       })
-      const imagePrompt = record.characterId
+      const imageVisual = await loadDramaVisualStyle(record.dramaId)
+      const rawImagePrompt = record.characterId
         ? stripCharacterFaceGridPrompt(record.prompt || '')
         : record.storyboardId && !record.sceneId && !record.propId
           ? lockStoryboardStillPrompt(
@@ -538,6 +545,12 @@ async function processTask(id: number, config: AIConfig) {
             await resolveVideoDramaStyle(record),
           )
           : record.prompt
+      const imagePrompt = appendImageStyleDirective(
+        rawImagePrompt,
+        imageVisual.value,
+        imageVisual.prompt,
+        assetKind || (record.storyboardId ? 'still' : null),
+      )
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
@@ -1182,7 +1195,6 @@ async function labeledAssetReferenceImages(
   clientRefs: string[],
   kind: 'character' | 'scene' | 'prop',
 ) {
-  const kindLabel = kind === 'character' ? '角色' : kind === 'scene' ? '场景' : '道具'
   const out: { url: string; caption: string }[] = []
   const seen = new Set<string>()
   for (const extra of clientRefs) {
@@ -1191,7 +1203,11 @@ async function labeledAssetReferenceImages(
     seen.add(url)
     out.push({
       url,
-      caption: `${geminiImageOrdinal(out.length)}是用户提供的${kindLabel}原图。先分析外形，再转成项目画风，禁止原样贴图。`,
+      caption: kind === 'scene'
+        ? `${geminiImageOrdinal(out.length)}是用户提供的场景原图。只用空间布局，整张转成项目画风的空场景，禁止原样贴实拍。`
+        : kind === 'prop'
+          ? `${geminiImageOrdinal(out.length)}是用户提供的道具原图。保留包装与 Logo，整张转成项目画风的单品，禁止原样贴产品照片。`
+          : `${geminiImageOrdinal(out.length)}是用户提供的角色原图。先分析外形，再转成项目画风，禁止原样贴图。`,
     })
   }
   return out

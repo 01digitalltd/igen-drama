@@ -72,18 +72,25 @@ app.put('/:id', async (c) => {
   return success(c)
 })
 
-/** 本地兜底提示词：白底单品，不掺杂其他元素 */
+/** Local fallback: white-background still, same look as the project style. */
 function propImagePrompt(prop: typeof schema.props.$inferSelect, stylePrompt = '') {
   return [
     stylePrompt || '',
-    `single product photo of ${prop.name}`,
+    `${prop.name} 白底单品`,
     prop.description || '',
-    'isolated on a pure white background',
-    'no other objects, no people, no scenery',
-    'soft even studio lighting',
-    'high detail',
-    'no text, no watermark',
-  ].filter(Boolean).join(', ')
+    '孤立白底，边缘完整，无人物无场景',
+    '外形与包装跟项目视觉风格同一套画风，禁止真人产品摄影',
+  ].filter(Boolean).join('，')
+}
+
+async function resolvePropImagePrompt(
+  prop: typeof schema.props.$inferSelect,
+  episodeId: number,
+  opts?: { model?: string; configId?: number; locale?: string },
+) {
+  const stylePrompt = await getDramaStylePrompt(prop.dramaId)
+  const drafted = await ensurePropFinalPrompt(prop, episodeId, false, opts)
+  return drafted || propImagePrompt(prop, stylePrompt)
 }
 
 // POST /props/:id/generate-prompt — 独立生成/重新生成白底单品最终提示词（不生图）
@@ -115,8 +122,11 @@ app.post('/:id/generate-image', async (c) => {
   if (!body.episode_id) return badRequest(c, 'episode_id is required')
   const ep = await loadOwnedEpisode(c, body.episode_id)
 
-  const stylePrompt = await getDramaStylePrompt(prop.dramaId)
-  const prompt = prop.finalPrompt || propImagePrompt(prop, stylePrompt)
+  const prompt = await resolvePropImagePrompt(prop, ep.id, {
+    model: body.text_model,
+    configId: body.text_config_id ?? undefined,
+    locale: getRequestLocale(c, body.locale),
+  })
   try {
     logTaskStart('PropImage', 'generate', { propId: id, episodeId: ep.id, dramaId: prop.dramaId })
     const genId = await generateImage({ propId: id, dramaId: prop.dramaId, episodeId: ep.id, prompt, model: body.model, size: PROP_IMAGE_SIZE, configId: body.config_id ?? ep.imageConfigId ?? undefined })

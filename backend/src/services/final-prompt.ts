@@ -24,6 +24,7 @@ import { isBrandLogoProp } from '../utils/project-category.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
 import { buildCharacterFinalPromptMessage } from './character-prompt-message.js'
 import { characterScriptExcerpt } from './script-excerpts.js'
+import { visualStyleInstruction, getDramaStyleValue } from './style-preset.js'
 import { z } from 'zod'
 
 type CharacterRow = typeof schema.characters.$inferSelect
@@ -139,7 +140,7 @@ export async function ensureCharacterFinalPrompt(char: CharacterRow, episodeId: 
       generateStructuredPrompt(
         episodeId,
         char.dramaId,
-        buildCharacterFinalPromptMessage(char, excerpt),
+        buildCharacterFinalPromptMessage(char, excerpt, visualStyleInstruction(await getDramaStyleValue(char.dramaId))),
         opts,
       ),
       PROMPT_TIMEOUT_MS,
@@ -167,7 +168,8 @@ export async function ensureSceneFinalPrompt(scene: SceneRow, episodeId: number,
           '这是空镜场景参考图，不是剧情画面：画面中不能有任何人物（含背影、剪影、照片/屏幕里的人），也不能出现可手持或推动剧情的道具。',
           '只描写空间本身：前景/中景/后景、出入口、地面、墙面、固定陈设（家具、灯具、门窗）及其相对位置。',
           '空间描述仅作布局参考；若描述里出现人物、动作或剧情道具，不要写进提示词。',
-          '纯中文单段，不要风格词、不要英文，结尾写「画面中没有任何人物，空场景」。',
+          '纯中文单段。必须把【视觉风格】写进提示词：3D Chibi 时场景是 Q 版三维 CG 空镜，禁止电影质感实拍办公室。结尾写「画面中没有任何人物，空场景」。',
+          visualStyleInstruction(await getDramaStyleValue(scene.dramaId)),
           `地点：${scene.location}；时间：${scene.time || ''}；空间描述：${scene.prompt || ''}；光影：${scene.lighting || ''}`,
           'Return JSON {"prompt":"..."} only.',
         ].join('\n'),
@@ -189,7 +191,7 @@ export async function ensurePropFinalPrompt(prop: PropRow, episodeId: number, fo
   if (isBrandLogoProp(prop)) {
     const locked = '使用用户上传的官方 Logo 原件作为参考图。禁止 AI 生成或重绘商标。'
     if (prop.finalPrompt && !force) return prop.finalPrompt
-    return persistPropFinalPrompt(prop.dramaId, prop.id, locked)
+    return persistPropFinalPrompt(prop.dramaId, prop.id, locked, { skipStyle: true })
   }
   if (prop.finalPrompt && !force) return prop.finalPrompt
   try {
@@ -200,7 +202,8 @@ export async function ensurePropFinalPrompt(prop: PropRow, episodeId: number, fo
         prop.dramaId,
         [
           `为道具「${prop.name}」(prop_id=${prop.id}) 写白底单品静物的最终提示词。`,
-          '纯白背景、单件商品特写、纯中文单段，不要风格词、不要英文。',
+          '纯白背景、单件商品特写、纯中文单段。必须把【视觉风格】写进提示词：3D Chibi 时做成 Q 版三维产品渲染，禁止真人产品摄影。',
+          visualStyleInstruction(await getDramaStyleValue(prop.dramaId)),
           `名称：${prop.name}；类型：${prop.type || ''}；外貌：${prop.description || ''}`,
           'Return JSON {"prompt":"..."} only.',
         ].join('\n'),

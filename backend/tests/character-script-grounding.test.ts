@@ -30,10 +30,14 @@ test('buildCharacterFinalPromptMessage locks visual facts to the screenplay exce
       styling: '皱褶白衬衫',
     },
     '林晚穿着皱褶白衬衫推开玻璃门。',
+    '【视觉风格｜必须遵守】本项目是3D Chibi。',
   )
   assert.match(message, /林晚/)
   assert.match(message, /皱褶白衬衫/)
   assert.match(message, /剧本原文摘录/)
   assert.match(message, /护士→护士服/)
+  assert.match(message, /3D Chibi/)
+  assert.match(message, /头大身小/)
   assert.doesNotMatch(message, /16:9 横版角色定妆照/)
+  assert.doesNotMatch(message, /不要风格词/)
 })

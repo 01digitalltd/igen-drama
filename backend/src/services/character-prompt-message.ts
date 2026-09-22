@@ -5,7 +5,7 @@ export function buildCharacterFinalPromptMessage(char: {
   appearance?: string | null
   description?: string | null
   styling?: string | null
-}, excerpt = '') {
+}, excerpt = '', styleInstruction = '') {
   const appearance = String(char.appearance || char.description || '').trim()
   const excerptBlock = String(excerpt || '').trim()
     ? `剧本原文摘录（外貌必须跟这些句子一致，禁止另造一张更漂亮但不像这个人的脸）：\n${excerpt}`
@@ -15,9 +15,10 @@ export function buildCharacterFinalPromptMessage(char: {
     '构图：左侧正脸特写，右侧并列正面、90 度侧面、背面三张等高全身视图；同一张脸、同一发型、同一服装；纯白背景、均匀棚拍光。',
     '这是定妆参考图，不是剧情场面。视觉必须跟剧本一致。',
     '剧本写了的年龄、职业、制服、发型、服装、配饰必须写进提示词；职业/场合转化为服装（护士→护士服，律师→西装）。',
-    '只输出纯中文单段描述，不要风格词、不要英文。',
+    '只输出纯中文单段。若有【视觉风格】，必须把该画风写进提示词：3D Chibi 要写头大身小、Q版 CG，禁止电影质感、真人皮肤。',
+    String(styleInstruction || '').trim(),
     `身份：${char.role || ''}；外貌：${appearance}；妆造：${char.styling || ''}`,
     excerptBlock,
     'Return JSON {"prompt":"..."} only.',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }

@@ -49,7 +49,7 @@ const VIDEO_PROMPT_SCHEMA = z.object({
 })
 const STRUCTURED_INSTRUCTIONS = `你是视频提示词与分镜静帧提示词工程师。只返回 JSON {"video_prompt":"...","image_prompt":"..."}。不要调用工具，不要输出 JSON 以外的说明。
 video_prompt 必须按时间轴分段：Seedance/其他用「0-3秒：」并 @角色名/@场景名/@道具名；Omni 用「[0-3s]」和 image_refs 里的 <IMAGE_REF_N>。最后一段结束秒数必须等于该分镜 duration。description 的每个【镜头N】映射为 1-2 个连续分段，不要创作新台词。
-image_prompt 是给 Gemini 图片模型的单帧分镜静帧，只画第一个【镜头N】。有 image_refs 时必须写成「第一张图 / 第二张图」锁定前面附上的人物／场景／道具图像素，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止时间轴，禁止把 video_prompt 原样复制过来。`
+image_prompt 是给 Gemini 图片模型的单帧分镜静帧，只画第一个【镜头N】。有 image_refs 时必须写成「第一张图 / 第二张图」锁定前面附上的人物／场景／道具图像素，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止时间轴，禁止把 video_prompt 原样复制过来。3D Chibi 项目的 image_prompt 必须写头大身小、Q版三维 CG，禁止电影质感真人。`
 
 async function loadShotPromptContext(storyboard: {
   id: number

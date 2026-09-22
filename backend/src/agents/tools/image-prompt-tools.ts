@@ -13,14 +13,14 @@ import { z } from 'zod'
 import { db, schema } from '../../db/index.js'
 import { eq } from '../../db/query.js'
 import { now } from '../../utils/response.js'
-import { getDramaStylePrompt } from '../../services/style-preset.js'
+import { loadDramaVisualStyle, appendImageStyleDirective } from '../../services/style-preset.js'
 import { stripCharacterFaceGridPrompt } from '../../services/face-grid.js'
 import { appendEmptySceneGuard } from '../../services/empty-scene-prompt.js'
 import { getDramaId } from '../context.js'
 
 export async function persistCharacterFinalPrompt(dramaId: number, characterId: number, prompt: string) {
-  const stylePrompt = await getDramaStylePrompt(dramaId)
-  const withStyle = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
+  const visual = await loadDramaVisualStyle(dramaId)
+  const withStyle = appendImageStyleDirective(prompt, visual.value, visual.prompt, 'character')
   const finalPrompt = stripCharacterFaceGridPrompt(withStyle)
   await db.update(schema.characters)
     .set({ finalPrompt, updatedAt: now() })
@@ -29,8 +29,8 @@ export async function persistCharacterFinalPrompt(dramaId: number, characterId: 
 }
 
 export async function persistSceneFinalPrompt(dramaId: number, sceneId: number, prompt: string) {
-  const stylePrompt = await getDramaStylePrompt(dramaId)
-  const withStyle = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
+  const visual = await loadDramaVisualStyle(dramaId)
+  const withStyle = appendImageStyleDirective(prompt, visual.value, visual.prompt, 'scene')
   const finalPrompt = appendEmptySceneGuard(withStyle)
   await db.update(schema.scenes)
     .set({ finalPrompt, updatedAt: now() })
@@ -38,9 +38,11 @@ export async function persistSceneFinalPrompt(dramaId: number, sceneId: number, 
   return finalPrompt
 }
 
-export async function persistPropFinalPrompt(dramaId: number, propId: number, prompt: string) {
-  const stylePrompt = await getDramaStylePrompt(dramaId)
-  const finalPrompt = stylePrompt ? `${stylePrompt}, ${prompt}` : prompt
+export async function persistPropFinalPrompt(dramaId: number, propId: number, prompt: string, opts?: { skipStyle?: boolean }) {
+  const visual = await loadDramaVisualStyle(dramaId)
+  const finalPrompt = opts?.skipStyle
+    ? String(prompt || '').trim()
+    : appendImageStyleDirective(prompt, visual.value, visual.prompt, 'prop')
   await db.update(schema.props)
     .set({ finalPrompt, updatedAt: now() })
     .where(eq(schema.props.id, propId))
