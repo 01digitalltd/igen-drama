@@ -43,6 +43,7 @@ export interface VideoPromptBatchStatus {
 
 const tasks = new Map<number, VideoPromptBatchStatus>()
 const VIDEO_PROMPT_ATTEMPTS = 3
+const VIDEO_PROMPT_SHOT_TIMEOUT_MS = 90_000
 const VIDEO_PROMPT_SCHEMA = z.object({
   video_prompt: z.string(),
   image_prompt: z.string().optional(),
@@ -96,6 +97,22 @@ async function loadShotPromptContext(storyboard: {
 
 function emitPromptStatus(episodeId: number) {
   publishEpisodeEvent(episodeId, { type: 'prompts', payload: getVideoPromptBatchStatus(episodeId) })
+}
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`分镜提示词生成逾时（${Math.round(ms / 1000)}s）`)), ms)
+    work.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      },
+    )
+  })
 }
 
 async function persistShotPrompts(storyboardId: number, videoPrompt: string, imagePrompt?: string) {
@@ -177,6 +194,7 @@ export async function startVideoPromptBatch(
         const duration = shot.duration || bounds?.typical || 10
         const endCap = Math.min(duration, bounds?.max || 15)
         for (let attempt = 1; attempt <= VIDEO_PROMPT_ATTEMPTS && !saved; attempt++) {
+          try {
           const requestContext = buildAgentRequestContext({
             episodeId,
             dramaId,
@@ -185,7 +203,7 @@ export async function startVideoPromptBatch(
             locale: opts.locale || undefined,
             ...agentContextFromAd(ad),
           })
-          const result = await agent.generate([{
+          const result = await withTimeout(agent.generate([{
             role: 'user',
             content: [
               withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})同时写视频提示词(video_prompt)和分镜静帧提示词(image_prompt)。视频模型:${videoLabel}。prompt_skill:${clip?.videoGeneration?.prompt_skill || 'seedance'}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。
@@ -215,7 +233,7 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
               jsonPromptInjection: true,
             },
             requestContext,
-          })
+          }), VIDEO_PROMPT_SHOT_TIMEOUT_MS)
           const payload = await payloadFromGenerateResult(result)
           const drafted = videoPromptFromPayload(payload)
           if (looksLikeVideoPrompt(drafted)) {
@@ -239,6 +257,13 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
             ...summarizeGenerateResult(result),
             text: drafted.slice(0, 240),
           })
+          } catch (err: any) {
+            logTaskWarn('VideoPrompt', 'batch-shot-retry', {
+              storyboardId: sb.id,
+              attempt,
+              error: err?.message || 'prompt generate timeout',
+            })
+          }
         }
         if (saved) task.completed++
         else {

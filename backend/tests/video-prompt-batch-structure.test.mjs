@@ -21,6 +21,8 @@ test('video prompt batch service runs per-shot async agent loop', () => {
   assert.match(svc, /structuredOutput/)
   assert.match(svc, /VIDEO_PROMPT_SCHEMA/)
   assert.match(svc, /VIDEO_PROMPT_ATTEMPTS/)
+  assert.match(svc, /VIDEO_PROMPT_SHOT_TIMEOUT_MS/)
+  assert.match(svc, /withTimeout\(agent\.generate/)
   assert.match(svc, /batch-shot-retry/)
   assert.match(svc, /looksLikeVideoPrompt/)
   assert.match(svc, /from '\.\/video-prompt-text\.js'/)

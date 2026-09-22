@@ -11,8 +11,11 @@ test('video tasks enqueue with MiniMax parallelism and can be cancelled', () => 
 
   assert.match(generation, /splitVideoQueueByConcurrency/)
   assert.match(generation, /activeVideoProviders/)
-  assert.match(generation, /status: type === 'video' \? 'queued' : 'processing'/)
+  assert.match(generation, /status: type === 'image' \|\| type === 'video' \? 'queued' : 'processing'/)
   assert.match(generation, /function enqueueVideo/)
+  assert.match(generation, /function enqueueImage/)
+  assert.match(generation, /IMAGE_MAX_CONCURRENT = 2/)
+  assert.match(generation, /async function pumpImageQueue/)
   assert.match(generation, /async function pumpVideoQueue/)
   assert.match(generation, /export async function cancelGenerationTask/)
   assert.match(generation, /status: 'cancelled'/)

@@ -58,11 +58,15 @@ const SUBMIT_RETRY_MAX_AGE_MS = 3 * 60 * 1000
 const activeProcessors = new Set<number>()
 const cancelledTaskIds = new Set<number>()
 const videoWaitQueue: number[] = []
+const imageWaitQueue: number[] = []
 const activeVideoIds = new Set<number>()
+const activeImageIds = new Set<number>()
 const activeVideoProviders = new Map<number, string>()
 /** Extra POSTs wait as status=queued. MiniMax runs several at once; Gemini/Seedance stay serial. */
+const IMAGE_MAX_CONCURRENT = 2
 const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'error', 'success', 'done', 'cancelled', 'canceled'])
 let pumpingVideoQueue = false
+let pumpingImageQueue = false
 
 interface GenerateImageParams {
   storyboardId?: number
@@ -180,6 +184,7 @@ export async function generateImage(params: GenerateImageParams): Promise<number
     config: { provider: config.provider, model: config.model, baseUrl: config.baseUrl },
     params,
   })
+  enqueueImage(id)
   return id
 }
 
@@ -363,7 +368,7 @@ async function createTask(
     ...fields,
     provider: config.provider,
     params: JSON.stringify(params),
-    status: type === 'video' ? 'queued' : 'processing',
+    status: type === 'image' || type === 'video' ? 'queued' : 'processing',
     createdAt: ts,
     updatedAt: ts,
   })
@@ -371,7 +376,7 @@ async function createTask(
   const id = getInsertId(res)
   void emitTaskEvent(id)
   if (type === 'video') enqueueVideo(id)
-  else startTaskProcessor(id, type, processTask(id, config))
+  else enqueueImage(id)
   return id
 }
 
@@ -380,6 +385,13 @@ function enqueueVideo(id: number) {
   if (cancelledTaskIds.has(id) || activeVideoIds.has(id) || videoWaitQueue.includes(id)) return
   videoWaitQueue.push(id)
   void pumpVideoQueue()
+}
+
+function enqueueImage(id: number) {
+  if (!Number.isInteger(id) || id <= 0) return
+  if (cancelledTaskIds.has(id) || activeImageIds.has(id) || imageWaitQueue.includes(id)) return
+  imageWaitQueue.push(id)
+  void pumpImageQueue()
 }
 
 function runningByProviderMap() {
@@ -441,6 +453,42 @@ function startVideoProcessor(id: number, config: AIConfig) {
   }))
 }
 
+async function pumpImageQueue() {
+  if (pumpingImageQueue) return
+  pumpingImageQueue = true
+  try {
+    while (activeImageIds.size < IMAGE_MAX_CONCURRENT && imageWaitQueue.length) {
+      const id = imageWaitQueue.shift()
+      if (!id || cancelledTaskIds.has(id) || activeImageIds.has(id) || activeProcessors.has(id)) continue
+      try {
+        const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+        if (!row || row.type !== 'image' || TERMINAL_TASK_STATUSES.has(String(row.status))) continue
+        const config = await resolveConfigForTask(row)
+        if (!config) {
+          await failTask(id, '找不到可用的图片 AI 配置')
+          continue
+        }
+        startImageProcessor(id, config)
+      } catch (err: any) {
+        logTaskError('ImageTask', 'pump', { id, error: err?.message })
+        await failTask(id, err?.message || '图片任务启动失败')
+      }
+    }
+  } finally {
+    pumpingImageQueue = false
+    if (activeImageIds.size < IMAGE_MAX_CONCURRENT && imageWaitQueue.length) void pumpImageQueue()
+  }
+}
+
+function startImageProcessor(id: number, config: AIConfig) {
+  if (activeProcessors.has(id) || activeImageIds.has(id)) return
+  activeImageIds.add(id)
+  startTaskProcessor(id, 'image', processTask(id, config).finally(() => {
+    activeImageIds.delete(id)
+    void pumpImageQueue()
+  }))
+}
+
 async function isCancelled(id: number) {
   if (cancelledTaskIds.has(id)) return true
   const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
@@ -493,7 +541,7 @@ async function processTask(id: number, config: AIConfig) {
     if (!record) return
     if (TERMINAL_TASK_STATUSES.has(String(record.status))) return
     const type = record.type as TaskType
-    if (type === 'video' && record.status === 'queued') {
+    if ((type === 'video' || type === 'image') && record.status === 'queued') {
       await db.update(schema.sysTask)
         .set({ status: 'processing', updatedAt: now() })
         .where(eq(schema.sysTask.id, id))
@@ -969,7 +1017,13 @@ async function scheduleResume(row: SysTaskRecord): Promise<'poll' | 'retry' | 'f
         }))
       }
     } else {
-      startTaskProcessor(id, type, pollTask(row, config, vendorTaskId, { immediate: true }))
+      if (!activeImageIds.has(id) && !activeProcessors.has(id)) {
+        activeImageIds.add(id)
+        startTaskProcessor(id, type, pollTask(row, config, vendorTaskId, { immediate: true }).finally(() => {
+          activeImageIds.delete(id)
+          void pumpImageQueue()
+        }))
+      }
     }
     return 'poll'
   }
@@ -977,6 +1031,12 @@ async function scheduleResume(row: SysTaskRecord): Promise<'poll' | 'retry' | 'f
   if (type === 'video') {
     logTaskStart(taskLabel(type), 'resume-queue', { id, provider: config.provider })
     enqueueVideo(id)
+    return 'retry'
+  }
+
+  if (type === 'image') {
+    logTaskStart(taskLabel(type), 'resume-queue', { id, provider: config.provider })
+    enqueueImage(id)
     return 'retry'
   }
 
@@ -995,6 +1055,8 @@ export async function cancelGenerationTask(id: number) {
   cancelledTaskIds.add(id)
   const queueIdx = videoWaitQueue.indexOf(id)
   if (queueIdx >= 0) videoWaitQueue.splice(queueIdx, 1)
+  const imageIdx = imageWaitQueue.indexOf(id)
+  if (imageIdx >= 0) imageWaitQueue.splice(imageIdx, 1)
 
   const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
   if (!row) return null
@@ -1029,6 +1091,7 @@ export async function cancelGenerationTask(id: number) {
   }
   const [updated] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
   void pumpVideoQueue()
+  void pumpImageQueue()
   return updated || row
 }
 
@@ -1036,7 +1099,7 @@ export async function cancelGenerationTask(id: number) {
 export async function resumeInterruptedTasks(): Promise<{ resumed: number; retried: number; failed: number }> {
   const all = (await db.select().from(schema.sysTask)) as SysTaskRecord[]
   const rows = all.filter((row) => {
-    if (row.type === 'image') return row.status === 'processing'
+    if (row.type === 'image') return row.status === 'processing' || row.status === 'queued'
     if (row.type === 'video') return row.status === 'processing' || row.status === 'queued'
     return false
   })
