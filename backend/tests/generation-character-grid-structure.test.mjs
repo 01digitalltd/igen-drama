@@ -38,6 +38,17 @@ test('video enqueue keeps MiniMax-H3 on the MiniMax adapter', () => {
   assert.match(generation, /providers: \[want\]/)
 })
 
+test('MiniMax 1008 falls back to Seedance on the same video task', () => {
+  const generation = read('src/services/generation.ts')
+  assert.match(generation, /switchVideoTaskToSeedanceIfNeeded/)
+  assert.match(generation, /skipMiniMaxVideoForBalance/)
+  assert.match(generation, /resolveSeedanceFallbackConfig/)
+  assert.match(generation, /seedanceFallback/)
+  assert.match(generation, /MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE/)
+  assert.match(generation, /providers: \['volcengine'\]/)
+  assert.match(generation, /canFallbackMiniMaxToSeedance/)
+})
+
 test('character image generation still strips leftover grid copy and never overlays', () => {
   const generation = read('src/services/generation.ts')
   const imageStart = generation.indexOf("if (type === 'image')")

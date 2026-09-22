@@ -62,6 +62,7 @@ export async function seedAiConfigsFromEnv() {
   await syncActiveConfigsFromEnv()
   await ensureGeminiVideoConfig()
   await ensureMinimaxVideoConfig()
+  await ensureSeedanceVideoConfig()
 }
 
 type SeedConfigRow = {
@@ -322,4 +323,77 @@ async function ensureMinimaxVideoConfig() {
     updatedAt: ts,
   })
   console.log(`[config-seed] inserted video config (minimax / ${model})`)
+}
+
+/**
+ * Seedance 2.0 (BytePlus / Volcengine) stays active as MiniMax balance fallback.
+ * Lower priority so Wizard still prefers MiniMax-H3 when that key has credit.
+ */
+async function ensureSeedanceVideoConfig() {
+  const videos = ((await db.select().from(schema.aiServiceConfigs)
+    .where(eq(schema.aiServiceConfigs.serviceType, 'video'))) as Array<{
+      id?: number
+      provider?: string | null
+      isActive?: unknown
+      apiKey?: string | null
+      baseUrl?: string | null
+      model?: unknown
+    }>)
+  const existing = videos.find((row) => row.provider === 'volcengine' && row.isActive)
+
+  const apiKey = (
+    process.env.BYTEPLUS_ARK_API_KEY
+    || process.env.DRAMA_SEEDANCE_API_KEY
+    || process.env.ARK_API_KEY
+    || ''
+  ).trim()
+  const baseUrl = (
+    process.env.BYTEPLUS_ARK_VIDEO_BASE_URL
+    || process.env.DRAMA_SEEDANCE_BASE_URL
+    || 'https://ark.ap-southeast.bytepluses.com'
+  ).replace(/\/+$/, '').replace(/\/api\/v3$/i, '')
+  const model = (
+    process.env.BYTEPLUS_ARK_VIDEO_MODEL
+    || process.env.DRAMA_SEEDANCE_MODEL
+    || 'dreamina-seedance-2-0-260128'
+  ).trim()
+
+  if (existing) {
+    if (!apiKey || existing.id == null) return
+    const updates: Record<string, unknown> = {}
+    if (existing.apiKey !== apiKey) updates.apiKey = apiKey
+    if (existing.baseUrl !== baseUrl) updates.baseUrl = baseUrl
+    const current = parseConfigModels(existing.model)
+    if (current[0] !== model) {
+      updates.model = JSON.stringify([model, ...current.filter((item) => item !== model)])
+    }
+    if (!Object.keys(updates).length) return
+    updates.updatedAt = now()
+    await db.update(schema.aiServiceConfigs)
+      .set(updates)
+      .where(eq(schema.aiServiceConfigs.id, existing.id))
+    console.log('[config-seed] updated video config (volcengine / Seedance fallback)')
+    return
+  }
+
+  if (!apiKey) {
+    console.warn('[config-seed] skip seedance video: set BYTEPLUS_ARK_API_KEY')
+    return
+  }
+
+  const ts = now()
+  await db.insert(schema.aiServiceConfigs).values({
+    serviceType: 'video',
+    provider: 'volcengine',
+    name: 'platform-video-seedance',
+    baseUrl,
+    apiKey,
+    model: JSON.stringify([model]),
+    priority: 80,
+    isDefault: false,
+    isActive: true,
+    createdAt: ts,
+    updatedAt: ts,
+  })
+  console.log(`[config-seed] inserted video config (volcengine / ${model})`)
 }

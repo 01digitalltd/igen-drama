@@ -18,7 +18,7 @@ import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, appendAssetRestyleDirective, appendImageStyleDirective } from './style-preset.js'
 import { appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
-import { assertSeedanceAllowedForStyle, expectedVideoProvider, isRealisticDramaStyle, MINIMAX_H3_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
+import { assertSeedanceAllowedForStyle, canFallbackMiniMaxToSeedance, expectedVideoProvider, isRealisticDramaStyle, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE, MINIMAX_H3_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt } from './face-grid.js'
 import {
   composeVideoPromptAfterCharacterGrid,
@@ -32,6 +32,7 @@ import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './v
 import { pickLatestActiveTask } from '../utils/generation-task-status.js'
 import {
   annotateProviderSafetyBlock,
+  isInsufficientBalanceError,
   isRetryableProviderFailure,
   isRetryableProviderStatus,
   parseProviderErrorText,
@@ -63,6 +64,7 @@ const activeVideoIds = new Set<number>()
 const activeImageIds = new Set<number>()
 const activeVideoProviders = new Map<number, string>()
 /** Extra POSTs wait as status=queued. MiniMax runs several at once; Gemini/Seedance stay serial. */
+let skipMiniMaxVideoForBalance = false
 const IMAGE_MAX_CONCURRENT = 2
 const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'error', 'success', 'done', 'cancelled', 'canceled'])
 let pumpingVideoQueue = false
@@ -235,6 +237,69 @@ async function resolveVideoServiceConfig(opts: {
   return { config, configId, model }
 }
 
+async function resolveSeedanceFallbackConfig() {
+  const config = await getActiveConfig('video', { providers: ['volcengine'] })
+  const configId = await getActiveConfigId('video', { providers: ['volcengine'] })
+  if (!config) return null
+  return { config, configId, model: config.model }
+}
+
+async function switchVideoTaskToSeedanceIfNeeded(
+  record: { id: number; type?: string | null; provider?: string | null; model?: string | null; prompt?: string | null; params?: string | null; storyboardId?: unknown; dramaId?: unknown },
+  config: AIConfig,
+  err: { message?: string },
+): Promise<boolean> {
+  if (String(record.type) !== 'video') return false
+  const message = String(err?.message || '')
+  if (!isInsufficientBalanceError(undefined, message)) return false
+  const params = parseTaskParams(record.params)
+  const style = await resolveVideoDramaStyle(record)
+  if (!canFallbackMiniMaxToSeedance({
+    style,
+    provider: config.provider || record.provider,
+    alreadyFallback: Boolean(params.seedanceFallback),
+  })) return false
+
+  const seedance = await resolveSeedanceFallbackConfig()
+  if (!seedance) {
+    await failTask(record.id, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE)
+    return true
+  }
+
+  skipMiniMaxVideoForBalance = true
+  const duration = resolveVideoGenerationDuration({
+    prompt: String(record.prompt || ''),
+    shotDuration: Number(params.duration) || undefined,
+    provider: seedance.config.provider,
+    model: seedance.model,
+  })
+  await db.update(schema.sysTask)
+    .set({
+      provider: seedance.config.provider,
+      model: seedance.model,
+      taskId: null,
+      status: 'processing',
+      params: JSON.stringify({
+        ...params,
+        duration,
+        configId: seedance.configId || undefined,
+        seedanceFallback: true,
+        fallbackFrom: 'minimax',
+      }),
+      updatedAt: now(),
+    })
+    .where(eq(schema.sysTask.id, record.id))
+  logTaskWarn('VideoTask', 'seedance-fallback', {
+    id: record.id,
+    from: record.model,
+    to: seedance.model,
+    error: message,
+  })
+  await emitTaskEvent(record.id)
+  await processTask(record.id, seedance.config)
+  return true
+}
+
 export async function generateVideo(params: GenerateVideoParams): Promise<number> {
   const storyboardId = Number(params.storyboardId)
   if (Number.isInteger(storyboardId) && storyboardId > 0) {
@@ -272,11 +337,26 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
   const style = visual.value
   const videoOpts = isRealisticDramaStyle(style) ? { excludeProviders: ['volcengine'] } : undefined
 
-  const resolved = await resolveVideoServiceConfig({
+  const resolvedMiniMax = await resolveVideoServiceConfig({
     configId: params.configId,
     model: params.model,
     videoOpts,
   })
+  let resolved = resolvedMiniMax
+  if (
+    skipMiniMaxVideoForBalance
+    && String(resolved.config.provider || '').toLowerCase() === 'minimax'
+    && !isRealisticDramaStyle(style)
+  ) {
+    const seedance = await resolveSeedanceFallbackConfig()
+    if (seedance) {
+      resolved = seedance
+      logTaskWarn('VideoTask', 'seedance-fallback-prefetch', {
+        storyboardId: params.storyboardId,
+        model: seedance.model,
+      })
+    }
+  }
   const config = resolved.config
   const configId = resolved.configId
   const model = resolved.model
@@ -328,6 +408,9 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
     resolution: ['480p', '720p', '1080p', '2K'].includes(params.resolution || '') ? params.resolution : '720p',
     episodeId: params.episodeId,
     configId: configId || undefined,
+    ...(String(config.provider || '').toLowerCase() === 'volcengine' && skipMiniMaxVideoForBalance
+      ? { seedanceFallback: true, fallbackFrom: 'minimax' }
+      : {}),
   })
 
   logTaskStart('VideoTask', 'enqueue', {
@@ -764,6 +847,8 @@ async function processTask(id: number, config: AIConfig) {
     await pollTask(record, config, taskId!)
   } catch (err: any) {
     if (isAbortError(err) || await isCancelled(id)) return
+    const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
+    if (row && await switchVideoTaskToSeedanceIfNeeded(row, config, err)) return
     await failTask(id, annotateProviderSafetyBlock(err.message))
   }
 }
@@ -929,6 +1014,9 @@ async function pollTask(
       }
       if (pollResp.status === 'failed') {
         // 上游明确失败（如内容审核拦截）属终态：立即落库，不重试不等待超时
+        if (await switchVideoTaskToSeedanceIfNeeded(record, config, new Error(pollResp.error || 'Generation failed'))) {
+          return
+        }
         await failTask(record.id, pollResp.error || 'Generation failed')
         return
       }

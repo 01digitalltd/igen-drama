@@ -16,6 +16,20 @@ export const SEEDANCE_BLOCKED_FOR_REALISTIC_MESSAGE =
 export const MINIMAX_H3_MISSING_MESSAGE =
   '未启用 MiniMax-H3 视频服务，请先在设置中添加并启用 MiniMax 视频配置'
 
+export const MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE =
+  'MiniMax 帳戶餘額不足（1008），且未啟用 Seedance 視頻服務。請儲值 MiniMax，或在設置中啟用火山 Seedance 後再出片。'
+
+export function canFallbackMiniMaxToSeedance(opts: {
+  style?: string | null
+  provider?: string | null
+  alreadyFallback?: boolean
+}) {
+  if (opts.alreadyFallback) return false
+  if (String(opts.provider || '').toLowerCase() !== 'minimax') return false
+  if (isRealisticDramaStyle(opts.style)) return false
+  return true
+}
+
 export function expectedVideoProvider(model?: string | null): 'gemini' | 'minimax' | 'volcengine' | null {
   const m = String(model || '').trim().toLowerCase()
   if (!m) return null

@@ -7,6 +7,7 @@ import {
   annotateProviderBusy,
   isRetryableProviderFailure,
   isRetryableProviderStatus,
+  isInsufficientBalanceError,
   parseProviderErrorText,
 } from '../src/utils/provider-error.ts'
 
@@ -52,6 +53,19 @@ test('MiniMax 1027 output sensitive becomes a readable review message', () => {
   const input = annotateMiniMaxSensitiveBlock('[1026] video description contains sensitive content')
   assert.match(input, /1026/)
   assert.match(input, /輸入/)
+})
+
+test('MiniMax 1008 insufficient balance is detected and not retried as busy', () => {
+  assert.equal(isInsufficientBalanceError(402, 'insufficient balance (1008)'), true)
+  assert.equal(isInsufficientBalanceError(200, 'insufficient balance (1008)'), true)
+  assert.equal(isInsufficientBalanceError(400, 'bad request'), false)
+  assert.equal(isRetryableProviderStatus(402), false)
+  assert.equal(isRetryableProviderFailure(402, 'insufficient balance (1008)'), false)
+  const parsed = parseProviderErrorText(402, JSON.stringify({
+    type: 'error',
+    error: { type: 'insufficient_balance_error', message: 'insufficient balance (1008)', http_code: '402' },
+  }))
+  assert.match(parsed, /insufficient balance \(1008\)/)
 })
 
 test('APIMart busy wait message is readable and retryable', () => {

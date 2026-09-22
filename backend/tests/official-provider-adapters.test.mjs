@@ -212,6 +212,8 @@ test('new image and video models use their current API shapes', () => {
   assert.match(minimaxVideo, /role: 'reference_audio'/)
   assert.match(minimaxVideo, /role: 'reference_image'/)
   assert.match(configSeed, /ensureMinimaxVideoConfig/)
+  assert.match(configSeed, /ensureSeedanceVideoConfig/)
+  assert.match(configSeed, /BYTEPLUS_ARK_API_KEY/)
   assert.match(configSeed, /MINIMAX_VIDEO_API_KEY/)
   assert.match(configSeed, /syncActiveConfigsFromEnv/)
   assert.match(configSeed, /switchActiveProviderFromEnv/)

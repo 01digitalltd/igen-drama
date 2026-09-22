@@ -92,3 +92,12 @@ export function isRetryableProviderStatus(status: number) {
 export function isRetryableProviderFailure(status: number, message: string) {
   return isRetryableProviderStatus(status) || isProviderBusyMessage(message)
 }
+
+/** MiniMax HTTP 402 / internal code 1008 — account has no video credits. */
+export function isInsufficientBalanceError(status?: number, message?: string) {
+  if (Number(status) === 402) return true
+  const text = String(message || '')
+  if (/\(1008\)/.test(text)) return true
+  if (/\b1008\b/.test(text) && /insufficient/i.test(text)) return true
+  return /insufficient[_\s-]?balance/i.test(text)
+}
