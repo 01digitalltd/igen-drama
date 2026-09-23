@@ -70,9 +70,27 @@ function mapPixelSizeToAspect(size?: string | null): string {
   if (normalized === '1.91:1') return '16:9'
   if (APIMART_ASPECTS.has(normalized)) return normalized
 
+  const known: Record<string, string> = {
+    '1080x1080': '1:1',
+    '1024x1024': '1:1',
+    '1080x1440': '3:4',
+    '1440x1080': '4:3',
+    '1080x1920': '9:16',
+    '1024x1536': '9:16',
+    '1920x1080': '16:9',
+    '1536x1024': '16:9',
+    '1890x810': '21:9',
+    '1920x822': '21:9',
+  }
+  if (known[normalized]) return known[normalized]
+
   const [rawWidth, rawHeight] = normalized.split('x').map(Number)
   if (!rawWidth || !rawHeight) return '16:9'
   if (rawWidth === rawHeight) return '1:1'
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
+  const g = gcd(rawWidth, rawHeight)
+  const ratio = `${rawWidth / g}:${rawHeight / g}`
+  if (APIMART_ASPECTS.has(ratio)) return ratio
   return rawWidth > rawHeight ? '16:9' : '9:16'
 }
 

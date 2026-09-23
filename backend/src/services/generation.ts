@@ -46,6 +46,7 @@ import {
   shouldSynthesizeAutoTts,
   type VoAudioClip,
 } from './tts/vo-speech.js'
+import { imageSizeForAspectRatio } from './image-size.js'
 
 type TaskType = 'image' | 'video'
 
@@ -146,6 +147,24 @@ async function attachAssetStillForRestyle(params: GenerateImageParams): Promise<
   }
 }
 
+async function resolveStoryboardImageSize(params: GenerateImageParams): Promise<string> {
+  const explicit = String(params.size || '').trim()
+  if (explicit) return explicit
+  // Asset routes keep their own size; only storyboard stills follow drama.aspect_ratio.
+  if (!params.storyboardId) return '1920x1080'
+  let dramaId = Number(params.dramaId || 0)
+  if (!Number.isInteger(dramaId) || dramaId <= 0) {
+    const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, params.storyboardId))
+    if (sb) {
+      const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId))
+      dramaId = Number(ep?.dramaId || 0)
+    }
+  }
+  if (!Number.isInteger(dramaId) || dramaId <= 0) return '1920x1080'
+  const [drama] = await db.select().from(schema.dramas).where(eq(schema.dramas.id, dramaId))
+  return imageSizeForAspectRatio(drama?.aspectRatio)
+}
+
 export async function generateImage(params: GenerateImageParams): Promise<number> {
   params = await attachAssetStillForRestyle(params)
   const visual = await loadDramaVisualStyle(params.dramaId)
@@ -163,6 +182,8 @@ export async function generateImage(params: GenerateImageParams): Promise<number
   }
   if (!config) throw new Error('未配置图片模型，请先到「设置」页添加并启用 AI 服务')
 
+  const size = await resolveStoryboardImageSize(params)
+
   const id = await createTask('image', config, {
     storyboardId: params.storyboardId,
     dramaId: params.dramaId,
@@ -172,7 +193,7 @@ export async function generateImage(params: GenerateImageParams): Promise<number
     prompt: params.prompt,
     model: params.model || config.model,
   }, {
-    size: params.size || '1920x1080',
+    size,
     frameType: params.frameType,
     referenceImages: params.referenceImages,
     episodeId: params.episodeId,

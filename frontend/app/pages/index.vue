@@ -211,10 +211,12 @@ const stylePresets = ref([])
 const styleSelectOptions = computed(() => stylePresets.value.map(p => ({ label: p.name, value: p.value })))
 const selectedStyleDesc = computed(() => stylePresets.value.find(p => p.value === form.value.style)?.description || '')
 const aspectRatioOptions = [
-  { label: '16:9 · 横屏', value: '16:9' },
-  { label: '9:16 · 竖屏', value: '9:16' },
   { label: '1:1 · 方形', value: '1:1' },
-  { label: '自适应', value: 'adaptive' },
+  { label: '3:4 · 竖版', value: '3:4' },
+  { label: '4:3 · 横版', value: '4:3' },
+  { label: '9:16 · 竖屏', value: '9:16' },
+  { label: '16:9 · 横屏', value: '16:9' },
+  { label: '21:9 · 超宽', value: '21:9' },
 ]
 const dialogueLanguageOptions = DIALOGUE_LANGUAGE_OPTIONS
 const voVoiceOptions = VO_VOICE_OPTIONS
