@@ -18,6 +18,10 @@ export function getOwnerTenantId(c: Context): string | null {
   return (c.get('ownerTenantId') as string | null | undefined) || null
 }
 
+export function getImpersonatorId(c: Context): string | null {
+  return (c.get('impersonatorId') as string | null | undefined) || null
+}
+
 /** Tenant isolation is on when a service key is configured AND the caller sent an owner id. */
 export function shouldScopeToOwner(c: Context): boolean {
   return isServiceAuthEnabled() && Boolean(getOwnerUserId(c))
