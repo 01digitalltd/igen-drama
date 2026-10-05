@@ -10,7 +10,7 @@ import { mastra } from '../mastra/index.js'
 import { buildAgentRequestContext } from '../agents/context.js'
 import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn } from '../utils/task-logger.js'
 import { withContentLanguage } from '../utils/content-language.js'
-import { dialogueLanguageInstruction, getDramaDialogueLanguage } from './dialogue-language.js'
+import { dialogueLanguageInstruction, getDramaDialogueLanguage, storyboardImageTextInstruction } from './dialogue-language.js'
 import { getDramaVoVoice, rewriteNarratorLabels, voVoiceInstruction } from './vo-voice.js'
 import { getDramaStyleValue, visualStyleInstruction } from './style-preset.js'
 import { publishEpisodeEvent } from './episode-events.js'
@@ -222,6 +222,7 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
 
 只返回 JSON {"video_prompt":"...","image_prompt":"..."}。必须根据上面的 description 生成，不要调用工具。`, opts.locale),
               dialogueLanguageInstruction(spoken),
+              storyboardImageTextInstruction(spoken),
               voVoiceInstruction(narratorVoice),
               visualStyleInstruction(styleValue),
             ].join('\n\n'),
@@ -246,6 +247,8 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
                 atmosphere: shot.atmosphere,
                 imageRefs: shot.imageRefs,
                 styleValue,
+                onScreenText: storyboardImageTextInstruction(spoken),
+              })
               })
             await persistShotPrompts(sb.id, rewriteNarratorLabels(drafted, narratorVoice), imagePrompt)
             saved = true

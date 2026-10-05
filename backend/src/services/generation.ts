@@ -16,7 +16,7 @@ import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuc
 import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, appendAssetRestyleDirective, appendImageStyleDirective } from './style-preset.js'
-import { appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
+import { appendStoryboardImageTextDirective, appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
 import { assertSeedanceAllowedForStyle, canFallbackMiniMaxToSeedance, expectedVideoProvider, isRealisticDramaStyle, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE, MINIMAX_H3_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt } from './face-grid.js'
@@ -748,10 +748,17 @@ async function processTask(id: number, config: AIConfig) {
         imageVisual.prompt,
         assetKind || (record.storyboardId ? 'still' : null),
       )
+      const storyboardStill = Boolean(record.storyboardId) && !record.characterId && !record.sceneId && !record.propId
+      const stillPrompt = storyboardStill
+        ? appendStoryboardImageTextDirective(
+          imagePrompt,
+          await getDramaDialogueLanguage(await resolveVideoDramaId(record)),
+        )
+        : imagePrompt
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
-        prompt: imagePrompt,
+        prompt: stillPrompt,
         size: params.size,
         frameType: params.frameType,
         referenceImages: labeledRefs.length ? JSON.stringify(labeledRefs) : null,

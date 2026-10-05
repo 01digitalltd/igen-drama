@@ -1,8 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  appendStoryboardImageTextDirective,
   appendVoLanguageDirective,
   defaultDialogueLanguageFromLocale,
+  storyboardImageTextInstruction,
   dialogueLanguageInstruction,
   dialogueLanguageLabel,
   normalizeDialogueLanguage,
@@ -32,6 +34,24 @@ test('video prompt instruction asks to rewrite spoken lines only', () => {
   assert.match(yue, /畫面、運鏡/)
   assert.match(yue, /香港口語書面/)
   assert.equal(dialogueLanguageLabel('en-US'), '英文')
+})
+
+test('storyboard still text follows the dialogue language script', () => {
+  const yue = storyboardImageTextInstruction('yue-HK')
+  assert.match(yue, /繁體中文/)
+  assert.match(yue, /不要寫成簡體/)
+  const tw = storyboardImageTextInstruction('cmn-TW')
+  assert.match(tw, /繁體中文/)
+  const cn = storyboardImageTextInstruction('cmn-CN')
+  assert.match(cn, /简体中文/)
+  assert.doesNotMatch(cn, /繁體中文/)
+  const en = storyboardImageTextInstruction('en-US')
+  assert.match(en, /English/)
+  const first = appendStoryboardImageTextDirective('招牌寫著美肌', 'yue-HK')
+  assert.match(first, /STORYBOARD_IMAGE_TEXT/)
+  assert.match(first, /繁體中文/)
+  const second = appendStoryboardImageTextDirective(first, 'yue-HK')
+  assert.equal(second.match(/STORYBOARD_IMAGE_TEXT/g)?.length, 1)
 })
 
 test('generation appends a spoken-language tag without duplicating it', () => {

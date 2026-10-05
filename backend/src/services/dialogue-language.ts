@@ -64,8 +64,40 @@ export function dialogueLanguageInstruction(codeRaw?: string | null) {
     '畫面、運鏡、景別、氛圍描述仍用產品寫作語言；不要整段提示詞都改成對白語言。',
     '從分鏡 description 抽出的「角色名說：「…」」「旁白：…」必須翻譯／改寫成該對白語言的自然口語，意思不變，不要創作新台詞。',
     spokenRule,
-    '不要把對白寫成螢幕字幕、標題或可讀文字。',
+    '不要把對白寫成影片字幕。',
   ].join('')
+}
+
+const ON_SCREEN_SCRIPT: Record<DialogueLanguageCode, string> = {
+  'yue-HK': '繁體中文',
+  'cmn-TW': '繁體中文',
+  'cmn-CN': '简体中文',
+  'en-US': 'English',
+}
+
+/** Readable glyphs inside a storyboard still. Cantonese speech is written in Traditional Chinese. */
+export function storyboardImageTextInstruction(codeRaw?: string | null) {
+  const code = normalizeDialogueLanguage(codeRaw)
+  const label = LABELS[code]
+  const script = ON_SCREEN_SCRIPT[code]
+  const yue = code === 'yue-HK'
+    ? '粵語口語可以保留香港用字，但畫面上的字必須是繁體中文，不要寫成簡體。'
+    : ''
+  return [
+    `【分鏡圖文字｜必須遵守】對白語言是 ${label}（${code}）。`,
+    `分鏡靜幀裡的可讀文字（招牌、包裝說明、螢幕、字卡、標題）必須使用${script}。`,
+    yue,
+    '官方 Logo 原件不要改寫。不要把整段對白燒成字幕；只有畫面裡本來就有的字才寫，並用上面的文字。',
+  ].filter(Boolean).join('')
+}
+
+const STORYBOARD_IMAGE_TEXT_MARKER = 'STORYBOARD_IMAGE_TEXT'
+
+export function appendStoryboardImageTextDirective(prompt: string, codeRaw?: string | null) {
+  const base = String(prompt || '').trim()
+  if (base.includes(STORYBOARD_IMAGE_TEXT_MARKER)) return base
+  const line = `[${STORYBOARD_IMAGE_TEXT_MARKER}] ${storyboardImageTextInstruction(codeRaw)}`
+  return base ? `${base}\n\n${line}` : line
 }
 
 const NO_ON_SCREEN_TEXT_MARKER = 'NO_ON_SCREEN_TEXT'

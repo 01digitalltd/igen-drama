@@ -30,7 +30,7 @@ description: Write Gemini still prompts that lock attached asset images.
 （如有）第 N 张图是本片已生成的分镜：保持同一画风、色温、服装；只改这一镜的动作与景别。
 画面：[第一个子镜头谁在哪、做什么、景别]
 光线：[氛围；色温必须跟全片一致]
-不要字幕、不要时间轴、不要配音旁白
+不要把对白烧成字幕、不要时间轴、不要配音旁白。画面里的招牌、包装说明、屏幕、字卡用【分镜图文字】指定的文字。
 ```
 
 没有某类参考图就删掉对应那一行，不要假装有图。
@@ -49,7 +49,8 @@ description: Write Gemini still prompts that lock attached asset images.
 
 - 把 `video_prompt` 原样复制成 `image_prompt`
 - 时间轴分段、运镜过程、「女声旁白／男声旁白」
-- 屏幕上的可读字幕、标题、提示词原文
+- 屏幕上把整段對白燒成字幕
+- 畫面文字用錯文字：粵語或台灣國語寫成簡體，大陸普通話寫成繁體
 - 忽略前面附上的人物／场景／道具图
 
 ## 保存

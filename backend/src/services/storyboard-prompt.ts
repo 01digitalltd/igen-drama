@@ -207,6 +207,7 @@ export function composeStoryboardImagePrompt(opts: {
   atmosphere?: string | null
   imageRefs?: ShotImageRef[]
   styleValue?: string | null
+  onScreenText?: string | null
 }): string {
   const beat = firstStoryboardBeat(opts.description)
   const refs = opts.imageRefs || []
@@ -218,6 +219,7 @@ export function composeStoryboardImagePrompt(opts: {
     : '按画面描述绘制，不要发明无关角色。'
   const style = visualStyleLabel(opts.styleValue)
   const atmosphere = String(opts.atmosphere || '').trim()
+  const onScreenText = String(opts.onScreenText || '').trim()
   return [
     filmContinuityLine(opts.styleValue),
     `单帧分镜静帧，16:9 横图${style ? `，${style}` : ''}。`,
@@ -225,7 +227,8 @@ export function composeStoryboardImagePrompt(opts: {
     lock,
     beat,
     atmosphere ? `氛围光线：${atmosphere}。` : '',
-    '不要时间轴、不要配音旁白、不要字幕文字。',
+    '不要时间轴、不要配音旁白、不要把对白烧成字幕。',
+    onScreenText,
   ].filter(Boolean).join('')
 }
 
