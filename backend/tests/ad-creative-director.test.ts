@@ -15,6 +15,7 @@ test('ad-creative-director keeps the user story spine without a plot library', (
   assert.match(skill, /name: ad-creative-director/)
   assert.match(skill, /故事主干/)
   assert.match(skill, /五拍节奏/)
+  assert.match(skill, /用户写下的事件顺序必须保留/)
   assert.match(skill, /不要写死粤语/)
   assert.match(skill, /prompt_generator/)
   assert.match(skill, /## S编号/)
@@ -30,6 +31,7 @@ test('ad rewrite instruction keeps the user story spine without a plot library',
   assert.match(src, /## S编号/)
   assert.match(src, /不要写死粤语/)
   assert.match(src, /pack_hero/)
+  assert.match(src, /用户写下的事件顺序必须保留/)
   assert.doesNotMatch(src, DEVICE_SHADOW)
 })
 
@@ -37,7 +39,25 @@ test('script-rewriter documents the ad story-spine exception without a plot libr
   const skill = read('workspace/skills/script-rewriter/SKILL.md')
   assert.match(skill, /广告改写例外/)
   assert.match(skill, /brief/)
-  assert.match(skill, /故事主干/)
   assert.match(skill, /五拍/)
+  assert.match(skill, /用户写下的事件顺序必须保留/)
   assert.doesNotMatch(skill, DEVICE_SHADOW)
+})
+
+test('product form skills cannot replace a written event order', () => {
+  for (const rel of [
+    'workspace/skills/ad-form-product/SKILL.md',
+    'workspace/skills/ad-product-sell/SKILL.md',
+  ]) {
+    const skill = read(rel)
+    assert.match(skill, /用户写下的事件顺序必须保留/)
+    assert.doesNotMatch(skill, DEVICE_SHADOW)
+  }
+})
+
+test('storyboard keeps every script event when the shot budget is tight', () => {
+  const skill = read('workspace/skills/storyboard-breaker/SKILL.md')
+  const prompt = read('src/agents/index.ts')
+  assert.match(skill, /不得删掉剧本里的事件/)
+  assert.match(prompt, /不得删掉剧本里的事件/)
 })

@@ -5,7 +5,7 @@ description: Seedance / MiniMax 视频提示词规范 — 根据分镜段落内�
 
 # 视频提示词（分镜段落 → video_prompt）
 
-根据单个分镜段落的 description（含【镜头N】子镜头结构与台词/旁白）/ atmosphere / duration，以及 `read_storyboard_context.video_generation` 的时长上限，生成驱动 AI 视频生成的 `video_prompt`。**一个分镜段落 = 一次视频生成任务，时长不得超过 `duration_max`，内部允许切镜**：段与段之间可以是不同镜头（换景别/角度/对象），用硬切衔接；但**全程不跨场景**、不闪回。
+根据单个分镜段落的 description（含【镜头N】子镜头结构与台词/旁白）/ atmosphere / duration，以及 `read_storyboard_context.video_generation` 的时长上限，生成驱动 AI 视频生成的 `video_prompt`。**一个分镜段落 = 一次视频生成任务，时长不得超过 `duration_max`，内部允许切镜**：段与段之间可以是不同镜头（换景别/角度/对象），用硬切衔接。**【镜头N】写了地点变化就跟着走，不得删掉该镜头，也不要另换场景**、不闪回。
 
 ## 模型分流
 
@@ -14,7 +14,7 @@ description: Seedance / MiniMax 视频提示词规范 — 根据分镜段落内�
 - **`omni`**（Gemini Omni / gemini-omni-*）：忽略下方 Seedance 行首格式，改遵守 **Skill: prompt-generator/video-prompt/omni**
 - **其他**（Seedance 2.0、MiniMax H3）：遵守本文件（`0-3秒：` 格式）
 
-两种模型都适用：不跨场景、不创作 description 之外的台词、只更新 `video_prompt`。引用格式不同：Omni 用 `<IMAGE_REF_N>`，本文件用 `@角色名` / `@场景名` / `@道具名`。
+两种模型都适用：跟着【镜头N】里已写的地点、不创作 description 之外的台词、只更新 `video_prompt`。引用格式不同：Omni 用 `<IMAGE_REF_N>`，本文件用 `@角色名` / `@场景名` / `@道具名`。
 
 ## 格式
 

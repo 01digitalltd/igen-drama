@@ -3002,7 +3002,7 @@ ${visualStyleInstruction(drama.value?.style)}
 
 该分镜信息:时长 ${sb.duration || 10}s;场景:${getSceneName(sb) || '未绑定'};角色:${charNames};道具:${propNames}。
 
-请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】子镜头与台词/旁白)、氛围及时长、image_refs 及 video_generation,据此生成 video_prompt；段落内允许多镜头切镜,但不跨场景,切镜点对齐 description 的【镜头N】结构,然后调用 update_storyboard 保存到分镜 ID:${sb.id}。只更新 video_prompt 字段,不要改动其他字段,不要重新拆分整集。`,
+请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】子镜头与台词/旁白)、氛围及时长、image_refs 及 video_generation,据此生成 video_prompt；段落内允许多镜头切镜,【镜头N】写了地点变化就跟着走,不得删掉该镜头,切镜点对齐 description 的【镜头N】结构,然后调用 update_storyboard 保存到分镜 ID:${sb.id}。只更新 video_prompt 字段,不要改动其他字段,不要重新拆分整集。`,
       drama_id: dramaId,
       episode_id: epId.value,
       model: chatModelOverride() || undefined,

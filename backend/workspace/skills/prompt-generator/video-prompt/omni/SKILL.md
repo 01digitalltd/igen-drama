@@ -9,7 +9,7 @@ description: Gemini Omni Flash 视频提示词规范 — 简单标记绑定参�
 
 根据单个分镜段落的 description（含【镜头N】子镜头与台词/旁白）/ atmosphere / duration，以及该分镜的 `image_refs`，生成驱动 **Gemini Omni Flash** 的 `video_prompt`。Omni 同时处理文本、图像并自带音轨。
 
-**一个分镜段落 = 一次视频生成任务，时长不得超过 `duration_max`（Omni 上限 10 秒）**。段内允许切镜，但**全程不跨场景**、不闪回。
+**一个分镜段落 = 一次视频生成任务，时长不得超过 `duration_max`（Omni 上限 10 秒）**。段内允许切镜。【镜头N】写了地点变化就跟着走，不得删掉该镜头，也不要另换场景、不闪回。
 
 ## 格式
 
