@@ -86,9 +86,10 @@ test('AI rewrite completion goes to assets without extracting', () => {
   assert.doesNotMatch(rewriteFn, /doExtractAll/)
 })
 
-test('ad promo rewrite asks for the creative plot library', () => {
+test('ad promo rewrite keeps the user story spine', () => {
   assert.match(page, /isAdPromoDrama/)
-  assert.match(page, /与创意情节库改写成广告分场剧本/)
+  assert.match(page, /保留用户故事主干/)
+  assert.doesNotMatch(page, /与创意情节库改写成广告分场剧本/)
   const rewriteFn = page.match(/function doRewrite\(\) \{[\s\S]*?\n\}/)?.[0] || ''
   assert.match(rewriteFn, /isAdPromoDrama\.value \? AD_REWRITE_MESSAGE : SCRIPT_REWRITE_MESSAGE/)
 })

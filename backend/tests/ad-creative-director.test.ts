@@ -25,32 +25,43 @@ const PLOT_TITLES = [
   '無限循環工作日',
 ]
 
-test('ad-creative-director skill and plot library exist with 15 mechanisms', () => {
+test('ad-creative-director keeps the user story spine and an optional device vocabulary', () => {
   const skill = read('workspace/skills/ad-creative-director/SKILL.md')
   assert.match(skill, /name: ad-creative-director/)
+  assert.match(skill, /故事主干/)
+  assert.match(skill, /手法词汇可选/)
+  assert.match(skill, /一个主导手法/)
   assert.match(skill, /不要写死粤语/)
   assert.match(skill, /prompt_generator/)
   assert.match(skill, /## S编号/)
+  assert.doesNotMatch(skill, /内部选 1 个主机制/)
 
   const library = read('workspace/skills/ad-creative-director/references/creative-plot-library.md')
   for (const title of PLOT_TITLES) {
     assert.ok(library.includes(title), `missing plot ${title}`)
   }
-  assert.match(library, /中段鋪陳衝突/)
-  assert.match(library, /轉折（專業\/產品登場）/)
+  assert.doesNotMatch(library, /美容院/)
+  assert.doesNotMatch(library, /牙科診所/)
 })
 
-test('ad rewrite instruction internally selects plots and forbids tables', () => {
+test('ad rewrite instruction keeps the user story spine', () => {
   const src = read('src/agents/tools/script-tools.ts')
-  assert.match(src, /内部选 1 个主机制/)
+  assert.match(src, /故事主干/)
+  assert.match(src, /手法词汇可选/)
+  assert.match(src, /一个主导手法/)
+  assert.doesNotMatch(src, /内部选 1 个主机制/)
   assert.match(src, /markdown 分镜表/)
   assert.match(src, /## S编号/)
   assert.match(src, /不要写死粤语/)
   assert.match(src, /pack_hero/)
 })
 
-test('script-rewriter documents the ad plot-reinvention exception', () => {
+test('script-rewriter documents the ad story-spine exception', () => {
   const skill = read('workspace/skills/script-rewriter/SKILL.md')
   assert.match(skill, /广告改写例外/)
   assert.match(skill, /brief/)
+  assert.match(skill, /故事主干/)
+  assert.match(skill, /手法词汇可选/)
+  assert.match(skill, /一个主导手法/)
+  assert.doesNotMatch(skill, /内部选 1 个主机制/)
 })

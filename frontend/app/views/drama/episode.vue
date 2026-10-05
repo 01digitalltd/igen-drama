@@ -2130,7 +2130,7 @@ const isAdPromoDrama = computed(() => {
 })
 const SCRIPT_REWRITE_MESSAGE = '请读取剧本并改写为格式化剧本，然后保存'
 const AD_REWRITE_MESSAGE =
-  '请读取内容并按已注入的广告技能与创意情节库改写成广告分场剧本，片尾须有品牌Logo露出，然后保存'
+  '请读取内容并按已注入的广告技能改写成广告分场剧本：保留用户故事主干，压成一支短片，片尾须有品牌Logo露出，然后保存'
 function isSeedanceVideoModel(provider, model) {
   const p = String(provider || '').toLowerCase()
   const m = String(model || '').toLowerCase()

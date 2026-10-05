@@ -78,8 +78,8 @@ function formatSkillSection(skillId: string, content: string): string {
   return [`## Skill: ${skillId}`, content].join('\n')
 }
 
-/** Adjacent `references/*.md` next to a SKILL.md. Injected for the rewriter so the plot library
- *  actually reaches the model; extractor / storyboard only get the SKILL.md protocol. */
+/** Adjacent `references/*.md` next to a SKILL.md. Injected for the rewriter.
+ *  Extractor / storyboard only get the SKILL.md protocol. */
 function loadSkillReferences(skillRelPath: string): string[] {
   const refDir = path.join(SKILLS_DIR, skillRelPath, 'references')
   if (!fs.existsSync(refDir)) return []
