@@ -42,6 +42,65 @@ export function storyboardBreakerFailure(opts: {
   return '拆分鏡沒有寫入任何鏡頭，請再試一次。'
 }
 
+function toolNameOf(call: { toolName?: string; payload?: { toolName?: string }; tool?: { id?: string } } | null | undefined) {
+  return String(call?.toolName || call?.payload?.toolName || call?.tool?.id || '')
+}
+
+function stepCalledSave(step: { toolCalls?: unknown[]; toolResults?: unknown[] } | null | undefined) {
+  const calls = [...(step?.toolCalls || []), ...(step?.toolResults || [])] as Array<{
+    toolName?: string
+    payload?: { toolName?: string }
+    tool?: { id?: string }
+  }>
+  return calls.some((call) => /save_storyboard/i.test(toolNameOf(call)))
+}
+
+/**
+ * Step 0 must read context. Later steps must save until one save_storyboards
+ * call exists, so a text-only turn cannot end the job.
+ */
+export function storyboardBreakerPrepareStep(args: {
+  stepNumber?: number
+  steps?: Array<{ toolCalls?: unknown[]; toolResults?: unknown[] }>
+}) {
+  if ((args.steps || []).some((step) => stepCalledSave(step))) {
+    return { toolChoice: 'auto' as const }
+  }
+  if ((args.stepNumber || 0) <= 0) {
+    return { toolChoice: { type: 'tool' as const, toolName: 'read_storyboard_context' } }
+  }
+  return { toolChoice: { type: 'tool' as const, toolName: 'save_storyboards' } }
+}
+
+export function storyboardGenerateDiagnostic(result: {
+  finishReason?: unknown
+  tripwire?: { reason?: unknown }
+  warnings?: unknown
+  steps?: unknown
+} | null | undefined) {
+  const finish = String(result?.finishReason || '').trim()
+  const trip = String(result?.tripwire?.reason || '').trim()
+  const warnings = (Array.isArray(result?.warnings) ? result.warnings : [])
+    .map((warning) => {
+      if (typeof warning === 'string') return warning.trim()
+      if (warning && typeof warning === 'object') {
+        const row = warning as { message?: unknown; type?: unknown }
+        return String(row.message || row.type || '').trim()
+      }
+      return ''
+    })
+    .filter(Boolean)
+    .slice(0, 3)
+    .join('; ')
+  const steps = Array.isArray(result?.steps) ? result.steps.length : 0
+  return [
+    finish && `finish=${finish}`,
+    trip && `tripwire=${trip}`,
+    steps ? `steps=${steps}` : '',
+    warnings && `warnings=${warnings.slice(0, 240)}`,
+  ].filter(Boolean).join(' ')
+}
+
 /** Second user turn when the model reads context and stops without saving. */
 export const STORYBOARD_SAVE_FOLLOW_UP = [
   '上一次你只读取了上下文就结束了，没有调用 save_storyboards，所以这一集没有写入分镜。',

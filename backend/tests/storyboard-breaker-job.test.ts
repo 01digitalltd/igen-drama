@@ -1,7 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { STORYBOARD_SAVE_FOLLOW_UP, storyboardBreakerFailure } from '../src/services/storyboard-breaker-job.ts'
+import {
+  STORYBOARD_SAVE_FOLLOW_UP,
+  storyboardBreakerFailure,
+  storyboardBreakerPrepareStep,
+  storyboardGenerateDiagnostic,
+} from '../src/services/storyboard-breaker-job.ts'
 
 test('storyboard breaker reports a rejected save even when old shots remain', () => {
   assert.equal(
@@ -54,9 +59,35 @@ test('agent jobs mark storyboard_breaker error when no live shots were saved', (
   assert.match(jobs, /countLiveStoryboards/)
   assert.match(jobs, /storyboard_breaker-retry/)
   assert.match(jobs, /STORYBOARD_SAVE_FOLLOW_UP/)
+  assert.match(jobs, /storyboardBreakerPrepareStep/)
 })
 
 test('storyboard save follow-up requires save_storyboards before ending', () => {
   assert.match(STORYBOARD_SAVE_FOLLOW_UP, /save_storyboards/)
   assert.match(STORYBOARD_SAVE_FOLLOW_UP, /replace_existing/)
+})
+
+test('storyboard breaker forces a read, then a save, then stops forcing after a save', () => {
+  assert.deepEqual(storyboardBreakerPrepareStep({ stepNumber: 0, steps: [] }), {
+    toolChoice: { type: 'tool', toolName: 'read_storyboard_context' },
+  })
+  assert.deepEqual(storyboardBreakerPrepareStep({ stepNumber: 1, steps: [] }), {
+    toolChoice: { type: 'tool', toolName: 'save_storyboards' },
+  })
+  assert.deepEqual(storyboardBreakerPrepareStep({
+    stepNumber: 2,
+    steps: [{ toolCalls: [{ toolName: 'save_storyboards' }] }],
+  }), { toolChoice: 'auto' })
+})
+
+test('storyboard generate diagnostic keeps the finish reason', () => {
+  assert.match(storyboardGenerateDiagnostic({
+    finishReason: 'stop',
+    warnings: [{ message: 'empty content' }],
+    steps: [{}],
+  }), /finish=stop/)
+  assert.match(storyboardGenerateDiagnostic({
+    finishReason: 'stop',
+    warnings: [{ message: 'empty content' }],
+  }), /empty content/)
 })

@@ -12,7 +12,13 @@ import { agentJobErrorMessage } from '../utils/provider-error.js'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn } from '../utils/task-logger.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
-import { STORYBOARD_SAVE_FOLLOW_UP, storyboardBreakerFailure, type AgentToolResult } from './storyboard-breaker-job.js'
+import {
+  STORYBOARD_SAVE_FOLLOW_UP,
+  storyboardBreakerFailure,
+  storyboardBreakerPrepareStep,
+  storyboardGenerateDiagnostic,
+  type AgentToolResult,
+} from './storyboard-breaker-job.js'
 
 async function countLiveStoryboards(episodeId: number) {
   const rows = await db.select().from(schema.storyboards)
@@ -51,12 +57,27 @@ function normalizeToolResult(entry: any) {
   return typeof result === 'string' ? result : JSON.stringify(result)
 }
 
+function flattenGenerateResult(result: any) {
+  const toolCalls = [...(result?.toolCalls || [])]
+  const toolResults = [...(result?.toolResults || [])]
+  for (const step of result?.steps || []) {
+    for (const call of step?.toolCalls || []) toolCalls.push(call)
+    for (const row of step?.toolResults || []) toolResults.push(row)
+  }
+  return { ...result, toolCalls, toolResults }
+}
+
 function normalizeGenerateToolResults(result: any): AgentToolResult[] {
-  const toolResults = result?.toolResults || []
+  const toolResults = flattenGenerateResult(result).toolResults || []
   return toolResults.map((tr: any) => ({
     toolName: normalizeToolName(tr),
     result: normalizeToolResult(tr),
   }))
+}
+
+const storyboardGenerateOptions = {
+  maxSteps: 20,
+  prepareStep: storyboardBreakerPrepareStep,
 }
 
 function newJobId() {
@@ -139,10 +160,13 @@ export function startAgentJob(params: {
       ...agentContextFromAd(ad),
     })
     const userMessage = withContentLanguage(message, params.locale)
-    let result = await agent.generate(
+    const generateOptions = agentType === 'storyboard_breaker'
+      ? { ...storyboardGenerateOptions, requestContext }
+      : { maxSteps: 20, requestContext }
+    let result = flattenGenerateResult(await agent.generate(
       [{ role: 'user', content: userMessage }],
-      { maxSteps: 20, requestContext },
-    )
+      generateOptions,
+    ))
     if (agentType !== 'storyboard_breaker') return result
     const preview = storyboardBreakerFailure({
       liveShotCount: await countLiveStoryboards(episodeId),
@@ -154,21 +178,26 @@ export function startAgentJob(params: {
       jobId: job.id,
       reason: preview,
       text: String(result?.text || '').slice(0, 400),
+      diagnostic: storyboardGenerateDiagnostic(result),
     })
-    const retry = await agent.generate(
+    const retry = flattenGenerateResult(await agent.generate(
       [
         { role: 'user', content: userMessage },
         { role: 'assistant', content: '已读取分镜上下文，但还没有调用 save_storyboards。' },
         { role: 'user', content: withContentLanguage(STORYBOARD_SAVE_FOLLOW_UP, params.locale) },
       ],
-      { maxSteps: 20, requestContext },
-    )
-    return {
+      generateOptions,
+    ))
+    return flattenGenerateResult({
       ...retry,
       text: retry?.text || result?.text || '',
+      finishReason: retry?.finishReason || result?.finishReason,
+      warnings: [...(result?.warnings || []), ...(retry?.warnings || [])],
+      tripwire: retry?.tripwire || result?.tripwire,
+      steps: [...(result?.steps || []), ...(retry?.steps || [])],
       toolCalls: [...(result?.toolCalls || []), ...(retry?.toolCalls || [])],
       toolResults: [...(result?.toolResults || []), ...(retry?.toolResults || [])],
-    }
+    })
   })()
     .then(async (result: any) => {
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(1)
@@ -194,7 +223,8 @@ export function startAgentJob(params: {
           })
           if (failure) {
             job.status = 'error'
-            job.error = failure
+            const diagnostic = storyboardGenerateDiagnostic(result)
+            job.error = diagnostic ? `${failure}（${diagnostic}）` : failure
           }
         } catch (err: any) {
           job.status = 'error'

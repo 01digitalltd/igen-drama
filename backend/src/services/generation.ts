@@ -40,6 +40,7 @@ import {
 } from '../utils/provider-error.js'
 import { splitVideoQueueByConcurrency } from './video-queue.js'
 import { ensureStoryboardVoAudio } from './tts/vo-audio.js'
+import { rewritePromptSpokenLines } from './tts/spoken-line-rewrite.js'
 import { refAudioExceedsLimit, refAudioTooLongMessage, rewriteSeedanceAudioLimitError } from './tts/ref-audio-limit.js'
 import {
   appendAudioRefDirective,
@@ -411,6 +412,7 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
   const spoken = await getDramaDialogueLanguage(params.dramaId)
   const narratorVoice = await getDramaVoVoice(params.dramaId)
   prompt = rewriteNarratorLabels(prompt, narratorVoice)
+  prompt = await rewritePromptSpokenLines(prompt, spoken)
   prompt = appendVoLanguageDirective(prompt, spoken)
   prompt = appendVoVoiceDirective(prompt, narratorVoice)
   prompt = appendVisualStyleDirective(prompt, visual.value, visual.prompt)

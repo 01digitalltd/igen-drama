@@ -68,6 +68,26 @@ export function dialogueLanguageInstruction(codeRaw?: string | null) {
   ].join('')
 }
 
+/** Short instruction for rewriting only the lines that will be spoken aloud. */
+export function spokenLineRewriteInstruction(codeRaw?: string | null) {
+  const code = normalizeDialogueLanguage(codeRaw)
+  const label = LABELS[code]
+  const spokenRule =
+    code === 'yue-HK'
+      ? '粵語使用香港口語書面（你／嚟／唔／嘅／喺），不要寫成普通話。用繁體字。'
+      : code === 'en-US'
+        ? 'Write natural spoken English only.'
+        : code === 'cmn-CN'
+          ? '用大陆普通话口语，简体字。'
+          : '用台灣國語口語，繁體字。'
+  return [
+    `把每一句改写成${label}（${code}）的自然口语，供影片配音直接朗读。`,
+    '只改语言，意思不变，不要加新情节，不要加角色名、引号或旁白标签。',
+    spokenRule,
+    '返回 JSON：{"lines":["..."]}，条数和顺序必须与输入相同。',
+  ].join('')
+}
+
 const ON_SCREEN_SCRIPT: Record<DialogueLanguageCode, string> = {
   'yue-HK': '繁體中文',
   'cmn-TW': '繁體中文',

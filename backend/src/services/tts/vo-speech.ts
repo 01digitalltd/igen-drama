@@ -47,6 +47,46 @@ export function extractSpokenLines(prompt: string): VoSpeechLine[] {
   return lines
 }
 
+/** Replace spoken spans in order. Visual directions on the same line stay put. */
+export function substituteSpokenLines(prompt: string, rewrites: string[]): string {
+  const originals = extractSpokenLines(prompt)
+  const source = String(prompt || '')
+  if (!originals.length || rewrites.length !== originals.length) return source
+  const next = rewrites.map((text, index) => String(text || '').trim() || originals[index].text)
+  let cursor = 0
+  const parts = source.split(/(\n+)/)
+  for (let i = 0; i < parts.length; i++) {
+    if (!parts[i].trim()) continue
+    parts[i] = replaceChunkSpeech(parts[i], () => next[cursor++] || '')
+  }
+  return parts.join('')
+}
+
+function replaceChunkSpeech(chunk: string, take: () => string) {
+  const edits: { start: number; end: number; value: string }[] = []
+  const narrator = chunk.match(NARRATOR_LINE)
+  if (narrator?.[1] && cleanSpeechText(narrator[1]) && narrator.index != null) {
+    const raw = narrator[1]
+    const start = narrator.index + narrator[0].lastIndexOf(raw)
+    edits.push({ start, end: start + raw.length, value: take() })
+  }
+  const dialogueRe = new RegExp(DIALOGUE_LINE.source, 'gu')
+  for (const match of chunk.matchAll(dialogueRe)) {
+    const speaker = String(match[1] || '').trim()
+    const raw = String(match[2] || '')
+    if (!speaker || !cleanSpeechText(raw) || SKIP_SPEECH.test(speaker) || /旁白/.test(speaker)) continue
+    if (match.index == null) continue
+    const start = match.index + match[0].lastIndexOf(raw)
+    edits.push({ start, end: start + raw.length, value: take() })
+  }
+  edits.sort((a, b) => b.start - a.start)
+  let next = chunk
+  for (const edit of edits) {
+    next = next.slice(0, edit.start) + edit.value + next.slice(edit.end)
+  }
+  return next
+}
+
 function cleanSpeechText(raw?: string | null) {
   const text = String(raw || '')
     .replace(/（S1[^）]*）/g, '')

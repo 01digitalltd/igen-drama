@@ -16,7 +16,9 @@ import {
   extractSpokenLines,
   pickSpokenLinesForRefAudio,
   shouldSynthesizeAutoTts,
+  substituteSpokenLines,
 } from '../src/services/tts/vo-speech.ts'
+import { parseSpokenRewrite, rewritePromptSpokenLines } from '../src/services/tts/spoken-line-rewrite.ts'
 
 const skillDir = join(dirname(fileURLToPath(import.meta.url)), '../workspace/skills/prompt-generator')
 
@@ -88,6 +90,7 @@ test('video-prompt SKILL forbids @Audio at prompt generation', () => {
 test('generation attaches TTS only when visual refs exist and provider allows', () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..')
   const generation = readFileSync(join(root, 'src/services/generation.ts'), 'utf8')
+  assert.match(generation, /rewritePromptSpokenLines/)
   assert.match(generation, /ensureStoryboardVoAudio/)
   assert.match(generation, /!canUseReferenceAudio\(config\.provider, record\.model\) \|\| !hasVisualRefs/)
   assert.match(generation, /appendAudioRefDirective/)
@@ -97,4 +100,27 @@ test('generation attaches TTS only when visual refs exist and provider allows', 
   )
   assert.match(helm, /name: MINIMAX_API_KEY/)
   assert.match(helm, /name: MINIMAX_TTS_MODEL/)
+})
+
+test('substituteSpokenLines rewrites speech and leaves the shot action', () => {
+  const prompt = `0-3秒：阿美推門。女声旁白：今晚風好大。
+6-9秒：阿美說：「你終於來了。」`
+  const next = substituteSpokenLines(prompt, ['今晚風大得好緊要。', '你終於嚟咗。'])
+  assert.match(next, /阿美推門/)
+  assert.match(next, /女声旁白：今晚風大得好緊要。/)
+  assert.match(next, /阿美說：「你終於嚟咗。」/)
+  assert.doesNotMatch(next, /今晚風好大/)
+  assert.doesNotMatch(next, /你終於來了/)
+  assert.equal(substituteSpokenLines(prompt, ['只有一句']), prompt)
+})
+
+test('rewritePromptSpokenLines applies a parsed rewrite and keeps the original when parsing fails', async () => {
+  const prompt = '0-3秒：女声旁白：今晚風好大。'
+  const rewritten = await rewritePromptSpokenLines(prompt, 'yue-HK', async () => (
+    JSON.stringify({ lines: ['今晚風大得好緊要。'] })
+  ))
+  assert.match(rewritten, /今晚風大得好緊要。/)
+  assert.equal(parseSpokenRewrite('not json', 1), null)
+  const kept = await rewritePromptSpokenLines(prompt, 'yue-HK', async () => 'nope')
+  assert.equal(kept, prompt)
 })
