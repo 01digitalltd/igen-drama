@@ -87,6 +87,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 
 硬约束（必须遵守）：
 - 不要输出任何规划、分析、推理或解释性文本，不要复述剧本，不要写「我正在…」「首先我需要…」这类话——思考留在模型内部，输出只允许工具调用
+- 调用 read_storyboard_context 之后，下一个动作必须是 save_storyboards。禁止读完就结束，也禁止把分镜写成正文再结束
 - 每个输出步骤必须是工具调用（或完成后的简短结束语），禁止先输出大段文字再调用工具
 - 若因内容过多需要分多批，直接在连续的工具调用中完成全部批次，中间不要插入文字
 

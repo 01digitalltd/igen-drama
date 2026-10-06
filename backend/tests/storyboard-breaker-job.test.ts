@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { storyboardBreakerFailure } from '../src/services/storyboard-breaker-job.ts'
+import { STORYBOARD_SAVE_FOLLOW_UP, storyboardBreakerFailure } from '../src/services/storyboard-breaker-job.ts'
 
 test('storyboard breaker reports a rejected save even when old shots remain', () => {
   assert.equal(
@@ -52,4 +52,11 @@ test('agent jobs mark storyboard_breaker error when no live shots were saved', (
   const jobs = readFileSync(new URL('../src/services/agent-jobs.ts', import.meta.url), 'utf8')
   assert.match(jobs, /storyboardBreakerFailure/)
   assert.match(jobs, /countLiveStoryboards/)
+  assert.match(jobs, /storyboard_breaker-retry/)
+  assert.match(jobs, /STORYBOARD_SAVE_FOLLOW_UP/)
+})
+
+test('storyboard save follow-up requires save_storyboards before ending', () => {
+  assert.match(STORYBOARD_SAVE_FOLLOW_UP, /save_storyboards/)
+  assert.match(STORYBOARD_SAVE_FOLLOW_UP, /replace_existing/)
 })

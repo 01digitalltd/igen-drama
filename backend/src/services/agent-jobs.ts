@@ -9,10 +9,10 @@ import { eq } from '../db/query.js'
 import { mastra } from '../mastra/index.js'
 import { withContentLanguage } from '../utils/content-language.js'
 import { agentJobErrorMessage } from '../utils/provider-error.js'
-import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn } from '../utils/task-logger.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
-import { storyboardBreakerFailure } from './storyboard-breaker-job.js'
+import { STORYBOARD_SAVE_FOLLOW_UP, storyboardBreakerFailure, type AgentToolResult } from './storyboard-breaker-job.js'
 
 async function countLiveStoryboards(episodeId: number) {
   const rows = await db.select().from(schema.storyboards)
@@ -49,6 +49,14 @@ function normalizeToolName(entry: any) {
 function normalizeToolResult(entry: any) {
   const result = entry?.payload?.result ?? entry?.result ?? entry?.payload?.output ?? entry?.output ?? entry?.data ?? null
   return typeof result === 'string' ? result : JSON.stringify(result)
+}
+
+function normalizeGenerateToolResults(result: any): AgentToolResult[] {
+  const toolResults = result?.toolResults || []
+  return toolResults.map((tr: any) => ({
+    toolName: normalizeToolName(tr),
+    result: normalizeToolResult(tr),
+  }))
 }
 
 function newJobId() {
@@ -130,10 +138,37 @@ export function startAgentJob(params: {
       locale: params.locale || undefined,
       ...agentContextFromAd(ad),
     })
-    return agent.generate(
-      [{ role: 'user', content: withContentLanguage(message, params.locale) }],
+    const userMessage = withContentLanguage(message, params.locale)
+    let result = await agent.generate(
+      [{ role: 'user', content: userMessage }],
       { maxSteps: 20, requestContext },
     )
+    if (agentType !== 'storyboard_breaker') return result
+    const preview = storyboardBreakerFailure({
+      liveShotCount: await countLiveStoryboards(episodeId),
+      toolResults: normalizeGenerateToolResults(result),
+    })
+    if (!preview) return result
+    logTaskWarn('Agent', 'storyboard_breaker-retry', {
+      episodeId,
+      jobId: job.id,
+      reason: preview,
+      text: String(result?.text || '').slice(0, 400),
+    })
+    const retry = await agent.generate(
+      [
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: '已读取分镜上下文，但还没有调用 save_storyboards。' },
+        { role: 'user', content: withContentLanguage(STORYBOARD_SAVE_FOLLOW_UP, params.locale) },
+      ],
+      { maxSteps: 20, requestContext },
+    )
+    return {
+      ...retry,
+      text: retry?.text || result?.text || '',
+      toolCalls: [...(result?.toolCalls || []), ...(retry?.toolCalls || [])],
+      toolResults: [...(result?.toolResults || []), ...(retry?.toolResults || [])],
+    }
   })()
     .then(async (result: any) => {
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(1)
@@ -172,6 +207,7 @@ export function startAgentJob(params: {
           elapsedSeconds: elapsed,
           jobId: job.id,
           error: job.error,
+          text: String(job.text || '').slice(0, 400),
         })
       } else {
         logTaskSuccess('Agent', agentType, { elapsedSeconds: elapsed, jobId: job.id })
