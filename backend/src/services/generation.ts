@@ -10,6 +10,7 @@ import { downloadFile, generateImageThumb, readImageAsCompressedDataUrl, saveBas
 import { toLocalStaticPath } from '../utils/media-path.js'
 import { isS3Enabled, toVendorFetchableUrl } from '../utils/s3-media.js'
 import { extractVideoPoster } from '../utils/video-poster.js'
+import { probeStoredDurationSeconds } from '../utils/ffmpeg.js'
 import { getImageAdapter, getVideoAdapter } from './adapters/registry'
 import type { AIConfig } from './adapters/types'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn, redactUrl } from '../utils/task-logger.js'
@@ -18,7 +19,7 @@ import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, appendAssetRestyleDirective, appendImageStyleDirective } from './style-preset.js'
 import { appendStoryboardImageTextDirective, appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
-import { assertSeedanceAllowedForStyle, canFallbackMiniMaxToSeedance, expectedVideoProvider, isRealisticDramaStyle, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE, MINIMAX_H3_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
+import { assertSeedanceAllowedForStyle, canFallbackMiniMaxToSeedance, expectedVideoProvider, isRealisticDramaStyle, isSeedanceVideoConfig, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE, MINIMAX_H3_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt } from './face-grid.js'
 import {
   composeVideoPromptAfterCharacterGrid,
@@ -39,6 +40,7 @@ import {
 } from '../utils/provider-error.js'
 import { splitVideoQueueByConcurrency } from './video-queue.js'
 import { ensureStoryboardVoAudio } from './tts/vo-audio.js'
+import { refAudioExceedsLimit, refAudioTooLongMessage, rewriteSeedanceAudioLimitError } from './tts/ref-audio-limit.js'
 import {
   appendAudioRefDirective,
   canUseReferenceAudio,
@@ -794,6 +796,14 @@ async function processTask(id: number, config: AIConfig) {
       if (!canUseReferenceAudio(config.provider, record.model) || !hasVisualRefs) {
         resolvedReferenceAudioUrls = []
       }
+      if (isSeedanceVideoConfig(config.provider, record.model)) {
+        for (const audioUrl of resolvedReferenceAudioUrls) {
+          const seconds = await probeStoredDurationSeconds(audioUrl)
+          if (refAudioExceedsLimit(seconds)) {
+            throw new Error(refAudioTooLongMessage(Number(seconds)))
+          }
+        }
+      }
       let prompt = (record.prompt || '').trim()
       if (!prompt && record.storyboardId) {
         const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
@@ -942,7 +952,7 @@ async function processTask(id: number, config: AIConfig) {
     if (isAbortError(err) || await isCancelled(id)) return
     const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
     if (row && await switchVideoTaskToSeedanceIfNeeded(row, config, err)) return
-    await failTask(id, annotateProviderSafetyBlock(err.message))
+    await failTask(id, annotateProviderSafetyBlock(rewriteSeedanceAudioLimitError(String(err?.message || err || ''))))
   }
 }
 

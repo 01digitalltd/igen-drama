@@ -12,6 +12,7 @@ import fs from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
 import ffmpegPathImport from 'ffmpeg-static'
 import { createRequire } from 'module'
+import { materializeLocalFile } from './storage.js'
 
 // ffprobe-static 无类型声明,用 createRequire 引入(仓库 .gitignore 忽略 *.d.ts)
 const ffprobeStatic = createRequire(import.meta.url)('ffprobe-static') as { path: string }
@@ -76,4 +77,32 @@ export async function checkFfmpegSuite(): Promise<FfmpegSuite> {
     )
   }
   return suite
+}
+
+function probeFileDurationSeconds(filePath: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) {
+        resolve(null)
+        return
+      }
+      const seconds = Number(metadata?.format?.duration)
+      resolve(Number.isFinite(seconds) && seconds > 0 ? seconds : null)
+    })
+  })
+}
+
+/** Duration of a stored or remote media file. Null when ffprobe cannot read it. */
+export async function probeStoredDurationSeconds(stored: string): Promise<number | null> {
+  const suite = await checkFfmpegSuite()
+  if (!suite.ffprobe) return null
+  let materialized: { filePath: string; cleanup: () => void } | null = null
+  try {
+    materialized = await materializeLocalFile(stored)
+    return await probeFileDurationSeconds(materialized.filePath)
+  } catch {
+    return null
+  } finally {
+    materialized?.cleanup()
+  }
 }
