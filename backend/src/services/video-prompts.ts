@@ -249,7 +249,6 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
                 styleValue,
                 onScreenText: storyboardImageTextInstruction(spoken),
               })
-              })
             await persistShotPrompts(sb.id, rewriteNarratorLabels(drafted, narratorVoice), imagePrompt)
             saved = true
             break
