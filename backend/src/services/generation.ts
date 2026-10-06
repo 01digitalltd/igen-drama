@@ -34,6 +34,7 @@ import { pickLatestActiveTask } from '../utils/generation-task-status.js'
 import {
   annotateProviderSafetyBlock,
   isInsufficientBalanceError,
+  isSeedanceAudioCopyrightBlock,
   isRetryableProviderFailure,
   isRetryableProviderStatus,
   parseProviderErrorText,
@@ -44,6 +45,7 @@ import { rewritePromptSpokenLines } from './tts/spoken-line-rewrite.js'
 import { refAudioExceedsLimit, refAudioTooLongMessage, rewriteSeedanceAudioLimitError } from './tts/ref-audio-limit.js'
 import {
   appendAudioRefDirective,
+  appendSpeechOnlyAudioDirective,
   canUseReferenceAudio,
   parseVoAudioClips,
   shouldSynthesizeAutoTts,
@@ -329,6 +331,34 @@ async function switchVideoTaskToSeedanceIfNeeded(
   })
   await emitTaskEvent(record.id)
   await processTask(record.id, seedance.config)
+  return true
+}
+
+async function retrySeedanceAudioCopyrightIfNeeded(
+  record: { id: number; type?: string | null; provider?: string | null; model?: string | null; params?: string | null },
+  config: AIConfig,
+  message: string,
+): Promise<boolean> {
+  if (String(record.type) !== 'video') return false
+  if (!isSeedanceVideoConfig(config.provider || record.provider, record.model)) return false
+  if (!isSeedanceAudioCopyrightBlock(message)) return false
+  const params = parseTaskParams(record.params)
+  if (params.audioCopyrightRetry) return false
+
+  await db.update(schema.sysTask)
+    .set({
+      taskId: null,
+      status: 'processing',
+      params: JSON.stringify({
+        ...params,
+        audioCopyrightRetry: true,
+      }),
+      updatedAt: now(),
+    })
+    .where(eq(schema.sysTask.id, record.id))
+  logTaskWarn('VideoTask', 'audio-copyright-retry', { id: record.id, error: message })
+  await emitTaskEvent(record.id)
+  await processTask(record.id, config)
   return true
 }
 
@@ -833,9 +863,12 @@ async function processTask(id: number, config: AIConfig) {
       }
       const videoPrompt = (() => {
         const composed = composeVideoPromptAfterCharacterGrid(prompt, overlaidCount)
-        return isOmniVideoConfig(config.provider, record.model)
+        const rewritten = isOmniVideoConfig(config.provider, record.model)
           ? composed
           : rewriteSeedancePromptRefs(composed)
+        return isSeedanceVideoConfig(config.provider, record.model)
+          ? appendSpeechOnlyAudioDirective(rewritten)
+          : rewritten
       })()
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
@@ -1118,11 +1151,16 @@ async function pollTask(
         }
       }
       if (pollResp.status === 'failed') {
-        // 上游明确失败（如内容审核拦截）属终态：立即落库，不重试不等待超时
-        if (await switchVideoTaskToSeedanceIfNeeded(record, config, new Error(pollResp.error || 'Generation failed'))) {
+        // 上游明确失败（如内容审核拦截）属终态：立即落库，不重试不等待超时。
+        // Seedance 成片配樂版權攔截除外：同一任務改成只說話、不要配樂後再送一次。
+        const error = pollResp.error || 'Generation failed'
+        if (await switchVideoTaskToSeedanceIfNeeded(record, config, new Error(error))) {
           return
         }
-        await failTask(record.id, pollResp.error || 'Generation failed')
+        if (await retrySeedanceAudioCopyrightIfNeeded(record, config, error)) {
+          return
+        }
+        await failTask(record.id, annotateProviderSafetyBlock(error))
         return
       }
     } catch (err: any) {

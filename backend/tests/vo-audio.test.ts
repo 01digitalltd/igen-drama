@@ -12,6 +12,7 @@ import {
 } from '../src/services/tts/minimax-voice.ts'
 import {
   appendAudioRefDirective,
+  appendSpeechOnlyAudioDirective,
   canUseReferenceAudio,
   extractSpokenLines,
   pickSpokenLinesForRefAudio,
@@ -60,6 +61,13 @@ test('appendAudioRefDirective uses Seedance @Audio 1 with a space', () => {
   assert.match(next, /@Audio 2 is 小華/)
   assert.doesNotMatch(next, /@Audio1\b/)
   assert.equal(rewriteSeedancePromptRefs(next), next)
+  assert.match(next, /No background music/)
+})
+
+test('speech-only audio directive is added once', () => {
+  const once = appendSpeechOnlyAudioDirective('0-3秒：旁白：今晚見。')
+  assert.match(once, /No background music/)
+  assert.equal(appendSpeechOnlyAudioDirective(once), once)
 })
 
 test('Omni and H3-Max do not attach reference audio', () => {
@@ -94,6 +102,8 @@ test('generation attaches TTS only when visual refs exist and provider allows', 
   assert.match(generation, /ensureStoryboardVoAudio/)
   assert.match(generation, /!canUseReferenceAudio\(config\.provider, record\.model\) \|\| !hasVisualRefs/)
   assert.match(generation, /appendAudioRefDirective/)
+  assert.match(generation, /appendSpeechOnlyAudioDirective/)
+  assert.match(generation, /audio-copyright-retry/)
   const helm = readFileSync(
     join(root, '../../reform-deployment/helm/templates/igen-drama-deployment.yaml'),
     'utf8',

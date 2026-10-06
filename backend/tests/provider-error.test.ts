@@ -5,6 +5,8 @@ import {
   agentJobErrorMessage,
   annotateMiniMaxSensitiveBlock,
   annotateProviderBusy,
+  annotateSeedanceAudioCopyright,
+  isSeedanceAudioCopyrightBlock,
   isRetryableProviderFailure,
   isRetryableProviderStatus,
   isInsufficientBalanceError,
@@ -66,6 +68,16 @@ test('MiniMax 1008 insufficient balance is detected and not retried as busy', ()
     error: { type: 'insufficient_balance_error', message: 'insufficient balance (1008)', http_code: '402' },
   }))
   assert.match(parsed, /insufficient balance \(1008\)/)
+})
+
+test('Seedance output-audio copyright block becomes a readable message', () => {
+  const raw = '[OutputAudioSensitiveContentDetected.PolicyViolation] The request failed because the output audio may be related to copyright restrictions. Request id: 0217'
+  assert.equal(isSeedanceAudioCopyrightBlock(raw), true)
+  const message = annotateSeedanceAudioCopyright(raw)
+  assert.match(message, /版權/)
+  assert.match(message, /背景音樂/)
+  assert.doesNotMatch(message, /OutputAudioSensitiveContentDetected/)
+  assert.equal(isSeedanceAudioCopyrightBlock('bad request'), false)
 })
 
 test('APIMart busy wait message is readable and retryable', () => {

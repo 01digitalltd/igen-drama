@@ -48,8 +48,24 @@ export function annotateProviderBusy(message: string) {
   return isProviderBusyMessage(text) ? APIMART_BUSY_ZH_HANT : text
 }
 
+export const SEEDANCE_AUDIO_COPYRIGHT_ZH_HANT =
+  'Seedance 成片聲音被判可能涉及版權，常見是模型自己加的背景音樂。請改寫這鏡旁白，拿掉歌曲、旋律或品牌廣告歌後再出一次。'
+
+export function isSeedanceAudioCopyrightBlock(message: string) {
+  const text = String(message || '')
+  return /OutputAudioSensitiveContentDetected/i.test(text)
+    || (/copyright restrictions/i.test(text) && /audio/i.test(text))
+}
+
+export function annotateSeedanceAudioCopyright(message: string) {
+  const text = String(message || '').trim()
+  return isSeedanceAudioCopyrightBlock(text) ? SEEDANCE_AUDIO_COPYRIGHT_ZH_HANT : text
+}
+
 export function annotateProviderSafetyBlock(message: string) {
-  return annotateProviderBusy(annotateMiniMaxSensitiveBlock(annotateGeminiSafetyBlock(message)))
+  return annotateSeedanceAudioCopyright(
+    annotateProviderBusy(annotateMiniMaxSensitiveBlock(annotateGeminiSafetyBlock(message))),
+  )
 }
 
 export function parseProviderErrorText(

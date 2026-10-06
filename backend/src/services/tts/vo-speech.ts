@@ -188,13 +188,22 @@ export function serializeVoAudioClips(clips: VoAudioClip[], fingerprint: string)
   })
 }
 
+export const SPEECH_ONLY_AUDIO_DIRECTIVE =
+  '[AUDIO: Speak only in a plain speaking voice. No background music, no singing, no humming, no melody, no sound-alike of existing songs.]'
+
+export function appendSpeechOnlyAudioDirective(prompt: string) {
+  const base = String(prompt || '').trim()
+  if (base.includes('[AUDIO: Speak only')) return base
+  return base ? `${base}\n\n${SPEECH_ONLY_AUDIO_DIRECTIVE}` : SPEECH_ONLY_AUDIO_DIRECTIVE
+}
+
 export function appendAudioRefDirective(prompt: string, clips: VoAudioClip[]) {
   const base = String(prompt || '').replace(/\n\n\[VO_AUDIO_REFS:[\s\S]*$/u, '').trim()
   if (!clips.length) return base
   const mapping = clips
     .map((clip, index) => `@Audio ${index + 1} is ${clip.kind === 'narrator' ? '旁白 S1' : clip.speaker}`)
     .join('; ')
-  const tag = `[VO_AUDIO_REFS: ${mapping}. Follow each reference_audio for timbre, emotion, and spoken words. Do not mix speakers. Do not invent BGM that covers dialogue.]`
+  const tag = `[VO_AUDIO_REFS: ${mapping}. Follow each reference_audio for timbre, emotion, and spoken words. Do not mix speakers. No background music, no singing, no humming, no melody.]`
   return base ? `${base}\n\n${tag}` : tag
 }
 
