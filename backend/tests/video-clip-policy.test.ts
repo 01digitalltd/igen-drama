@@ -123,4 +123,15 @@ test('prompt_skill routes Gemini Omni away from Seedance format', () => {
     }).suggested_shot_duration,
     10,
   )
+  assert.equal(
+    toAgentVideoGeneration({
+      provider: 'minimax',
+      model: 'MiniMax-H3',
+      bounds: clipDurationBounds('minimax', 'MiniMax-H3'),
+      referenceAudioMaxSeconds: 15.2,
+      referenceAudioMaxChars: 57,
+      referenceAudioMaxWords: null,
+    }).reference_audio_max_seconds,
+    15.2,
+  )
 })

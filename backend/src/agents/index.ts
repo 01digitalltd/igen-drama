@@ -102,6 +102,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 - 总量锚定：若 video_generation.target_duration_seconds 有值，它是硬上限——全部分镜 duration 之和不得超过 max_total_seconds，段落数必须落在 estimated_shot_count.min–max（建议 typical），每段优先用 suggested_shot_duration。宁可把多个节拍压进同一段落的【镜头N】子镜头，也不要多拆段落。没有目标秒数时，才用剧本字数 ÷ 500字/分钟估算
 - 节奏分层：过渡段靠近 duration_min；叙事段靠近 typical_shot 或 suggested_shot_duration；爆点段不超过 duration_max。子镜头节奏在上限内放慢
 - 台词下限：段落时长 ≥ 段内台词与旁白总字数（写在 description 中的部分）÷ dialogue_chars_per_second + acting_padding_seconds，且不得超过 duration_max。装不下的台词拆到下一个段落；若拆完会超过段数上限，把台词压进现有段落并缩短对白
+- 参考音讯：同一段落里，所有「旁白：」合成一条，每个角色的「角色名说：「…」」各自合成一条。每一条不得超过 video_generation.reference_audio_max_seconds 秒（中文上限是 reference_audio_max_chars 个字，英文是 reference_audio_max_words 个词）。【镜头N】里的同一说话人要加总。超过就把后面的句子放到下一镜；若会超出段数或总时长，缩短句子，不要塞回同一镜。save_storyboards 会拒绝超标段落
 - 达到 estimated_shot_count.max 后必须停止保存，不要再追加批次
 
 额外要求：
@@ -134,7 +135,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 
 工作流程：
 1. 调用 read_storyboard_context 读取该分镜的 description（含【镜头N】子镜头与台词/旁白）、atmosphere、duration、绑定的场景/角色，以及 video_generation（含 prompt_skill）
-2. 按 prompt_skill 选择格式：omni 遵守 Skill video-prompt/omni（时间轴 [0-3s]，用该分镜 image_refs 的 <IMAGE_REF_N> 简单标记绑定参考图，每段写音频/对白或「无对白」）；其他遵守 Skill video-prompt（时间轴 0-3秒：，@角色名/@场景名）。按 video_generation.prompt_segment 秒为一段、每段单独一行；最后一段结束秒数必须等于 min(该分镜 duration, duration_max)。description 的每个【镜头N】映射为 1-2 个连续分段（顺序一致、不遗漏、不新增子镜头），台词/旁白从对应【镜头N】提取并改写成项目对白语言口语，不要创作新台词；氛围光线取自 atmosphere。段内允许切镜；【镜头N】写了地点变化就跟着走，不得删掉该镜头；切镜点对齐【镜头N】。
+2. 按 prompt_skill 选择格式：omni 遵守 Skill video-prompt/omni（时间轴 [0-3s]，用该分镜 image_refs 的 <IMAGE_REF_N> 简单标记绑定参考图，每段写音频/对白或「无对白」）；其他遵守 Skill video-prompt（时间轴 0-3秒：，@角色名/@场景名）。按 video_generation.prompt_segment 秒为一段、每段单独一行；最后一段结束秒数必须等于 min(该分镜 duration, duration_max)。description 的每个【镜头N】映射为 1-2 个连续分段（顺序一致、不遗漏、不新增子镜头），台词/旁白从对应【镜头N】提取并改写成项目对白语言口语，不要创作新台词，也不要把同一说话人的合并台词加长到超过 reference_audio_max_seconds；氛围光线取自 atmosphere。段内允许切镜；【镜头N】写了地点变化就跟着走，不得删掉该镜头；切镜点对齐【镜头N】。
 3. Seedance 落库写 @名字（生成时 @志远 → @图片1志远）。Omni 落库直接写 image_refs 给出的 <IMAGE_REF_N>，不要写 @名字，也不要写 [# Sources]/[# References]
 4. 调用 update_storyboard 保存时参数只传 storyboard_id、video_prompt，以及同时写好的 image_prompt。不要回传该分镜的其他任何字段（title、description、scene_id 等一律不传）
 

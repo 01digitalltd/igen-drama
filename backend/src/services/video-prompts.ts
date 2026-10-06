@@ -16,6 +16,12 @@ import { getDramaStyleValue, visualStyleInstruction } from './style-preset.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
 import { firstConfigModel } from './video-clip-policy.js'
+import {
+  findRefAudioOverflows,
+  formatAudioSeconds,
+  referenceAudioBudgetLine,
+  SEEDANCE_R2V_MAX_AUDIO_SECONDS,
+} from './tts/ref-audio-limit.js'
 import { now } from '../utils/response.js'
 import { buildShotImageRefs, composeStoryboardImagePrompt } from './storyboard-prompt.js'
 import {
@@ -194,6 +200,7 @@ export async function startVideoPromptBatch(
         const omni = clip?.videoGeneration?.prompt_skill === 'omni'
         const duration = shot.duration || bounds?.typical || 10
         const endCap = Math.min(duration, bounds?.max || 15)
+        let audioRetryNote = ''
         for (let attempt = 1; attempt <= VIDEO_PROMPT_ATTEMPTS && !saved; attempt++) {
           try {
           const requestContext = buildAgentRequestContext({
@@ -210,6 +217,8 @@ export async function startVideoPromptBatch(
               withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})同时写视频提示词(video_prompt)和分镜静帧提示词(image_prompt)。视频模型:${videoLabel}。prompt_skill:${clip?.videoGeneration?.prompt_skill || 'seedance'}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。
 ${omni ? '当前是 Gemini Omni：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_REF_N> 标记参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。' : '当前是 Seedance/其他模型：时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'}
 image_prompt 遵守 Skill storyboard-image：只画 description 第一个【镜头N】的单帧，16:9。有 image_refs 时必须写「第一张图 / 第二张图」锁定 Gemini 请求里前面附上的人物图／场景图／道具图像素，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止换脸换景换包装。每一镜都是同一部短片：同一画风、色温、服装与发型，不要写成另一部电影。不要时间轴，不要旁白配音。
+${referenceAudioBudgetLine(spoken)}
+${audioRetryNote}
 ${adHint}
 
 分镜画面描述：
@@ -239,6 +248,17 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
           const payload = await payloadFromGenerateResult(result)
           const drafted = videoPromptFromPayload(payload)
           if (looksLikeVideoPrompt(drafted)) {
+            const spokenPrompt = rewriteNarratorLabels(drafted, narratorVoice)
+            const overflows = findRefAudioOverflows(spokenPrompt, spoken)
+            if (overflows.length) {
+              audioRetryNote = `上一稿 ${overflows.map((row) => `${row.speaker}约 ${formatAudioSeconds(row.seconds)} 秒`).join('，')}，超过 ${SEEDANCE_R2V_MAX_AUDIO_SECONDS} 秒。请缩短这些对白后再输出，不要加长。`
+              logTaskWarn('VideoPrompt', 'batch-shot-retry', {
+                storyboardId: sb.id,
+                attempt,
+                error: audioRetryNote,
+              })
+              continue
+            }
             const stillDraft = imagePromptFromPayload(payload)
             const imagePrompt = looksLikeStillPrompt(stillDraft)
               ? stillDraft
@@ -249,7 +269,7 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
                 styleValue,
                 onScreenText: storyboardImageTextInstruction(spoken),
               })
-            await persistShotPrompts(sb.id, rewriteNarratorLabels(drafted, narratorVoice), imagePrompt)
+            await persistShotPrompts(sb.id, spokenPrompt, imagePrompt)
             saved = true
             break
           }

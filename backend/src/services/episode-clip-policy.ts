@@ -8,6 +8,8 @@ import {
   toAgentVideoGeneration,
   type ClipDurationPolicy,
 } from './video-clip-policy.js'
+import { getDramaDialogueLanguage } from './dialogue-language.js'
+import { referenceAudioSpeechBudget } from './tts/ref-audio-limit.js'
 
 export type EpisodeClipPolicy = {
   episodeId: number
@@ -29,6 +31,7 @@ export async function loadEpisodeClipPolicy(episodeId: number): Promise<EpisodeC
   const model = config?.model || ''
   const bounds = clipDurationBounds(provider, model)
   const targetDurationSeconds = Number(ep.targetDurationSeconds)
+  const speechBudget = referenceAudioSpeechBudget(await getDramaDialogueLanguage(ep.dramaId))
   return {
     episodeId,
     configId: ep.videoConfigId ?? null,
@@ -46,6 +49,9 @@ export async function loadEpisodeClipPolicy(episodeId: number): Promise<EpisodeC
       targetDurationSeconds: Number.isFinite(targetDurationSeconds) && targetDurationSeconds > 0
         ? Math.round(targetDurationSeconds)
         : null,
+      referenceAudioMaxSeconds: speechBudget.maxSeconds,
+      referenceAudioMaxChars: speechBudget.maxChars,
+      referenceAudioMaxWords: speechBudget.maxWords,
     }),
   }
 }

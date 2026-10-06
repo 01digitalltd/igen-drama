@@ -206,6 +206,9 @@ export function toAgentVideoGeneration(opts: {
   configId?: number | null
   bounds: ClipDurationPolicy
   targetDurationSeconds?: number | null
+  referenceAudioMaxSeconds?: number
+  referenceAudioMaxChars?: number | null
+  referenceAudioMaxWords?: number | null
 }) {
   const budget = opts.targetDurationSeconds
     ? episodeDurationBudget(opts.targetDurationSeconds, opts.bounds)
@@ -225,5 +228,8 @@ export function toAgentVideoGeneration(opts: {
     suggested_shot_duration: budget?.suggested_shot_duration || opts.bounds.typical,
     dialogue_chars_per_second: DIALOGUE_CHARS_PER_SECOND,
     acting_padding_seconds: DIALOGUE_ACTING_PADDING_SECONDS,
+    reference_audio_max_seconds: opts.referenceAudioMaxSeconds ?? 15.2,
+    reference_audio_max_chars: opts.referenceAudioMaxChars === undefined ? 57 : opts.referenceAudioMaxChars,
+    reference_audio_max_words: opts.referenceAudioMaxWords === undefined ? null : opts.referenceAudioMaxWords,
   }
 }

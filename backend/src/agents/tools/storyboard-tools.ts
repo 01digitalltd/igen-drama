@@ -9,6 +9,12 @@ import { db, getInsertId, schema } from '../../db/index.js'
 import { eq } from '../../db/query.js'
 import { now } from '../../utils/response.js'
 import { clampShotDurationForModel, acceptShotsWithinCount, fitShotDurationsToBudget } from '../../services/video-clip-policy.js'
+import { getDramaDialogueLanguage } from '../../services/dialogue-language.js'
+import {
+  SEEDANCE_R2V_MAX_AUDIO_SECONDS,
+  findRefAudioOverflows,
+  formatRefAudioSplitError,
+} from '../../services/tts/ref-audio-limit.js'
 import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
 import { logTaskProgress, logTaskSuccess, logTaskWarn } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
@@ -359,6 +365,27 @@ const saveStoryboards = createTool({
           count: 0,
           rejected: filtered.rejected.map(sb => sb.shot_number),
         }
+      }
+    }
+
+    const spokenLanguage = await getDramaDialogueLanguage(dramaId)
+    const audioOverflows = pending.flatMap((sb) => {
+      const text = [sb.description, sb.atmosphere].filter(Boolean).join('\n')
+      return findRefAudioOverflows(text, spokenLanguage).map((hit) => ({
+        shotNumber: sb.shot_number,
+        speaker: hit.speaker,
+        seconds: hit.seconds,
+      }))
+    })
+    if (audioOverflows.length) {
+      const message = formatRefAudioSplitError(audioOverflows)
+      logTaskWarn('StoryboardTool', 'save-ref-audio-too-long', {
+        episodeId,
+        shots: audioOverflows.map((row) => row.shotNumber).join(','),
+      })
+      return {
+        error: message,
+        reference_audio_max_seconds: SEEDANCE_R2V_MAX_AUDIO_SECONDS,
       }
     }
 
