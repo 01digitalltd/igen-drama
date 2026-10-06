@@ -38,6 +38,7 @@ test('buildCharacterFinalPromptMessage locks visual facts to the screenplay exce
   assert.match(message, /护士→护士服/)
   assert.match(message, /3D Chibi/)
   assert.match(message, /头大身小/)
+  assert.match(message, /转变之后的样子/)
   assert.doesNotMatch(message, /16:9 横版角色定妆照/)
   assert.doesNotMatch(message, /不要风格词/)
 })
