@@ -18,6 +18,16 @@ test('storyboard breaker reports a rejected save even when old shots remain', ()
   )
 })
 
+test('storyboard breaker recognizes the Gemini tool name saveStoryboards', () => {
+  assert.equal(
+    storyboardBreakerFailure({
+      liveShotCount: 4,
+      toolResults: [{ toolName: 'saveStoryboards', result: JSON.stringify({ count: 4 }) }],
+    }),
+    null,
+  )
+})
+
 test('storyboard breaker stays successful after a save that wrote shots', () => {
   assert.equal(
     storyboardBreakerFailure({
@@ -69,14 +79,14 @@ test('storyboard save follow-up requires save_storyboards before ending', () => 
 
 test('storyboard breaker forces a read, then a save, then stops forcing after a save', () => {
   assert.deepEqual(storyboardBreakerPrepareStep({ stepNumber: 0, steps: [] }), {
-    toolChoice: { type: 'tool', toolName: 'read_storyboard_context' },
+    toolChoice: { type: 'tool', toolName: 'readStoryboardContext' },
   })
   assert.deepEqual(storyboardBreakerPrepareStep({ stepNumber: 1, steps: [] }), {
-    toolChoice: { type: 'tool', toolName: 'save_storyboards' },
+    toolChoice: { type: 'tool', toolName: 'saveStoryboards' },
   })
   assert.deepEqual(storyboardBreakerPrepareStep({
     stepNumber: 2,
-    steps: [{ toolCalls: [{ toolName: 'save_storyboards' }] }],
+    steps: [{ toolCalls: [{ toolName: 'saveStoryboards' }] }],
   }), { toolChoice: 'auto' })
 })
 

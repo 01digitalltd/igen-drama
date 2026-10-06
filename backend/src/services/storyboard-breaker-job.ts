@@ -10,7 +10,7 @@ export type AgentToolResult = {
 }
 
 function isSaveStoryboardsTool(name: string | null | undefined) {
-  return /save_storyboard/i.test(String(name || ''))
+  return /save[_]?storyboard/i.test(String(name || ''))
 }
 
 function parseToolResult(raw: string): Record<string, unknown> | null {
@@ -52,12 +52,13 @@ function stepCalledSave(step: { toolCalls?: unknown[]; toolResults?: unknown[] }
     payload?: { toolName?: string }
     tool?: { id?: string }
   }>
-  return calls.some((call) => /save_storyboard/i.test(toolNameOf(call)))
+  return calls.some((call) => /save[_]?storyboard/i.test(toolNameOf(call)))
 }
 
 /**
- * Step 0 must read context. Later steps must save until one save_storyboards
- * call exists, so a text-only turn cannot end the job.
+ * Step 0 must read context. Later steps must save until one save call exists,
+ * so a text-only turn cannot end the job.
+ * Gemini function declarations use the tool object keys, not the snake_case ids.
  */
 export function storyboardBreakerPrepareStep(args: {
   stepNumber?: number
@@ -67,9 +68,9 @@ export function storyboardBreakerPrepareStep(args: {
     return { toolChoice: 'auto' as const }
   }
   if ((args.stepNumber || 0) <= 0) {
-    return { toolChoice: { type: 'tool' as const, toolName: 'read_storyboard_context' } }
+    return { toolChoice: { type: 'tool' as const, toolName: 'readStoryboardContext' } }
   }
-  return { toolChoice: { type: 'tool' as const, toolName: 'save_storyboards' } }
+  return { toolChoice: { type: 'tool' as const, toolName: 'saveStoryboards' } }
 }
 
 export function storyboardGenerateDiagnostic(result: {
