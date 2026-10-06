@@ -28,12 +28,14 @@ export function storyboardBreakerFailure(opts: {
   liveShotCount: number
   toolResults?: AgentToolResult[]
 }): string | null {
-  if (opts.liveShotCount > 0) return null
-  for (const row of opts.toolResults || []) {
-    if (!isSaveStoryboardsTool(row.toolName)) continue
-    const parsed = parseToolResult(row.result)
-    const error = typeof parsed?.error === 'string' ? parsed.error.trim() : ''
+  const saves = (opts.toolResults || []).filter((row) => isSaveStoryboardsTool(row.toolName))
+  const parsed = saves.map((row) => parseToolResult(row.result))
+  const wrote = parsed.some((row) => row && typeof row.error !== 'string' && Number(row.count) > 0)
+  if (wrote) return null
+  for (let i = parsed.length - 1; i >= 0; i--) {
+    const error = typeof parsed[i]?.error === 'string' ? String(parsed[i]?.error).trim() : ''
     if (error) return error
   }
+  if (opts.liveShotCount > 0) return null
   return '拆分鏡沒有寫入任何鏡頭，請再試一次。'
 }

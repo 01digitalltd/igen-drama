@@ -3,11 +3,21 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { storyboardBreakerFailure } from '../src/services/storyboard-breaker-job.ts'
 
-test('storyboard breaker stays successful when live shots exist', () => {
+test('storyboard breaker reports a rejected save even when old shots remain', () => {
   assert.equal(
     storyboardBreakerFailure({
       liveShotCount: 3,
       toolResults: [{ toolName: 'save_storyboards', result: JSON.stringify({ error: 'over budget' }) }],
+    }),
+    'over budget',
+  )
+})
+
+test('storyboard breaker stays successful after a save that wrote shots', () => {
+  assert.equal(
+    storyboardBreakerFailure({
+      liveShotCount: 3,
+      toolResults: [{ toolName: 'save_storyboards', result: JSON.stringify({ count: 3 }) }],
     }),
     null,
   )
