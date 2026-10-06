@@ -34,6 +34,13 @@ test('storyboard breaker surfaces save_storyboards tool error when nothing was w
   assert.match(String(message), /最多 4 个分镜/)
 })
 
+test('storyboard breaker fails when old shots remain and nothing was saved', () => {
+  assert.equal(
+    storyboardBreakerFailure({ liveShotCount: 6, toolResults: [] }),
+    '拆分鏡沒有改寫鏡頭，請再試一次。',
+  )
+})
+
 test('storyboard breaker fails when the agent finished without writing shots', () => {
   assert.equal(
     storyboardBreakerFailure({ liveShotCount: 0, toolResults: [] }),

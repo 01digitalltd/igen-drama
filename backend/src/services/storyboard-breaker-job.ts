@@ -36,6 +36,8 @@ export function storyboardBreakerFailure(opts: {
     const error = typeof parsed[i]?.error === 'string' ? String(parsed[i]?.error).trim() : ''
     if (error) return error
   }
-  if (opts.liveShotCount > 0) return null
+  if (opts.liveShotCount > 0 && saves.length === 0) {
+    return '拆分鏡沒有改寫鏡頭，請再試一次。'
+  }
   return '拆分鏡沒有寫入任何鏡頭，請再試一次。'
 }
