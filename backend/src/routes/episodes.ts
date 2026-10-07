@@ -8,6 +8,7 @@ import { getActiveConfigId, isOfficialProvider } from '../services/ai.js'
 import { getDramaStyleValue } from '../services/style-preset.js'
 import { assertSeedanceAllowedForStyle, isRealisticDramaStyle, XAI_VIDEO_MISSING_MESSAGE } from '../services/video-model-policy.js'
 import { EXTRACT_TARGETS, getExtractionStatus, startExtraction, type ExtractTarget } from '../services/extraction.js'
+import { clearEpisodeAssets } from '../services/episode-asset-clear.js'
 import { subscribeEpisodeEvents } from '../services/episode-events.js'
 import { collectEpisodePushEvents } from '../services/episode-live-events.js'
 import { getVideoPromptBatchStatus, startVideoPromptBatch } from '../services/video-prompts.js'
@@ -203,6 +204,13 @@ app.get('/:id/props', async (c) => {
   const allProps = await db.select().from(schema.props)
   const result = allProps.filter(p => propIds.includes(p.id) && !p.deletedAt)
   return success(c, toSnakeCaseArray(result))
+})
+
+// POST /episodes/:id/clear-assets — drop this episode's extracted assets before a fresh extract. Brand logo stays.
+app.post('/:id/clear-assets', async (c) => {
+  const ep = await episodeFromParam(c)
+  const cleared = await clearEpisodeAssets(ep.id)
+  return success(c, cleared)
 })
 
 // POST /episodes/:id/extract — 异步提取资产（target: characters | scenes | props），立即返回；状态经 SSE /events 推送
