@@ -21,6 +21,17 @@ export function resolveStoryboardVideoPrompt(shot: {
   return description || atmosphere
 }
 
+/** Opening and ending beats used to bridge one generated clip into the next. */
+export function shotContinuityCue(description?: string | null, result?: string | null) {
+  const text = String(description || '').replace(/\s+/g, ' ').trim()
+  const beats = [...text.matchAll(/【镜头\s*\d+】\s*([^【]+)/g)]
+    .map((match) => match[1].trim())
+    .filter(Boolean)
+  const opening = (beats[0] || text).slice(0, 180)
+  const ending = (String(result || '').trim() || beats[beats.length - 1] || text).slice(0, 180)
+  return { opening, ending }
+}
+
 export function parseVideoPromptDurationSeconds(prompt?: string | null): number | null {
   const text = String(prompt || '')
   let maxEnd = 0

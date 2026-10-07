@@ -27,7 +27,7 @@ import {
   overlayOrangeGridOnRef,
 } from './character-grid.js'
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
-import { orderXaiImageRefs, rewriteXaiPrompt } from './xai-prompt.js'
+import { fitXaiSpokenClip, orderXaiImageRefs, rewriteXaiPrompt } from './xai-prompt.js'
 import { appendBrandLogoDirective, brandLogoPropIfNeeded } from './brand-logo.js'
 import { isBrandLogoProp } from '../utils/project-category.js'
 import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
@@ -101,6 +101,8 @@ interface GenerateImageParams {
   referenceImages?: string[]
   frameType?: string
   configId?: number
+  /** Upload/library only. Plain redraw must not feed the current still back in. */
+  restyle?: boolean
 }
 
 interface GenerateVideoParams {
@@ -175,7 +177,7 @@ async function resolveStoryboardImageSize(params: GenerateImageParams): Promise<
 }
 
 export async function generateImage(params: GenerateImageParams): Promise<number> {
-  params = await attachAssetStillForRestyle(params)
+  if (params.restyle) params = await attachAssetStillForRestyle(params)
   const visual = await loadDramaVisualStyle(params.dramaId)
   const kind = params.characterId ? 'character' as const : params.sceneId ? 'scene' as const : params.propId ? 'prop' as const : 'still' as const
   params = {
@@ -449,7 +451,7 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
       shotDuration = sb.duration || undefined
     }
   }
-  const duration = resolveVideoGenerationDuration({
+  let duration = resolveVideoGenerationDuration({
     prompt,
     shotDuration,
     provider: config.provider,
@@ -511,6 +513,9 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
       characters,
     })
     prompt = appendXaiVoiceDirective(prompt, xaiVoices)
+    const fitted = fitXaiSpokenClip(prompt, duration)
+    prompt = fitted.prompt
+    duration = fitted.duration
   }
 
   const bounds = clipDurationBounds(config.provider, model)
@@ -871,6 +876,9 @@ async function processTask(id: number, config: AIConfig) {
         speaker: voice.speaker || '',
         kind: voice.kind === 'character' ? 'character' : 'narrator',
       })))
+      const fitted = fitXaiSpokenClip(prompt, Number(params.duration) || 8)
+      prompt = fitted.prompt
+      params.duration = fitted.duration
       if (!publicRefs.length) {
         throw new Error('xAI 真人影片需要至少一張角色、場景或道具參考圖')
       }
@@ -1449,14 +1457,14 @@ async function handleImageComplete(record: SysTaskRecord, imageUrl: string) {
   const localPath = await downloadFile(imageUrl, 'images')
   // 列表页缩略图（前端按命名约定推导地址，失败不影响主流程）
   await generateImageThumb(localPath)
+  // Write the asset URL before status=completed so a poll that sees done also sees the new still.
+  await writeBackImageAssets(record, localPath)
 
   await db.update(schema.sysTask)
     .set({ resultUrl: imageUrl, localPath, status: 'completed', completedAt: now(), updatedAt: now() })
     .where(eq(schema.sysTask.id, record.id))
 
   logTaskSuccess('ImageTask', 'downloaded', { id: record.id, provider: record.provider, localPath })
-
-  await writeBackImageAssets(record, localPath)
   await emitTaskEvent(record.id)
 }
 
@@ -1464,14 +1472,13 @@ async function handleImageCompleteBase64(record: SysTaskRecord, base64Data: stri
   if (cancelledTaskIds.has(record.id)) return
   const localPath = await saveBase64Image(base64Data, mimeType, 'images')
   await generateImageThumb(localPath)
+  await writeBackImageAssets(record, localPath)
 
   await db.update(schema.sysTask)
     .set({ localPath, status: 'completed', completedAt: now(), updatedAt: now() })
     .where(eq(schema.sysTask.id, record.id))
 
   logTaskSuccess('ImageTask', 'saved-base64', { id: record.id, provider: record.provider, mimeType, localPath })
-
-  await writeBackImageAssets(record, localPath)
   await emitTaskEvent(record.id)
 }
 
@@ -1486,13 +1493,13 @@ async function writeBackImageAssets(record: SysTaskRecord, localPath: string) {
     await db.update(schema.storyboards).set(sbUpdate).where(eq(schema.storyboards.id, record.storyboardId))
   }
   if (record.characterId) {
-    await db.update(schema.characters).set({ imageUrl: localPath, updatedAt: now() }).where(eq(schema.characters.id, record.characterId))
+    await db.update(schema.characters).set({ imageUrl: localPath, localPath, updatedAt: now() }).where(eq(schema.characters.id, record.characterId))
   }
   if (record.sceneId) {
-    await db.update(schema.scenes).set({ imageUrl: localPath, status: 'completed', updatedAt: now() }).where(eq(schema.scenes.id, record.sceneId))
+    await db.update(schema.scenes).set({ imageUrl: localPath, localPath, status: 'completed', updatedAt: now() }).where(eq(schema.scenes.id, record.sceneId))
   }
   if (record.propId) {
-    await db.update(schema.props).set({ imageUrl: localPath, updatedAt: now() }).where(eq(schema.props.id, record.propId))
+    await db.update(schema.props).set({ imageUrl: localPath, localPath, updatedAt: now() }).where(eq(schema.props.id, record.propId))
   }
 }
 

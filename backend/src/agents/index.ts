@@ -81,7 +81,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 
 工作流程：
 1. 调用 read_storyboard_context 读取剧本、角色列表、场景列表、道具列表
-2. 先识别剧本的叙事节拍（如【开场】【触发】【高潮】【收尾】等标记或叙事转折点）；再将节拍压进有限的分镜段落（用【镜头N】承载）。不得删掉剧本里的事件，总体保持剧情完整连续，且不得超过 video_generation 的段数与总时长上限
+2. 先识别剧本的叙事节拍（如【开场】【触发】【高潮】【收尾】等标记或叙事转折点）；再将节拍压进有限的分镜段落（用【镜头N】承载）。不得删掉剧本里的事件。镜间必须连贯：下一段【镜头1】接上一段最后一个【镜头】的可见结果，对白拆开仍是同一段谈话的前后句。不得超过 video_generation 的段数与总时长上限
 3. 为每个段落补全生产字段（拆分时不需要生成 video_prompt，该字段由提示词 Agent 在视频生成阶段生成）
 4. 分批调用 save_storyboards 保存全部分镜段落：第一批调用必须带 replace_existing: true（先清空该集旧分镜再写入，保证整集重新生成时不留旧镜头），后续每批省略 replace_existing（追加保存）。每批最多 8 个段落，且不得超过 video_generation.estimated_shot_count.max；shot_number 必须按顺序递增；全部段落保存完成前不要结束（不要只保存部分段落就停止）。若工具返回 error 说超出段数/总时长，压缩后再提交，不要继续追加。
 
@@ -112,7 +112,8 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 - 段落道具绑定必须来自 read_storyboard_context 返回的道具列表；道具被使用、特写、交接或在画面中明显可见时绑定，与剧情无关的背景物品不要绑定；没有道具出现可传空数组
 - 段落描述必须能支撑后续视频生成和导出流程
 - 若一个段落没有台词，description 中不写台词即可，但画面描述与 atmosphere 仍必须完整
-- 如果已有 existing_storyboards，仅在用户明确要求增量修改时参考；默认按当前剧本重新完整生成并保存整集分镜。`,
+- 如果已有 existing_storyboards，仅在用户明确要求增量修改时参考；默认按当前剧本重新完整生成并保存整集分镜
+- 镜间连贯：下一段【镜头1】必须接上一段最后一个【镜头】的可见结果（人在哪、手里有什么、上一句的反应）。同一场不要换地点、换衣服或重讲。拆开的对白是同一段谈话的前后句。每段最后一镜停在下一段能接上的画面。不要为了顺而新编剧本没有的过场。`,
   },
   prompt_generator: {
     name: '提示词',
@@ -136,7 +137,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 
 工作流程：
 1. 调用 read_storyboard_context 读取该分镜的 description（含【镜头N】子镜头与台词/旁白）、atmosphere、duration、绑定的场景/角色，以及 video_generation（含 prompt_skill）
-2. 按 prompt_skill 选择格式：omni 遵守 Skill video-prompt/omni（时间轴 [0-3s]，用该分镜 image_refs 的 <IMAGE_REF_N> 简单标记绑定参考图，每段写音频/对白或「无对白」）；xai 遵守 Skill video-prompt/xai（时间轴 [0-3s]，用 image_refs 的 <IMAGE_N>，角色在场景和道具前面，模型念出引号对白，不要写配音文件）；其他遵守 Skill video-prompt（时间轴 0-3秒：，@角色名/@场景名）。按 video_generation.prompt_segment 秒为一段、每段单独一行；最后一段结束秒数必须等于 min(该分镜 duration, duration_max)。description 的每个【镜头N】映射为 1-2 个连续分段（顺序一致、不遗漏、不新增子镜头），台词/旁白从对应【镜头N】提取并改写成项目对白语言口语，不要创作新台词，也不要把同一说话人的合并台词加长到超过 reference_audio_max_seconds；氛围光线取自 atmosphere。段内允许切镜；【镜头N】写了地点变化就跟着走，不得删掉该镜头；切镜点对齐【镜头N】。
+2. 按 prompt_skill 选择格式：omni 遵守 Skill video-prompt/omni（时间轴 [0-3s]，用该分镜 image_refs 的 <IMAGE_REF_N> 简单标记绑定参考图，每段写音频/对白或「无对白」）；xai 遵守 Skill video-prompt/xai（时间轴 [0-3s]，用 image_refs 的 <IMAGE_N>，角色在场景和道具前面，模型念出引号对白，不要写配音文件；放对白的段要够念完，最后留 1 秒）；其他遵守 Skill video-prompt（时间轴 0-3秒：，@角色名/@场景名）。按 video_generation.prompt_segment 秒为一段、每段单独一行；最后一段结束秒数必须等于 min(该分镜 duration, duration_max)。description 的每个【镜头N】映射为 1-2 个连续分段（顺序一致、不遗漏、不新增子镜头），台词/旁白从对应【镜头N】提取并改写成项目对白语言口语，不要创作新台词，也不要把同一说话人的合并台词加长到超过 reference_audio_max_seconds；氛围光线取自 atmosphere。段内允许切镜；【镜头N】写了地点变化就跟着走，不得删掉该镜头；切镜点对齐【镜头N】。
 3. Seedance 落库写 @名字（生成时 @志远 → @图片1志远）。Omni 落库直接写 image_refs 给出的 <IMAGE_REF_N>。xAI 落库直接写 image_refs 给出的 <IMAGE_N>。不要写 [# Sources]/[# References]
 4. 调用 update_storyboard 保存时参数只传 storyboard_id、video_prompt，以及同时写好的 image_prompt。不要回传该分镜的其他任何字段（title、description、scene_id 等一律不传）
 

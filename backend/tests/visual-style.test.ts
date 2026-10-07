@@ -66,7 +66,7 @@ test('uploaded asset stills get a analyze-then-restyle prompt', () => {
 
 test('image generation restyles existing asset stills and skips brand logos', () => {
   const src = readFileSync(new URL('../src/services/generation.ts', import.meta.url), 'utf8')
-  assert.match(src, /params = await attachAssetStillForRestyle\(params\)/)
+  assert.match(src, /if \(params\.restyle\) params = await attachAssetStillForRestyle\(params\)/)
   assert.match(src, /if \(isBrandLogoProp\(row\)\) return params/)
   assert.match(src, /labeledAssetReferenceImages/)
   assert.match(src, /先分析外形，再转成项目画风/)

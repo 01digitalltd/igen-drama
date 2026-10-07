@@ -1,7 +1,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { composeStoryboardImagePrompt, firstStoryboardBeat, lockStoryboardStillPrompt, pickPreviousStoryboardStill } from '../src/services/storyboard-prompt.ts'
+import { composeStoryboardImagePrompt, firstStoryboardBeat, lockStoryboardStillPrompt, pickPreviousStoryboardStill, shotContinuityCue } from '../src/services/storyboard-prompt.ts'
 import { imagePromptFromPayload, looksLikeStillPrompt } from '../src/services/video-prompt-text.ts'
+
+test('shot continuity cue uses the first beat and the written ending', () => {
+  const cue = shotContinuityCue(
+    '【镜头1】她推开办公室门。\n【镜头2】她停在桌前，手还搭在门把上。',
+    '手搭在门把上，看向桌面。',
+  )
+  assert.match(cue.opening, /推开办公室门/)
+  assert.equal(cue.ending, '手搭在门把上，看向桌面。')
+})
 
 test('firstStoryboardBeat uses the first sub-shot and drops narrator lines', () => {
   const beat = firstStoryboardBeat(

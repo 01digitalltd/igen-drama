@@ -206,7 +206,7 @@ export async function startVideoPromptBatch(
         const skillHint = skill === 'omni'
           ? '当前是 Gemini Omni：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_REF_N> 标记参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。'
           : skill === 'xai'
-            ? '当前是 xAI Grok 真人影片：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_N>（角色在前，然后场景、道具）。不要写 @名字。对白用引号，由模型按声线念出，不要写配音文件。写实摄影，不要卡通。'
+            ? '当前是 xAI Grok 真人影片：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_N>（角色在前，然后场景、道具）。不要写 @名字。对白用引号，由模型按声线念出，不要写配音文件。放对白的那一段要够念完（中文约每 2.5 字 1 秒），最后一句讲完后再留至少 1 秒。写实摄影，不要卡通。'
             : '当前是 Seedance/其他模型：时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'
         for (let attempt = 1; attempt <= VIDEO_PROMPT_ATTEMPTS && !saved; attempt++) {
           try {

@@ -19,9 +19,12 @@ description: xAI Grok 真人影片提示词 — 用 <IMAGE_N> 引用参考图，
 
 ```
 [0-3s] <IMAGE_0> sits at the desk in <IMAGE_1>, looking down at a phone.
-[3-6s] <IMAGE_0> looks up and says: "你终于来了。"
+[3-7s] <IMAGE_0> looks up and says: "你终于来了。"
+[7-8s] Hold. The line has finished. No more speech.
 ```
 
 对白和旁白用引号，跟项目对白语言。模型会用预设声线念出来。不要写配音文件、`[VO_AUDIO_REFS]` 或 `[AUDIO: Speak only…]`。不要背景音乐、不要唱歌。
+
+放对白的那一段必须够把整句念完：中文大约每 2.5 个字 1 秒，英文大约每 1.7 个词 1 秒。不要把一整句塞进 2–3 秒。最后一句讲完后至少留 1 秒，不要在句中切断。若念不完就缩短句子。
 
 画面是真人实拍，不要卡通、盲盒或插画。

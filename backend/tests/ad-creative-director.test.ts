@@ -60,4 +60,6 @@ test('storyboard keeps every script event when the shot budget is tight', () => 
   const prompt = read('src/agents/index.ts')
   assert.match(skill, /不得删掉剧本里的事件/)
   assert.match(prompt, /不得删掉剧本里的事件/)
+  assert.match(skill, /第 N\+1 段的【镜头1】必须从第 N 段最后一个【镜头】/)
+  assert.match(prompt, /镜间连贯/)
 })

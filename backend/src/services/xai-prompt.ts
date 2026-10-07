@@ -52,3 +52,177 @@ export function rewriteXaiPrompt(
   }
   return text
 }
+
+const XAI_DURATION_MAX = 15
+const XAI_SPEECH_TAIL_SECONDS = 1
+const XAI_CJK_CHARS_PER_SECOND = 2.5
+const XAI_EN_WORDS_PER_SECOND = 1.7
+const XAI_SPEECH_TAG = '[XAI_SPEECH: Say every quoted line in full at a natural pace. Do not shorten, rush, or cut a sentence. Finish the last word at least one second before the clip ends.]'
+
+const TIMELINE_LINE = /^(\s*)(?:\[(\d+)\s*[-–~—]\s*(\d+)\s*s\]|(\d+)\s*[-–~—]\s*(\d+)\s*秒)[：:]?\s*(.*)$/u
+
+function stripXaiSpeechTag(prompt: string) {
+  return prompt.replace(/\n*\[XAI_SPEECH:[\s\S]*?\]\s*$/u, '').trim()
+}
+
+function spokenChunks(line: string) {
+  const chunks: string[] = []
+  const quoteRe = /[「“"]([^」”"\n]{1,300})[」”"]/g
+  let match: RegExpExecArray | null
+  while ((match = quoteRe.exec(line))) {
+    const text = String(match[1] || '').trim()
+    if (text) chunks.push(text)
+  }
+  if (!chunks.length) {
+    const narrator = line.match(/(?:旁白)[：:]\s*(.+)$/u)
+    const text = String(narrator?.[1] || '').trim()
+    if (text) chunks.push(text)
+  }
+  return chunks
+}
+
+/** Seconds Grok needs to speak this line. Acted speech is slower than a TTS estimate. */
+export function xaiSpeechSeconds(line: string) {
+  const chunks = spokenChunks(line)
+  if (!chunks.length) return 0
+  let total = 0
+  for (const chunk of chunks) {
+    const cjk = (chunk.match(/[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/g) || []).length
+    const words = (chunk.match(/[A-Za-z0-9']+/g) || []).length
+    if (cjk === 0 && words === 0) {
+      total += Math.max(1, chunk.length / 4)
+    } else if (cjk >= words) {
+      total += cjk / XAI_CJK_CHARS_PER_SECOND
+    } else {
+      total += words / XAI_EN_WORDS_PER_SECOND
+    }
+  }
+  if (chunks.length > 1) total += (chunks.length - 1) * 0.4
+  return total
+}
+
+function clampXaiDuration(value: number | null | undefined, max: number) {
+  const parsed = Math.round(Number(value || 8))
+  if (!Number.isFinite(parsed)) return Math.min(max, 8)
+  return Math.min(max, Math.max(1, parsed))
+}
+
+type TimelineSegment = {
+  lineIndex: number
+  end: number
+  start: number
+  body: string
+  bracket: boolean
+  speech: number
+}
+
+function parseTimelineLine(line: string, lineIndex: number): TimelineSegment | null {
+  const match = line.match(TIMELINE_LINE)
+  if (!match) return null
+  const bracket = match[2] != null
+  const start = Number(bracket ? match[2] : match[4])
+  const end = Number(bracket ? match[3] : match[5])
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
+  return {
+    lineIndex,
+    start,
+    end,
+    body: String(match[6] || '').trim(),
+    bracket,
+    speech: xaiSpeechSeconds(line),
+  }
+}
+
+function shrinkToBudget(lengths: number[], speech: number[], budget: number) {
+  const next = lengths.slice()
+  let overflow = next.reduce((sum, item) => sum + item, 0) - budget
+  for (let i = 0; i < next.length && overflow > 0; i++) {
+    if (speech[i] > 0) continue
+    const cut = Math.min(Math.max(0, next[i] - 1), overflow)
+    next[i] -= cut
+    overflow -= cut
+  }
+  if (overflow > 0) {
+    const speechIndexes = next.map((_, index) => index).filter((index) => speech[index] > 0)
+    const speechSum = speechIndexes.reduce((sum, index) => sum + next[index], 0)
+    const target = Math.max(speechIndexes.length, speechSum - overflow)
+    let assigned = 0
+    speechIndexes.forEach((index, order) => {
+      if (order === speechIndexes.length - 1) {
+        next[index] = Math.max(1, target - assigned)
+        return
+      }
+      const share = Math.max(1, Math.round((next[index] / speechSum) * target))
+      next[index] = share
+      assigned += share
+    })
+  }
+  return next
+}
+
+/**
+ * Grok stops at the clip boundary and inside a short timeline beat.
+ * Stretch any beat that contains speech, then leave one silent second after the last word.
+ */
+export function fitXaiSpokenClip(prompt: string, requested?: number | null, max = XAI_DURATION_MAX) {
+  const cap = Math.min(XAI_DURATION_MAX, Math.max(1, Math.round(max) || XAI_DURATION_MAX))
+  const clean = stripXaiSpeechTag(String(prompt || ''))
+  const asked = clampXaiDuration(requested, cap)
+  if (!clean) return { prompt: clean, duration: asked }
+  const lines = clean.split('\n')
+  const segments = lines
+    .map((line, index) => parseTimelineLine(line, index))
+    .filter((segment): segment is TimelineSegment => Boolean(segment))
+  const looseSpeech = lines.reduce((sum, line, index) => {
+    if (segments.some((segment) => segment.lineIndex === index)) return sum
+    return sum + xaiSpeechSeconds(line)
+  }, 0)
+  const segmentSpeech = segments.reduce((sum, segment) => sum + segment.speech, 0)
+  if (segmentSpeech + looseSpeech <= 0) return { prompt: clean, duration: asked }
+
+  let duration = asked
+  let nextLines = lines
+  if (segments.length) {
+    const speech = segments.map((segment) => segment.speech)
+    let lengths = segments.map((segment) => {
+      const span = Math.max(1, segment.end - segment.start)
+      if (segment.speech <= 0) return span
+      return Math.max(span, Math.ceil(segment.speech))
+    })
+    if (looseSpeech > 0) {
+      const host = segments.findIndex((segment) => segment.speech > 0)
+      const index = host >= 0 ? host : lengths.length - 1
+      lengths[index] += Math.ceil(looseSpeech)
+    }
+    const tail = XAI_SPEECH_TAIL_SECONDS
+    const budget = Math.max(segments.length, cap - tail)
+    if (lengths.reduce((sum, item) => sum + item, 0) > budget) {
+      lengths = shrinkToBudget(lengths, speech, budget)
+    }
+    const sum = lengths.reduce((total, item) => total + item, 0)
+    const lastSpeech = segments.reduce((found, segment, index) => (segment.speech > 0 ? index : found), -1)
+    const alreadyHasTail = lastSpeech >= 0 && lastSpeech < segments.length - 1
+    const endAt = Math.min(cap, Math.max(asked, sum + (alreadyHasTail ? 0 : tail)))
+    const extra = Math.max(0, endAt - sum)
+    let cursor = 0
+    nextLines = lines.slice()
+    segments.forEach((segment, index) => {
+      const start = cursor
+      const isLast = index === segments.length - 1
+      const end = cursor + lengths[index] + (isLast && lastSpeech !== index ? extra : 0)
+      cursor = end
+      const marker = segment.bracket ? `[${start}-${end}s]` : `${start}-${end}秒：`
+      nextLines[segment.lineIndex] = `${marker} ${segment.body}`.trim()
+    })
+    if (lastSpeech === segments.length - 1 && extra > 0) {
+      nextLines.push(`[${cursor}-${cursor + extra}s] Hold. The spoken line has already finished. No more speech.`)
+      cursor += extra
+    }
+    duration = cursor
+  } else {
+    duration = Math.min(cap, Math.max(asked, Math.ceil(segmentSpeech + looseSpeech) + XAI_SPEECH_TAIL_SECONDS))
+  }
+
+  const tagged = `${nextLines.join('\n').trim()}\n\n${XAI_SPEECH_TAG}`
+  return { prompt: tagged, duration }
+}
