@@ -94,7 +94,7 @@ export function formatRefAudioSplitError(
   const detail = rows
     .map((row) => `第 ${row.shotNumber} 镜${row.speaker}约 ${formatAudioSeconds(row.seconds)} 秒`)
     .join('，')
-  return `${detail}，超过参考音讯上限 ${SEEDANCE_R2V_MAX_AUDIO_SECONDS} 秒。同一说话人在一镜内的旁白或台词会合成一条音讯。请拆到下一镜；若会超出段数或总时长上限，就缩短句子。然后重新调用 save_storyboards，第一批 replace_existing: true。`
+  return `${detail}，超过参考音讯上限 ${SEEDANCE_R2V_MAX_AUDIO_SECONDS} 秒。同一说话人在一镜内的旁白或台词会合成一条音讯。请拆到下一镜；若会超出段数或总时长上限，只删招呼、感叹和重复，每一小句的事实仍要留下。然后重新调用 save_storyboards，第一批 replace_existing: true。`
 }
 
 export function referenceAudioBudgetLine(languageCode: string) {

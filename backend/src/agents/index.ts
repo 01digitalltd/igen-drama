@@ -102,8 +102,9 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 时长规则（硬约束，全部以 read_storyboard_context.video_generation 为准）：
 - 总量锚定：若 video_generation.target_duration_seconds 有值，它是硬上限——全部分镜 duration 之和不得超过 max_total_seconds，段落数必须落在 estimated_shot_count.min–max（建议 typical），每段优先用 suggested_shot_duration。宁可把多个节拍压进同一段落的【镜头N】子镜头，也不要多拆段落。没有目标秒数时，才用剧本字数 ÷ 500字/分钟估算
 - 节奏分层：过渡段靠近 duration_min；叙事段靠近 typical_shot 或 suggested_shot_duration；爆点段不超过 duration_max。子镜头节奏在上限内放慢
-- 台词下限：段落时长 ≥ 段内台词与旁白总字数（写在 description 中的部分）÷ dialogue_chars_per_second + acting_padding_seconds，且不得超过 duration_max。装不下的台词拆到下一个段落；若拆完会超过段数上限，把台词压进现有段落并缩短对白
-- 参考音讯：同一段落里，所有「旁白：」合成一条，每个角色的「角色名说：「…」」各自合成一条。每一条不得超过 video_generation.reference_audio_max_seconds 秒（中文上限是 reference_audio_max_chars 个字，英文是 reference_audio_max_words 个词）。【镜头N】里的同一说话人要加总。超过就把后面的句子放到下一镜；若会超出段数或总时长，缩短句子，不要塞回同一镜。save_storyboards 会拒绝超标段落
+- 台词下限：段落时长 ≥ 段内台词与旁白总字数（写在 description 中的部分）÷ dialogue_chars_per_second + acting_padding_seconds，且不得超过 duration_max。装不下的台词拆到下一个段落；若拆完会超过段数上限，把台词压进现有段落，只删招呼、感叹和重复
+- 一句里的事实：按句号、分号、问号、感叹号，以及「并、且、然后、接着」切开。每一小句的谁、动作、对象，以及写出的品质、比较、条件、否定或要观众做的事，都要出现在画面或对白里。可以改口语，不能改成空泛反应或另一句口号。一句里连续几个动作，每个都要留下。不要插入剧本没有的动作或空镜
+- 参考音讯：同一段落里，所有「旁白：」合成一条，每个角色的「角色名说：「…」」各自合成一条。每一条不得超过 video_generation.reference_audio_max_seconds 秒（中文上限是 reference_audio_max_chars 个字，英文是 reference_audio_max_words 个词）。【镜头N】里的同一说话人要加总。超过就把后面的句子放到下一镜；若会超出段数或总时长，只删招呼、感叹和重复，不要塞回同一镜。save_storyboards 会拒绝超标段落
 - 达到 estimated_shot_count.max 后必须停止保存，不要再追加批次
 
 额外要求：
@@ -114,7 +115,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 - 若一个段落没有台词，description 中不写台词即可，但画面描述与 atmosphere 仍必须完整
 - 如果已有 existing_storyboards，仅在用户明确要求增量修改时参考；默认按当前剧本重新完整生成并保存整集分镜
 - 镜间连贯：下一段【镜头1】必须接上一段最后一个【镜头】的可见结果（人在哪、手里有什么、上一句的反应）。同一场不要换地点、换衣服或重讲。拆开的对白是同一段谈话的前后句。每段最后一镜停在下一段能接上的画面。不要为了顺而新编剧本没有的过场
-- 出镜拍法跟剧本：原文或剧本已是对镜头的 Vlog、手持记录时，description 写她手持或自拍、看着镜头说出「角色名说：「…」」。食物和店内是切镜，下一段切回她。地址、转发、到店仍由她对镜头说完。不要改成产品空镜、第三人称剧情或画外旁白。剧本不是 Vlog 时不要强行改成 Vlog。`,
+- 出镜拍法跟剧本：原文或剧本已是对镜头的 Vlog、手持记录时，description 写她手持或自拍、看着镜头说出「角色名说：「…」」。食物和店内是切镜，下一段切回她。原稿结尾要观众做的每一件事，都由她对镜头说完。不要改成产品空镜、第三人称剧情或画外旁白。剧本不是 Vlog 时不要强行改成 Vlog。`,
   },
   prompt_generator: {
     name: '提示词',

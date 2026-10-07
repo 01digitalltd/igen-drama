@@ -32,7 +32,9 @@ test('ad rewrite instruction keeps the user story spine without a plot library',
   assert.match(src, /不要写死粤语/)
   assert.match(src, /pack_hero/)
   assert.match(src, /用户写下的事件顺序必须保留/)
+  assert.match(src, /每一小句/)
   assert.doesNotMatch(src, DEVICE_SHADOW)
+  assert.doesNotMatch(src, /從小吃到大|沒有出水|乾炒牛河/)
 })
 
 test('script-rewriter documents the ad story-spine exception without a plot library', () => {
@@ -41,7 +43,9 @@ test('script-rewriter documents the ad story-spine exception without a plot libr
   assert.match(skill, /brief/)
   assert.match(skill, /五拍/)
   assert.match(skill, /用户写下的事件顺序必须保留/)
+  assert.match(skill, /每一小句/)
   assert.doesNotMatch(skill, DEVICE_SHADOW)
+  assert.doesNotMatch(skill, /從小吃到大|沒有出水|乾炒牛河/)
 })
 
 test('product form skills cannot replace a written event order', () => {
@@ -59,7 +63,10 @@ test('storyboard keeps every script event when the shot budget is tight', () => 
   const skill = read('workspace/skills/storyboard-breaker/SKILL.md')
   const prompt = read('src/agents/index.ts')
   assert.match(skill, /不得删掉剧本里的事件/)
+  assert.match(skill, /每一小句/)
   assert.match(prompt, /不得删掉剧本里的事件/)
+  assert.match(prompt, /每一小句/)
+  assert.doesNotMatch(`${skill}\n${prompt}`, /從小吃到大|沒有出水|乾炒牛河/)
   assert.match(skill, /第 N\+1 段的【镜头1】必须从第 N 段最后一个【镜头】/)
   assert.match(skill, /剧本是对镜头的 Vlog 或手持介绍时/)
   assert.match(prompt, /镜间连贯/)
