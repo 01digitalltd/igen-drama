@@ -12,7 +12,7 @@ export const AD_PURPOSES = [
 ] as const
 export type AdPurpose = (typeof AD_PURPOSES)[number]
 
-export const AD_FORMS = ['talent_explain', 'product_showcase', 'drama_promo'] as const
+export const AD_FORMS = ['talent_explain', 'product_showcase', 'drama_promo', 'vlog'] as const
 export type AdForm = (typeof AD_FORMS)[number]
 
 export const AD_ANGLES = [
@@ -75,6 +75,24 @@ export const AD_ANGLES = [
   'race_the_clock',
   'invite_twist',
   'gift_chase',
+  'street_find',
+  'host_try',
+  'share_reco',
+  'explain_cutaway',
+  'step_vlog',
+  'myth_vlog',
+  'day_vlog',
+  'maker_vlog',
+  'place_vlog',
+  'selfie_vlog',
+  'first_try_vlog',
+  'honest_vlog',
+  'food_tour',
+  'shop_walk',
+  'visit_cta',
+  'event_vlog',
+  'countdown_vlog',
+  'invite_vlog',
 ] as const
 export type AdAngle = (typeof AD_ANGLES)[number]
 
@@ -92,31 +110,37 @@ export const AD_ANGLE_MAP: Record<AdPurpose, Record<AdForm, readonly AdAngle[]>>
     talent_explain: ['pain_hook', 'host_demo', 'testimonial', 'offer_push'],
     product_showcase: ['pack_hero', 'use_demo', 'benefit_cuts', 'unbox'],
     drama_promo: ['conflict_save', 'meet_cute_sell', 'last_second_save'],
+    vlog: ['street_find', 'host_try', 'share_reco'],
   },
   edu_info: {
     talent_explain: ['expert_talk', 'step_lesson', 'myth_bust', 'faq', 'compare_teach'],
     product_showcase: ['how_it_works', 'feature_tour', 'spec_story', 'before_after'],
     drama_promo: ['mistake_story', 'peer_teach', 'cliff_lesson'],
+    vlog: ['explain_cutaway', 'step_vlog', 'myth_vlog'],
   },
   brand_image: {
     talent_explain: ['founder_story', 'values_talk', 'craft_tour'],
     product_showcase: ['cinematic_pack', 'origin_process', 'lifestyle_set'],
     drama_promo: ['slice_of_life', 'origin_vignette', 'craft_scene'],
+    vlog: ['day_vlog', 'maker_vlog', 'place_vlog'],
   },
   ugc_review: {
     talent_explain: ['selfie_review', 'first_use', 'honest_proscons'],
     product_showcase: ['handheld_demo', 'overlay_review', 'day_in_life'],
     drama_promo: ['skit_review', 'dual_role', 'friend_reco'],
+    vlog: ['selfie_vlog', 'first_try_vlog', 'honest_vlog'],
   },
   store_visit: {
     talent_explain: ['greeter_invite', 'in_store_tour', 'local_offer'],
     product_showcase: ['shelf_hero', 'walk_in', 'pickup_cta'],
     drama_promo: ['walk_in_story', 'reunion_store', 'rain_shelter'],
+    vlog: ['food_tour', 'shop_walk', 'visit_cta'],
   },
   campaign_event: {
     talent_explain: ['host_announce', 'countdown_talk', 'event_invite'],
     product_showcase: ['key_visual', 'bundle_show', 'flash_cuts'],
     drama_promo: ['race_the_clock', 'invite_twist', 'gift_chase'],
+    vlog: ['event_vlog', 'countdown_vlog', 'invite_vlog'],
   },
 }
 
@@ -138,6 +162,7 @@ export const AD_FORM_SKILL: Record<AdForm, string> = {
   talent_explain: 'ad-form-talent',
   product_showcase: 'ad-form-product',
   drama_promo: 'ad-form-drama',
+  vlog: 'ad-form-vlog',
 }
 
 export function isAdPurpose(value: unknown): value is AdPurpose {
@@ -194,6 +219,16 @@ export function normalizeAdTaxonomy(input?: {
   const requestedAngle = input?.angle || input?.ad_angle
   const angle = isAdAngle(requestedAngle) && allowed.includes(requestedAngle) ? requestedAngle : allowed[0]
   return { purpose, form, angle }
+}
+
+export function isAdFormUserLocked(raw: unknown): boolean {
+  return parseDramaMetadata(raw).ad_form_locked === true
+}
+
+export function lockAdFormChoice(existing: unknown): string {
+  const meta = parseDramaMetadata(existing)
+  meta.ad_form_locked = true
+  return JSON.stringify(meta)
 }
 
 export function taxonomyFromMetadata(raw: unknown): AdTaxonomy {

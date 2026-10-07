@@ -35,6 +35,12 @@ description: 资讯教育广告。先讲清楚一个知识点，品牌收束从�
 - `spec_story`：规格、成分、参数用特写讲清
 - `before_after`：使用前后画面对比，旁白点明变化
 
+### Vlog
+
+- `explain_cutaway`：她对镜头讲清一件事，切到示范，再切回她
+- `step_vlog`：手持镜头逐步做给观众看
+- `myth_vlog`：她对镜头指出一个迷思，再用画面纠正
+
 ### 短剧宣传
 
 - `mistake_story`：角色先做错，再被纠正或自己学会

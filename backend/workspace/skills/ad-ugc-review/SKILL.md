@@ -32,6 +32,12 @@ description: UGC 测评广告。第一人称、不完美手持感，按 ad_angle
 - `overlay_review`：产品特写 + 旁白点评（旁白不烧字幕）
 - `day_in_life`：一天里产品多次出镜
 
+### Vlog
+
+- `selfie_vlog`：自拍，看着镜头说感受
+- `first_try_vlog`：第一次试用的反应留在她脸上
+- `honest_vlog`：优缺点由她对镜头直说
+
 ### 短剧宣传
 
 - `skit_review`：短剧桥段里自然用到产品

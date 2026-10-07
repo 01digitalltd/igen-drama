@@ -8,7 +8,7 @@ import { toPublicDrama, toPublicEpisode } from '../utils/public-id.js'
 import { defaultDialogueLanguageFromLocale, normalizeDialogueLanguage } from '../services/dialogue-language.js'
 import { DEFAULT_VO_VOICE, normalizeVoVoice } from '../services/vo-voice.js'
 import { defaultAspectRatioForCategory, normalizeProjectCategory, isAdPromoCategory } from '../utils/project-category.js'
-import { mergeAdTaxonomyMetadata, normalizeAdTaxonomy, adContextFields, taxonomyFromMetadata } from '../utils/ad-taxonomy.js'
+import { mergeAdTaxonomyMetadata, normalizeAdTaxonomy, adContextFields, taxonomyFromMetadata, lockAdFormChoice } from '../utils/ad-taxonomy.js'
 import { ensureBrandLogoProp, applyBrandLogoPlacement, logoPlacementFromMetadata, mergeLogoPlacementMetadata } from '../services/brand-logo.js'
 import { mergeVoTtsMetadata, voTtsSettingsFromMetadata } from '../services/tts/vo-tts-settings.js'
 import { clearVoAudioForDrama } from '../services/tts/vo-audio.js'
@@ -202,6 +202,9 @@ app.put('/:id', async (c) => {
         form: body.ad_form ?? current.form,
         angle: body.ad_angle ?? current.angle,
       }))
+      if (body.ad_purpose !== undefined || body.ad_form !== undefined || body.ad_angle !== undefined) {
+        updates.metadata = lockAdFormChoice(updates.metadata)
+      }
     } else if (body.metadata !== undefined) {
       updates.metadata = serializeMetadata(body.metadata)
     }

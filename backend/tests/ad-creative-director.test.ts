@@ -61,5 +61,17 @@ test('storyboard keeps every script event when the shot budget is tight', () => 
   assert.match(skill, /不得删掉剧本里的事件/)
   assert.match(prompt, /不得删掉剧本里的事件/)
   assert.match(skill, /第 N\+1 段的【镜头1】必须从第 N 段最后一个【镜头】/)
+  assert.match(skill, /剧本是对镜头的 Vlog 或手持介绍时/)
   assert.match(prompt, /镜间连贯/)
+  assert.match(prompt, /出镜拍法跟剧本/)
+})
+
+test('vlog form owns host-to-camera filming instead of product showcase', () => {
+  const skill = read('workspace/skills/ad-form-vlog/SKILL.md')
+  const product = read('workspace/skills/ad-form-product/SKILL.md')
+  assert.match(skill, /仅当 `ad_form=vlog` 时生效/)
+  assert.match(skill, /看着观众说话/)
+  assert.match(skill, /不要改成产品空镜/)
+  assert.match(product, /对镜头的 Vlog 用 `ad_form=vlog`/)
+  assert.doesNotMatch(product, /不要套用上面的空镜/)
 })

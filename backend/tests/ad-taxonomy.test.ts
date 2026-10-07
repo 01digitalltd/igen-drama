@@ -5,6 +5,8 @@ import {
   adSkillDirsFor,
   allAdSkillDirs,
   defaultFormForPurpose,
+  isAdFormUserLocked,
+  lockAdFormChoice,
   mergeAdTaxonomyMetadata,
   normalizeAdTaxonomy,
   taxonomyFromMetadata,
@@ -53,6 +55,7 @@ test('skill dirs cover shared + creative + purpose + form without dropping any p
   assert.ok(all.has('ad-form-talent'))
   assert.ok(all.has('ad-form-product'))
   assert.ok(all.has('ad-form-drama'))
+  assert.ok(all.has('ad-form-vlog'))
   for (const purpose of AD_PURPOSES) {
     const dirs = adSkillDirsFor(normalizeAdTaxonomy({ purpose }))
     assert.equal(dirs[0], 'ad-promo')
@@ -60,6 +63,23 @@ test('skill dirs cover shared + creative + purpose + form without dropping any p
     assert.equal(dirs.length, 4)
     dirs.forEach((dir) => assert.ok(all.has(dir)))
   }
+})
+
+test('a saved form choice is marked so detection does not replace it', () => {
+  const locked = lockAdFormChoice(JSON.stringify({ ad_form: 'vlog', theme: 'summer' }))
+  const parsed = JSON.parse(locked)
+  assert.equal(parsed.ad_form_locked, true)
+  assert.equal(parsed.theme, 'summer')
+  assert.equal(isAdFormUserLocked(locked), true)
+  assert.equal(isAdFormUserLocked({}), false)
+})
+
+test('vlog form keeps a host-to-camera angle', () => {
+  const spec = normalizeAdTaxonomy({ purpose: 'product_sell', form: 'vlog' })
+  assert.equal(spec.form, 'vlog')
+  assert.equal(spec.angle, 'street_find')
+  assert.ok(adSkillDirsFor(spec).includes('ad-form-vlog'))
+  assert.equal(adSkillDirsFor(spec).includes('ad-form-product'), false)
 })
 
 test('short-drama promo form keeps a mini-story angle', () => {

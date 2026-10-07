@@ -12,6 +12,7 @@ import { agentJobErrorMessage } from '../utils/provider-error.js'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn } from '../utils/task-logger.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
+import { applyHostVlogForm } from './vlog-form.js'
 import {
   STORYBOARD_SAVE_FOLLOW_UP,
   storyboardBreakerFailure,
@@ -150,7 +151,9 @@ export function startAgentJob(params: {
   const startTime = performance.now()
 
   ;(async () => {
-    const ad = await loadDramaAdContext(dramaId)
+    const ad = agentType === 'script_rewriter' || agentType === 'storyboard_breaker'
+      ? await applyHostVlogForm(dramaId, episodeId)
+      : await loadDramaAdContext(dramaId)
     const requestContext = buildAgentRequestContext({
       episodeId,
       dramaId,

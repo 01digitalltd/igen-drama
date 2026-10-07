@@ -32,6 +32,12 @@ description: 品牌形象广告。氛围与价值观优先，CTA 从轻，按 ad
 - `origin_process`：产地/制程空镜
 - `lifestyle_set`：生活场景里的品牌物件
 
+### Vlog
+
+- `day_vlog`：她的出镜把一天串起来，过程是切镜
+- `maker_vlog`：職人看着镜头讲，制作过程是切镜
+- `place_vlog`：人在品牌场景里对观众介绍
+
 ### 短剧宣传
 
 - `slice_of_life`：一段生活切片，品牌自然出现

@@ -32,6 +32,12 @@ description: 活动档期广告。时效与主视觉优先，按 ad_angle 选宣
 - `bundle_show`：组合商品展示
 - `flash_cuts`：快剪促销画面，每切对应一句利益
 
+### Vlog
+
+- `event_vlog`：她在现场手持，把活动讲给观众
+- `countdown_vlog`：她看着镜头报倒计时或限时
+- `invite_vlog`：她对镜头邀请观众来
+
 ### 短剧宣传
 
 - `race_the_clock`：赶在档期结束前办成一件事

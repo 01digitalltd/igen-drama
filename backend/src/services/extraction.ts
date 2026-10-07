@@ -20,7 +20,8 @@ import { contentLanguageInstruction } from '../utils/content-language.js'
 import { isAdPromoCategory } from '../utils/project-category.js'
 import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { publishEpisodeEvent } from './episode-events.js'
-import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
+import { agentContextFromAd } from './brand-logo.js'
+import { applyHostVlogForm } from './vlog-form.js'
 import { charactersFromSourceScript, isInternalToolAssetName, itemsFromGenerateResult, scenesFromFormattedScript, summarizeExtractResult } from './extract-payload.js'
 import { loadEpisodeScripts } from './script-excerpts.js'
 
@@ -159,7 +160,7 @@ export function startExtraction(episodeId: number, dramaId: number, target: Extr
     if (!script) throw new Error('本集没有剧本内容，请先完成改写')
 
     const existingHint = await loadExistingHint(target, dramaId)
-    const ad = await loadDramaAdContext(dramaId)
+    const ad = await applyHostVlogForm(dramaId, episodeId)
     const requestContext = buildAgentRequestContext({
       episodeId,
       dramaId,
