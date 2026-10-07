@@ -6,7 +6,7 @@ import { success, badRequest, now } from '../utils/response.js'
 import { toSnakeCaseArray, toSnakeCase } from '../utils/transform.js'
 import { getActiveConfigId, isOfficialProvider } from '../services/ai.js'
 import { getDramaStyleValue } from '../services/style-preset.js'
-import { assertSeedanceAllowedForStyle, isRealisticDramaStyle } from '../services/video-model-policy.js'
+import { assertSeedanceAllowedForStyle, isRealisticDramaStyle, XAI_VIDEO_MISSING_MESSAGE } from '../services/video-model-policy.js'
 import { EXTRACT_TARGETS, getExtractionStatus, startExtraction, type ExtractTarget } from '../services/extraction.js'
 import { subscribeEpisodeEvents } from '../services/episode-events.js'
 import { collectEpisodePushEvents } from '../services/episode-live-events.js'
@@ -33,13 +33,16 @@ app.post('/', async (c) => {
   const dramaId = drama.id
 
   const style = await getDramaStyleValue(dramaId)
-  const videoOpts = isRealisticDramaStyle(style) ? { excludeProviders: ['volcengine'] } : undefined
+  const realistic = isRealisticDramaStyle(style)
+  const videoOpts = realistic ? { providers: ['xai'] } : undefined
 
   // 图片/视频配置：显式传入优先，缺省时自动锁定当前启用的最高优先级官方配置
   const imageConfigId = body.image_config_id ?? await getActiveConfigId('image')
   const videoConfigId = body.video_config_id ?? await getActiveConfigId('video', videoOpts)
   if (!imageConfigId) return badRequest(c, '未找到启用的图片生成配置，请先在设置中心添加')
-  if (!videoConfigId) return badRequest(c, '未找到启用的视频生成配置，请先在设置中心添加')
+  if (!videoConfigId) {
+    return badRequest(c, realistic ? XAI_VIDEO_MISSING_MESSAGE : '未找到启用的视频生成配置，请先在设置中心添加')
+  }
   if (videoConfigId) {
     const [videoCfg] = await db.select().from(schema.aiServiceConfigs)
       .where(eq(schema.aiServiceConfigs.id, Number(videoConfigId)))

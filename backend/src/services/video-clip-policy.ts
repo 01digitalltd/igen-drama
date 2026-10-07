@@ -52,14 +52,24 @@ export function isOmniVideoConfig(provider?: string | null, model?: string | nul
   return p === 'gemini' || m.includes('omni')
 }
 
+function isXaiClip(provider?: string | null, model?: string | null) {
+  const p = String(provider || '').toLowerCase()
+  const m = String(model || '').toLowerCase()
+  return p === 'xai' || m.includes('grok-imagine')
+}
+
 /** Which video-prompt SKILL the agent should follow for this clip. */
-export function promptSkillForVideo(provider?: string | null, model?: string | null): 'omni' | 'seedance' {
+export function promptSkillForVideo(provider?: string | null, model?: string | null): 'omni' | 'seedance' | 'xai' {
+  if (isXaiClip(provider, model)) return 'xai'
   return isOmniVideoConfig(provider, model) ? 'omni' : 'seedance'
 }
 
 export function clipDurationBounds(provider?: string | null, model?: string | null): ClipDurationPolicy {
   const p = String(provider || '').toLowerCase()
   const m = String(model || '').toLowerCase()
+  if (isXaiClip(p, m)) {
+    return { min: 1, max: 15, typical: 8, promptSegment: 3 }
+  }
   if (isOmniVideoConfig(p, m)) {
     return { min: 3, max: 10, typical: 8, promptSegment: 3 }
   }

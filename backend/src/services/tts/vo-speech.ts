@@ -1,5 +1,6 @@
 import { isMiniMaxH3Max } from '../adapters/minimax-video.js'
 import { isOmniVideoConfig } from '../video-clip-policy.js'
+import { isXaiVideoConfig } from '../video-model-policy.js'
 import type { TtsGender } from './minimax-voice.js'
 
 export const MAX_VO_AUDIO_CLIPS = 3
@@ -209,6 +210,7 @@ export function appendAudioRefDirective(prompt: string, clips: VoAudioClip[]) {
 
 export function canUseReferenceAudio(provider?: string | null, model?: string | null) {
   if (isOmniVideoConfig(provider, model)) return false
+  if (isXaiVideoConfig(provider, model)) return false
   if (isMiniMaxH3Max(model)) return false
   return true
 }

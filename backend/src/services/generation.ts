@@ -19,7 +19,7 @@ import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, appendAssetRestyleDirective, appendImageStyleDirective } from './style-preset.js'
 import { appendStoryboardImageTextDirective, appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
-import { assertSeedanceAllowedForStyle, canFallbackMiniMaxToSeedance, expectedVideoProvider, isRealisticDramaStyle, isSeedanceVideoConfig, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE, MINIMAX_H3_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
+import { assertSeedanceAllowedForStyle, canFallbackMiniMaxToSeedance, expectedVideoProvider, isRealisticDramaStyle, isSeedanceVideoConfig, isXaiVideoConfig, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE, MINIMAX_H3_MISSING_MESSAGE, XAI_VIDEO_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt } from './face-grid.js'
 import {
   composeVideoPromptAfterCharacterGrid,
@@ -27,6 +27,7 @@ import {
   overlayOrangeGridOnRef,
 } from './character-grid.js'
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
+import { orderXaiImageRefs, rewriteXaiPrompt } from './xai-prompt.js'
 import { appendBrandLogoDirective, brandLogoPropIfNeeded } from './brand-logo.js'
 import { isBrandLogoProp } from '../utils/project-category.js'
 import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
@@ -47,10 +48,13 @@ import {
   appendAudioRefDirective,
   appendSpeechOnlyAudioDirective,
   canUseReferenceAudio,
+  extractSpokenLines,
   parseVoAudioClips,
   shouldSynthesizeAutoTts,
   type VoAudioClip,
 } from './tts/vo-speech.js'
+import { appendXaiVoiceDirective, selectXaiReferenceVoices, type XaiVoiceRef } from './tts/xai-voices.js'
+import { parseXaiVoiceRefs } from './adapters/xai-video.js'
 import { imageSizeForAspectRatio } from './image-size.js'
 
 type TaskType = 'image' | 'video'
@@ -271,6 +275,13 @@ async function resolveVideoServiceConfig(opts: {
   return { config, configId, model }
 }
 
+async function resolveXaiVideoConfig() {
+  const config = await getActiveConfig('video', { providers: ['xai'] })
+  const configId = await getActiveConfigId('video', { providers: ['xai'] })
+  if (!config) return null
+  return { config, configId, model: config.model || 'grok-imagine-video-1.5' }
+}
+
 async function resolveSeedanceFallbackConfig() {
   const config = await getActiveConfig('video', { providers: ['volcengine'] })
   const configId = await getActiveConfigId('video', { providers: ['volcengine'] })
@@ -397,18 +408,23 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
 
   const visual = await loadDramaVisualStyle(params.dramaId)
   const style = visual.value
-  const videoOpts = isRealisticDramaStyle(style) ? { excludeProviders: ['volcengine'] } : undefined
+  const realistic = isRealisticDramaStyle(style)
 
-  const resolvedMiniMax = await resolveVideoServiceConfig({
-    configId: params.configId,
-    model: params.model,
-    videoOpts,
-  })
-  let resolved = resolvedMiniMax
+  let resolved: Awaited<ReturnType<typeof resolveVideoServiceConfig>>
+  if (realistic) {
+    const xai = await resolveXaiVideoConfig()
+    if (!xai) throw new Error(XAI_VIDEO_MISSING_MESSAGE)
+    resolved = xai
+  } else {
+    resolved = await resolveVideoServiceConfig({
+      configId: params.configId,
+      model: params.model,
+    })
+  }
   if (
     skipMiniMaxVideoForBalance
     && String(resolved.config.provider || '').toLowerCase() === 'minimax'
-    && !isRealisticDramaStyle(style)
+    && !realistic
   ) {
     const seedance = await resolveSeedanceFallbackConfig()
     if (seedance) {
@@ -482,6 +498,21 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
     prompt = appendAudioRefDirective(prompt, voAudioClips)
   }
 
+  let xaiVoices: XaiVoiceRef[] = []
+  if (isXaiVideoConfig(config.provider, model)) {
+    referenceAudioUrls = []
+    voAudioClips = []
+    const characters = params.storyboardId
+      ? await charactersForXaiVoices(params.storyboardId)
+      : []
+    xaiVoices = selectXaiReferenceVoices({
+      lines: extractSpokenLines(prompt),
+      narratorGender: narratorVoice,
+      characters,
+    })
+    prompt = appendXaiVoiceDirective(prompt, xaiVoices)
+  }
+
   const bounds = clipDurationBounds(config.provider, model)
   assertClipSecondsFit(parseVideoPromptDurationSeconds(prompt), bounds, 'prompt')
   assertClipSecondsFit(shotDuration, bounds, 'shot')
@@ -500,12 +531,15 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
     referenceVideoUrls: params.referenceVideoUrls,
     referenceAudioUrls,
     voAudioClips,
+    xaiReferenceAudios: xaiVoices.length ? JSON.stringify(xaiVoices) : undefined,
     ttsWarning,
     generateAudio: params.generateAudio === false ? 0 : 1,
     duration,
     aspectRatio: params.aspectRatio || '16:9',
     // 保留高分辨率档位透传（MiniMax 768P/2K），火山等适配器内部自行归并
-    resolution: ['480p', '720p', '1080p', '2K'].includes(params.resolution || '') ? params.resolution : '720p',
+    resolution: isXaiVideoConfig(config.provider, model)
+      ? '720p'
+      : (['480p', '720p', '1080p', '2K'].includes(params.resolution || '') ? params.resolution : '720p'),
     episodeId: params.episodeId,
     configId: configId || undefined,
     ...(String(config.provider || '').toLowerCase() === 'volcengine' && skipMiniMaxVideoForBalance
@@ -796,6 +830,59 @@ async function processTask(id: number, config: AIConfig) {
         size: params.size,
         frameType: params.frameType,
         referenceImages: labeledRefs.length ? JSON.stringify(labeledRefs) : null,
+      }))
+    } else if (isXaiVideoConfig(config.provider, record.model)) {
+      const adapter = getVideoAdapter(config.provider)
+      const bound = record.storyboardId ? await storyboardBoundStills(record.storyboardId) : []
+      const ordered = orderXaiImageRefs(bound)
+      const publicRefs: Array<ShotImageRef & { sourceUrl: string }> = []
+      for (const ref of ordered) {
+        const publicUrl = await normalizeVideoReferenceUrl(ref.url)
+        if (!publicUrl) continue
+        publicRefs.push({
+          ...ref,
+          sourceUrl: ref.url,
+          url: publicUrl,
+          index: publicRefs.length,
+          tag: `<IMAGE_${publicRefs.length}>`,
+        })
+      }
+      let prompt = (record.prompt || '').trim()
+      if (!prompt && record.storyboardId) {
+        const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
+        if (sb) prompt = resolveStoryboardVideoPrompt(sb)
+      }
+      const visual = await loadDramaVisualStyle(await resolveVideoDramaId(record))
+      prompt = appendVisualStyleDirective(prompt, visual.value, visual.prompt)
+      if (record.storyboardId) {
+        const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
+        const dramaId = await resolveVideoDramaId(record)
+        const logo = dramaId && sb ? await brandLogoPropIfNeeded(dramaId, sb) : null
+        prompt = appendBrandLogoDirective(prompt, Boolean(logo))
+      }
+      prompt = rewriteXaiPrompt(prompt, publicRefs, bound)
+      const voices = parseXaiVoiceRefs(
+        typeof params.xaiReferenceAudios === 'string'
+          ? params.xaiReferenceAudios
+          : JSON.stringify(params.xaiReferenceAudios || []),
+      )
+      prompt = appendXaiVoiceDirective(prompt, voices.map((voice) => ({
+        voiceId: voice.voiceId,
+        speaker: voice.speaker || '',
+        kind: voice.kind === 'character' ? 'character' : 'narrator',
+      })))
+      if (!publicRefs.length) {
+        throw new Error('xAI 真人影片需要至少一張角色、場景或道具參考圖')
+      }
+      ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
+        id: record.id,
+        model: record.model,
+        prompt,
+        referenceImageUrls: publicRefs.length ? JSON.stringify(publicRefs.map((ref) => ref.url)) : null,
+        xaiReferenceAudios: voices.length ? JSON.stringify(voices) : null,
+        duration: params.duration,
+        aspectRatio: params.aspectRatio,
+        resolution: '720p',
       }))
     } else {
       const adapter = getVideoAdapter(config.provider)
@@ -1569,6 +1656,24 @@ async function resolveVideoDramaId(record: { dramaId?: unknown; storyboardId?: u
 
 async function resolveVideoDramaStyle(record: { dramaId?: unknown; storyboardId?: unknown }) {
   return getDramaStyleValue(await resolveVideoDramaId(record))
+}
+
+async function charactersForXaiVoices(storyboardId: unknown) {
+  const id = Number(storyboardId)
+  if (!Number.isInteger(id) || id <= 0) return []
+  const links = await db.select().from(schema.storyboardCharacters)
+    .where(eq(schema.storyboardCharacters.storyboardId, id))
+  const characters: Array<{ name: string; appearance?: string | null; description?: string | null }> = []
+  for (const link of links) {
+    const [char] = await db.select().from(schema.characters).where(eq(schema.characters.id, link.characterId))
+    if (!char || char.deletedAt) continue
+    characters.push({
+      name: String(char.name || ''),
+      appearance: char.appearance,
+      description: char.description,
+    })
+  }
+  return characters
 }
 
 async function storyboardBoundStills(storyboardId: unknown) {

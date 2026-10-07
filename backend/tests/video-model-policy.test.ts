@@ -9,6 +9,7 @@ import {
   expectedVideoProvider,
   isRealisticDramaStyle,
   isSeedanceVideoConfig,
+  isXaiVideoConfig,
   videoModelFitsProvider,
 } from '../src/services/video-model-policy.ts'
 
@@ -31,6 +32,9 @@ test('realistic live-action style blocks Seedance video configs', () => {
 test('MiniMax-H3 must not ride a Gemini video config', () => {
   assert.equal(expectedVideoProvider('MiniMax-H3'), 'minimax')
   assert.equal(expectedVideoProvider('gemini-omni-1.1-flash'), 'gemini')
+  assert.equal(expectedVideoProvider('grok-imagine-video-1.5'), 'xai')
+  assert.equal(isXaiVideoConfig('xai', 'grok-imagine-video-1.5'), true)
+  assert.equal(videoModelFitsProvider('xai', 'grok-imagine-video-1.5'), true)
   assert.equal(videoModelFitsProvider('gemini', 'MiniMax-H3'), false)
   assert.equal(videoModelFitsProvider('minimax', 'MiniMax-H3'), true)
   assert.equal(MINIMAX_H3_MISSING_MESSAGE.includes('MiniMax-H3'), true)

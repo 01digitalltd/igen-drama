@@ -13,7 +13,10 @@ test('video generation honors request config_id over the episode lock', () => {
 test('video generation blocks Seedance for realistic dramas', () => {
   const generation = readFileSync(new URL('../src/services/generation.ts', import.meta.url), 'utf8')
   assert.match(generation, /assertSeedanceAllowedForStyle/)
-  assert.match(generation, /excludeProviders: \['volcengine'\]/)
+  assert.match(generation, /isRealisticDramaStyle/)
+  assert.match(generation, /resolveXaiVideoConfig/)
+  assert.match(generation, /XAI_VIDEO_MISSING_MESSAGE/)
+  assert.doesNotMatch(generation, /canFallbackMiniMaxToSeedance\(\{[\s\S]*style: 'realistic'/)
 })
 
 test('video generation duration follows the prompt timeline instead of the request body', () => {

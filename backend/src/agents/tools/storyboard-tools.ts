@@ -19,6 +19,7 @@ import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
 import { logTaskProgress, logTaskSuccess, logTaskWarn } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
 import { buildShotImageRefs } from '../../services/storyboard-prompt.js'
+import { orderXaiImageRefs } from '../../services/xai-prompt.js'
 import { applyBrandLogoPlacement, dramaAdFields, loadDramaAdContext, logoPlacementFromMetadata, logoPlacementInstruction } from '../../services/brand-logo.js'
 
 async function syncStoryboardCharacters(storyboardId: number, characterIds: number[]) {
@@ -241,7 +242,12 @@ const readStoryboardContext = createTool({
       characters,
       scenes,
       props,
-      existing_storyboards: existingStoryboardPayload,
+      existing_storyboards: clip?.videoGeneration?.prompt_skill === 'xai'
+        ? existingStoryboardPayload.map((sb) => ({
+          ...sb,
+          image_refs: orderXaiImageRefs(sb.image_refs),
+        }))
+        : existingStoryboardPayload,
       video_generation: clip?.videoGeneration
         ? {
           ...clip.videoGeneration,

@@ -97,6 +97,13 @@ test('prompt_skill routes Gemini Omni away from Seedance format', () => {
   assert.equal(promptSkillForVideo('gemini', 'gemini-omni-1.1-flash'), 'omni')
   assert.equal(promptSkillForVideo('volcengine', 'doubao-seedance-2-0-fast-260128'), 'seedance')
   assert.equal(promptSkillForVideo('minimax', 'MiniMax-H3'), 'seedance')
+  assert.equal(promptSkillForVideo('xai', 'grok-imagine-video-1.5'), 'xai')
+  assert.deepEqual(clipDurationBounds('xai', 'grok-imagine-video-1.5'), {
+    min: 1,
+    max: 15,
+    typical: 8,
+    promptSegment: 3,
+  })
   assert.equal(
     toAgentVideoGeneration({
       provider: 'gemini',

@@ -1,0 +1,27 @@
+---
+name: video-prompt-xai
+description: xAI Grok 真人影片提示词 — 用 <IMAGE_N> 引用参考图，模型自己念对白
+---
+
+# 视频提示词（xAI Grok Imagine）
+
+写实真人短片。`prompt_skill` 为 `xai` 时遵守本文件，不要用 Seedance 的 `@名字` 或 Omni 的 `<IMAGE_REF_N>`。
+
+## 参考图
+
+`image_refs` 的顺序就是请求里的 `reference_images`：角色在前，然后场景，然后道具，最多 7 张。提示词里用给出的 `<IMAGE_0>`、`<IMAGE_1>`……不要重排，不要写 `@角色名`。
+
+不要把角色设定图写成首帧锁定。背景可以换，人脸、服装和道具外形跟参考图。
+
+## 格式
+
+按 `prompt_segment` 秒分段（缺省 3 秒），时间轴写成 `[0-3s]`。最后一段结束秒数等于 `min(duration, duration_max)`，不得超过 `duration_max`。
+
+```
+[0-3s] <IMAGE_0> sits at the desk in <IMAGE_1>, looking down at a phone.
+[3-6s] <IMAGE_0> looks up and says: "你终于来了。"
+```
+
+对白和旁白用引号，跟项目对白语言。模型会用预设声线念出来。不要写配音文件、`[VO_AUDIO_REFS]` 或 `[AUDIO: Speak only…]`。不要背景音乐、不要唱歌。
+
+画面是真人实拍，不要卡通、盲盒或插画。

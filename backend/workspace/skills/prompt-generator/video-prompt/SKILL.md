@@ -12,6 +12,7 @@ description: Seedance / MiniMax 视频提示词规范 — 根据分镜段落内�
 先看 `video_generation.prompt_skill`（或 provider/model）：
 
 - **`omni`**（Gemini Omni / gemini-omni-*）：忽略下方 Seedance 行首格式，改遵守 **Skill: prompt-generator/video-prompt/omni**
+- **`xai`**（Grok Imagine / grok-imagine-video-*）：改遵守 **Skill: prompt-generator/video-prompt/xai**
 - **其他**（Seedance 2.0、MiniMax H3）：遵守本文件（`0-3秒：` 格式）
 
 两种模型都适用：跟着【镜头N】里已写的地点、不创作 description 之外的台词、只更新 `video_prompt`。引用格式不同：Omni 用 `<IMAGE_REF_N>`，本文件用 `@角色名` / `@场景名` / `@道具名`。

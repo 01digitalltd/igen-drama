@@ -8,6 +8,7 @@ import { VolcEngineImageAdapter } from './volcengine-image'
 import { VolcEngineVideoAdapter } from './volcengine-video'
 import { MiniMaxVideoAdapter } from './minimax-video'
 import { GeminiVideoAdapter } from './gemini-video'
+import { XaiVideoAdapter } from './xai-video'
 import type { ImageProviderAdapter, VideoProviderAdapter } from './types'
 
 // 图片 Adapter 注册表
@@ -22,6 +23,7 @@ export const videoAdapters: Record<string, VideoProviderAdapter> = {
   gemini: new GeminiVideoAdapter(),
   volcengine: new VolcEngineVideoAdapter(),
   minimax: new MiniMaxVideoAdapter(),
+  xai: new XaiVideoAdapter(),
 }
 
 /**

@@ -11,7 +11,16 @@ export function isSeedanceVideoConfig(provider?: string | null, model?: string |
 }
 
 export const SEEDANCE_BLOCKED_FOR_REALISTIC_MESSAGE =
-  '写实真人风格不能使用 Seedance 视频模型，请改用 Gemini Omni 或 MiniMax H3'
+  '写实真人风格不能使用 Seedance 视频模型，请改用 xAI Grok'
+
+export const XAI_VIDEO_MISSING_MESSAGE =
+  '未启用 xAI Grok 视频服务，请先设置 XAI_API_KEY 并启用 grok-imagine-video-1.5'
+
+export function isXaiVideoConfig(provider?: string | null, model?: string | null) {
+  const p = String(provider || '').toLowerCase()
+  const m = String(model || '').toLowerCase()
+  return p === 'xai' || m.includes('grok-imagine')
+}
 
 export const MINIMAX_H3_MISSING_MESSAGE =
   '未启用 MiniMax-H3 视频服务，请先在设置中添加并启用 MiniMax 视频配置'
@@ -30,9 +39,10 @@ export function canFallbackMiniMaxToSeedance(opts: {
   return true
 }
 
-export function expectedVideoProvider(model?: string | null): 'gemini' | 'minimax' | 'volcengine' | null {
+export function expectedVideoProvider(model?: string | null): 'gemini' | 'minimax' | 'volcengine' | 'xai' | null {
   const m = String(model || '').trim().toLowerCase()
   if (!m) return null
+  if (m.includes('grok-imagine')) return 'xai'
   if (m.includes('seedance')) return 'volcengine'
   if (m.includes('omni') || m.includes('gemini')) return 'gemini'
   if (m.includes('minimax') || m.includes('h3')) return 'minimax'

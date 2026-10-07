@@ -63,6 +63,7 @@ export async function seedAiConfigsFromEnv() {
   await ensureGeminiVideoConfig()
   await ensureMinimaxVideoConfig()
   await ensureSeedanceVideoConfig()
+  await ensureXaiVideoConfig()
 }
 
 type SeedConfigRow = {
@@ -396,4 +397,64 @@ async function ensureSeedanceVideoConfig() {
     updatedAt: ts,
   })
   console.log(`[config-seed] inserted video config (volcengine / ${model})`)
+}
+
+/**
+ * Realistic dramas render on xAI Grok Imagine. Lower priority than MiniMax
+ * so other styles keep H3 as the default. Skipped when XAI_API_KEY is empty.
+ */
+async function ensureXaiVideoConfig() {
+  const videos = ((await db.select().from(schema.aiServiceConfigs)
+    .where(eq(schema.aiServiceConfigs.serviceType, 'video'))) as Array<{
+      id?: number
+      provider?: string | null
+      isActive?: unknown
+      apiKey?: string | null
+      baseUrl?: string | null
+      model?: unknown
+    }>)
+  const existing = videos.find((row) => row.provider === 'xai' && row.isActive)
+
+  const apiKey = (process.env.XAI_API_KEY || '').trim()
+  const baseUrl = (process.env.XAI_VIDEO_BASE_URL || 'https://api.x.ai/v1').replace(/\/+$/, '')
+  const model = (process.env.XAI_VIDEO_MODEL || 'grok-imagine-video-1.5').trim()
+
+  if (existing) {
+    if (!apiKey || existing.id == null) return
+    const updates: Record<string, unknown> = {}
+    if (existing.apiKey !== apiKey) updates.apiKey = apiKey
+    if (existing.baseUrl !== baseUrl) updates.baseUrl = baseUrl
+    const current = parseConfigModels(existing.model)
+    if (current[0] !== model) {
+      updates.model = JSON.stringify([model, ...current.filter((item) => item !== model)])
+    }
+    if (!Object.keys(updates).length) return
+    updates.updatedAt = now()
+    await db.update(schema.aiServiceConfigs)
+      .set(updates)
+      .where(eq(schema.aiServiceConfigs.id, existing.id))
+    console.log('[config-seed] updated video config (xai)')
+    return
+  }
+
+  if (!apiKey) {
+    console.warn('[config-seed] skip xai video: set XAI_API_KEY')
+    return
+  }
+
+  const ts = now()
+  await db.insert(schema.aiServiceConfigs).values({
+    serviceType: 'video',
+    provider: 'xai',
+    name: 'platform-video-xai',
+    baseUrl,
+    apiKey,
+    model: JSON.stringify([model]),
+    priority: 70,
+    isDefault: false,
+    isActive: true,
+    createdAt: ts,
+    updatedAt: ts,
+  })
+  console.log(`[config-seed] inserted video config (xai / ${model})`)
 }
