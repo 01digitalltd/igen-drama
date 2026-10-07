@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildShotImageRefs } from '../src/services/storyboard-prompt.ts'
-import { fitXaiSpokenClip, lockXaiSpokenLines, orderXaiImageRefs, rewriteXaiPrompt } from '../src/services/xai-prompt.ts'
+import { fitXaiSpokenClip, lockXaiSpokenLines, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt } from '../src/services/xai-prompt.ts'
 
 test('xAI reference order is character, scene, then prop', () => {
   const source = buildShotImageRefs({
@@ -44,6 +44,13 @@ test('xAI keeps the storyboard lines instead of a shortened slogan', () => {
   assert.match(locked, /哇！這個味道！太好吃了！/)
   assert.match(locked, /吃完牛河，再來杯冰檸檬茶！地址在下面喔！/)
   assert.doesNotMatch(locked, /凍檸茶，正！/)
+})
+
+test('pinning the storyboard still shifts asset tokens and keeps IMAGE_0 for the still', () => {
+  const pinned = pinXaiStoryboardStill('[0-4s] <IMAGE_0> tastes the noodles from <IMAGE_1>.')
+  assert.match(pinned, /<IMAGE_1> tastes the noodles from <IMAGE_2>/)
+  assert.match(pinned, /<IMAGE_0> is this shot's storyboard still/)
+  assert.equal(pinXaiStoryboardStill(pinned), pinned)
 })
 
 test('xAI gives a spoken line enough time and a silent tail', () => {

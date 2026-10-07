@@ -59,8 +59,20 @@ const XAI_SPEECH_TAIL_SECONDS = 1
 const XAI_CJK_CHARS_PER_SECOND = 2.5
 const XAI_EN_WORDS_PER_SECOND = 1.7
 const XAI_SPEECH_TAG = '[XAI_SPEECH: Speak every quoted line exactly, in order, in full. Do not replace a line with a shorter slogan, and do not add a line that is not quoted. Finish the last word at least one second before the clip ends.]'
+const XAI_STILL_TAG = '[XAI_STILL: <IMAGE_0> is this shot\'s storyboard still and the exact opening frame. Keep its framing, people, food, props, and setting. Animate from that picture. Do not restage a new composition.]'
 
 const SPOKEN_QUOTE = /[「“"]([^」”"\n]+)[」”"]/g
+
+/**
+ * Pinning a still makes it `<IMAGE_0>`. Asset refs move to `<IMAGE_1>` and up.
+ * Idempotent once the still tag is present.
+ */
+export function pinXaiStoryboardStill(prompt: string) {
+  const source = String(prompt || '').trim()
+  if (!source || source.includes('[XAI_STILL:')) return source
+  const shifted = source.replace(/<IMAGE_(\d+)>/g, (_token, raw) => `<IMAGE_${Number(raw) + 1}>`)
+  return `${shifted}\n${XAI_STILL_TAG}`
+}
 
 /** The clip must say the storyboard's lines, not a rewritten slogan. */
 export function lockXaiSpokenLines(prompt: string, description?: string | null) {

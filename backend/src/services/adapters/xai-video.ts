@@ -4,7 +4,8 @@
  *
  * Realistic dramas use reference-to-video: character/scene/prop stills in
  * reference_images (max 7) and preset voice_id clips in reference_audios
- * (max 3). Custom audio files are not sent.
+ * (max 3). When imageUrl is set, it pins the storyboard still as the opening
+ * frame and occupies `<IMAGE_0>`. Custom audio files are not sent.
  */
 import type {
   VideoProviderAdapter,
@@ -79,7 +80,8 @@ export class XaiVideoAdapter implements VideoProviderAdapter {
     const prompt = (record.prompt || '').trim()
     const refImages = parseUrlArray(record.referenceImageUrls).slice(0, XAI_MAX_REFERENCE_IMAGES)
     const voices = parseXaiVoiceRefs(record.xaiReferenceAudios)
-    if (!prompt && !refImages.length) {
+    const pinnedStill = String(record.imageUrl || '').trim()
+    if (!prompt && !refImages.length && !pinnedStill) {
       throw new Error('xAI 參考圖生成需要提示詞或至少一張參考圖')
     }
 
@@ -90,6 +92,7 @@ export class XaiVideoAdapter implements VideoProviderAdapter {
       resolution: '720p',
     }
     if (prompt) body.prompt = prompt
+    if (pinnedStill) body.image = { url: pinnedStill }
     if (refImages.length) {
       body.reference_images = refImages.map((url) => ({ url }))
     }

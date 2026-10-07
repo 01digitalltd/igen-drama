@@ -44,6 +44,19 @@ test('xAI reference-to-video request uses preset voices and 720p', () => {
   assert.equal(JSON.stringify(request.body).includes('vo.wav'), false)
 })
 
+test('xAI pins a storyboard still as the opening frame without dropping asset refs', () => {
+  const request = adapter.buildGenerateRequest(config, {
+    id: 3,
+    prompt: '<IMAGE_0> is the storyboard still. <IMAGE_1> is the host.',
+    imageUrl: 'https://cdn.example/storyboard.png',
+    referenceImageUrls: JSON.stringify(['https://cdn.example/host.png']),
+    duration: 8,
+    aspectRatio: '9:16',
+  })
+  assert.deepEqual(request.body.image, { url: 'https://cdn.example/storyboard.png' })
+  assert.deepEqual(request.body.reference_images, [{ url: 'https://cdn.example/host.png' }])
+})
+
 test('xAI clamps duration and unknown aspect ratios', () => {
   const request = adapter.buildGenerateRequest(config, {
     id: 2,

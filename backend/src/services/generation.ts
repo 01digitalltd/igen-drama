@@ -27,7 +27,7 @@ import {
   overlayOrangeGridOnRef,
 } from './character-grid.js'
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
-import { fitXaiSpokenClip, lockXaiSpokenLines, orderXaiImageRefs, rewriteXaiPrompt } from './xai-prompt.js'
+import { fitXaiSpokenClip, lockXaiSpokenLines, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt } from './xai-prompt.js'
 import { appendBrandLogoDirective, brandLogoPropIfNeeded } from './brand-logo.js'
 import { isBrandLogoProp } from '../utils/project-category.js'
 import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
@@ -885,13 +885,18 @@ async function processTask(id: number, config: AIConfig) {
       const fitted = fitXaiSpokenClip(prompt, Number(params.duration) || 8)
       prompt = fitted.prompt
       params.duration = fitted.duration
-      if (!publicRefs.length) {
-        throw new Error('xAI 真人影片需要至少一張角色、場景或道具參考圖')
+      const pinnedStill = record.storyboardId
+        ? await normalizeVideoReferenceUrl(await storyboardComposedStillUrl(record.storyboardId))
+        : null
+      if (pinnedStill) prompt = pinXaiStoryboardStill(prompt)
+      if (!publicRefs.length && !pinnedStill) {
+        throw new Error('xAI 真人影片需要至少一張角色、場景或道具參考圖，或這鏡的分鏡圖')
       }
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
         prompt,
+        imageUrl: pinnedStill,
         referenceImageUrls: publicRefs.length ? JSON.stringify(publicRefs.map((ref) => ref.url)) : null,
         xaiReferenceAudios: voices.length ? JSON.stringify(voices) : null,
         duration: params.duration,
@@ -1687,6 +1692,13 @@ async function charactersForXaiVoices(storyboardId: unknown) {
     })
   }
   return characters
+}
+
+async function storyboardComposedStillUrl(storyboardId: unknown) {
+  const id = Number(storyboardId)
+  if (!Number.isInteger(id) || id <= 0) return ''
+  const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id))
+  return String(sb?.composedImage || sb?.firstFrameImage || '').trim()
 }
 
 async function storyboardBoundStills(storyboardId: unknown) {
