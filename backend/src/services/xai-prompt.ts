@@ -1,4 +1,5 @@
 import type { ShotImageRef } from './storyboard-prompt.js'
+import { extractSpokenLines, substituteSpokenLines } from './tts/vo-speech.js'
 
 const KIND_RANK: Record<ShotImageRef['kind'], number> = {
   character: 0,
@@ -57,7 +58,30 @@ const XAI_DURATION_MAX = 15
 const XAI_SPEECH_TAIL_SECONDS = 1
 const XAI_CJK_CHARS_PER_SECOND = 2.5
 const XAI_EN_WORDS_PER_SECOND = 1.7
-const XAI_SPEECH_TAG = '[XAI_SPEECH: Say every quoted line in full at a natural pace. Do not shorten, rush, or cut a sentence. Finish the last word at least one second before the clip ends.]'
+const XAI_SPEECH_TAG = '[XAI_SPEECH: Speak every quoted line exactly, in order, in full. Do not replace a line with a shorter slogan, and do not add a line that is not quoted. Finish the last word at least one second before the clip ends.]'
+
+const SPOKEN_QUOTE = /[「“"]([^」”"\n]+)[」”"]/g
+
+/** The clip must say the storyboard's lines, not a rewritten slogan. */
+export function lockXaiSpokenLines(prompt: string, description?: string | null) {
+  const wanted = extractSpokenLines(String(description || '')).map((line) => line.text).filter(Boolean)
+  if (!wanted.length) return String(prompt || '')
+  const source = String(prompt || '')
+  const current = extractSpokenLines(source)
+  if (current.length === wanted.length) return substituteSpokenLines(source, wanted)
+
+  let index = 0
+  let next = source.replace(SPOKEN_QUOTE, (full) => {
+    if (index >= wanted.length) return full
+    const text = wanted[index++]
+    return `${full[0]}${text}${full[full.length - 1]}`
+  })
+  if (index < wanted.length) {
+    const rest = wanted.slice(index).map((text) => `她說：「${text}」`).join('\n')
+    next = [next.trim(), rest].filter(Boolean).join('\n')
+  }
+  return next
+}
 
 const TIMELINE_LINE = /^(\s*)(?:\[(\d+)\s*[-–~—]\s*(\d+)\s*s\]|(\d+)\s*[-–~—]\s*(\d+)\s*秒)[：:]?\s*(.*)$/u
 

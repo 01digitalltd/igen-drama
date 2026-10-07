@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildShotImageRefs } from '../src/services/storyboard-prompt.ts'
-import { fitXaiSpokenClip, orderXaiImageRefs, rewriteXaiPrompt } from '../src/services/xai-prompt.ts'
+import { fitXaiSpokenClip, lockXaiSpokenLines, orderXaiImageRefs, rewriteXaiPrompt } from '../src/services/xai-prompt.ts'
 
 test('xAI reference order is character, scene, then prop', () => {
   const source = buildShotImageRefs({
@@ -28,6 +28,22 @@ test('stored Seedance and Omni tokens are rewritten onto the xAI array', () => {
   assert.match(rewritten, /<IMAGE_0>/)
   assert.match(rewritten, /<IMAGE_1>/)
   assert.doesNotMatch(rewritten, /@志遠|@咖啡廳|IMAGE_REF|VO_AUDIO_REFS|Speak only/)
+})
+
+test('xAI keeps the storyboard lines instead of a shortened slogan', () => {
+  const description = [
+    '【鏡頭1】女主角坐在露天座位上，大口品嚐。女主角說：「哇！這個味道！太好吃了！」',
+    '【鏡頭2】女主角拿著冰檸檬茶。女主角說：「吃完牛河，再來杯冰檸檬茶！地址在下面喔！」',
+    '【鏡頭3】特寫女主角手中的冰檸檬茶。',
+  ].join('\n')
+  const prompt = [
+    '[0-4s] <IMAGE_0> tastes the noodles.',
+    '[4-8s] <IMAGE_0> says: "凍檸茶，正！"',
+  ].join('\n')
+  const locked = lockXaiSpokenLines(prompt, description)
+  assert.match(locked, /哇！這個味道！太好吃了！/)
+  assert.match(locked, /吃完牛河，再來杯冰檸檬茶！地址在下面喔！/)
+  assert.doesNotMatch(locked, /凍檸茶，正！/)
 })
 
 test('xAI gives a spoken line enough time and a silent tail', () => {

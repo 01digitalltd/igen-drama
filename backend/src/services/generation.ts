@@ -27,7 +27,7 @@ import {
   overlayOrangeGridOnRef,
 } from './character-grid.js'
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
-import { fitXaiSpokenClip, orderXaiImageRefs, rewriteXaiPrompt } from './xai-prompt.js'
+import { fitXaiSpokenClip, lockXaiSpokenLines, orderXaiImageRefs, rewriteXaiPrompt } from './xai-prompt.js'
 import { appendBrandLogoDirective, brandLogoPropIfNeeded } from './brand-logo.js'
 import { isBrandLogoProp } from '../utils/project-category.js'
 import { assertClipSecondsFit, clipDurationBounds, isOmniVideoConfig } from './video-clip-policy.js'
@@ -444,11 +444,13 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
 
   let prompt = (params.prompt || '').trim()
   let shotDuration: number | undefined
+  let storyboardDescription = ''
   if (params.storyboardId) {
     const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, params.storyboardId))
     if (sb) {
       if (!prompt) prompt = resolveStoryboardVideoPrompt(sb)
       shotDuration = sb.duration || undefined
+      storyboardDescription = String(sb.description || '')
     }
   }
   let duration = resolveVideoGenerationDuration({
@@ -460,7 +462,11 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
   const spoken = await getDramaDialogueLanguage(params.dramaId)
   const narratorVoice = await getDramaVoVoice(params.dramaId)
   prompt = rewriteNarratorLabels(prompt, narratorVoice)
-  prompt = await rewritePromptSpokenLines(prompt, spoken)
+  if (isXaiVideoConfig(config.provider, model)) {
+    prompt = lockXaiSpokenLines(prompt, storyboardDescription)
+  } else {
+    prompt = await rewritePromptSpokenLines(prompt, spoken)
+  }
   prompt = appendVoLanguageDirective(prompt, spoken)
   prompt = appendVoVoiceDirective(prompt, narratorVoice)
   prompt = appendVisualStyleDirective(prompt, visual.value, visual.prompt)
