@@ -1,7 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  appendStoryboardImageTextDirective,
   appendVoLanguageDirective,
   defaultDialogueLanguageFromLocale,
   storyboardImageTextInstruction,
@@ -47,11 +46,6 @@ test('storyboard still text follows the dialogue language script', () => {
   assert.doesNotMatch(cn, /繁體中文/)
   const en = storyboardImageTextInstruction('en-US')
   assert.match(en, /English/)
-  const first = appendStoryboardImageTextDirective('招牌寫著美肌', 'yue-HK')
-  assert.match(first, /STORYBOARD_IMAGE_TEXT/)
-  assert.match(first, /繁體中文/)
-  const second = appendStoryboardImageTextDirective(first, 'yue-HK')
-  assert.equal(second.match(/STORYBOARD_IMAGE_TEXT/g)?.length, 1)
 })
 
 test('generation appends a spoken-language tag without duplicating it', () => {

@@ -111,15 +111,6 @@ export function storyboardImageTextInstruction(codeRaw?: string | null) {
   ].filter(Boolean).join('')
 }
 
-const STORYBOARD_IMAGE_TEXT_MARKER = 'STORYBOARD_IMAGE_TEXT'
-
-export function appendStoryboardImageTextDirective(prompt: string, codeRaw?: string | null) {
-  const base = String(prompt || '').trim()
-  if (base.includes(STORYBOARD_IMAGE_TEXT_MARKER)) return base
-  const line = `[${STORYBOARD_IMAGE_TEXT_MARKER}] ${storyboardImageTextInstruction(codeRaw)}`
-  return base ? `${base}\n\n${line}` : line
-}
-
 const NO_ON_SCREEN_TEXT_MARKER = 'NO_ON_SCREEN_TEXT'
 
 export function appendVoLanguageDirective(prompt: string, codeRaw?: string | null) {

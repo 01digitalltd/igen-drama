@@ -25,7 +25,7 @@ import {
   SEEDANCE_R2V_MAX_AUDIO_SECONDS,
 } from './tts/ref-audio-limit.js'
 import { now } from '../utils/response.js'
-import { buildShotImageRefs, composeStoryboardImagePrompt, firstStoryboardBeat } from './storyboard-prompt.js'
+import { buildShotImageRefs, composeStoryboardImagePrompt, firstStoryboardBeat, formatOpeningFrameChoice, openingFrameChoiceFromPayload } from './storyboard-prompt.js'
 import {
   looksLikeVideoPrompt,
   payloadFromGenerateResult,
@@ -53,10 +53,15 @@ const VIDEO_PROMPT_SHOT_TIMEOUT_MS = 90_000
 const VIDEO_PROMPT_SCHEMA = z.object({
   video_prompt: z.string(),
   image_prompt: z.string().optional(),
+  opening_frame: z.object({
+    use_scene: z.boolean(),
+    names: z.array(z.string()),
+  }).optional(),
 })
-const STRUCTURED_INSTRUCTIONS = `你是视频提示词与分镜静帧提示词工程师。只返回 JSON {"video_prompt":"...","image_prompt":"..."}。不要调用工具，不要输出 JSON 以外的说明。
+const STRUCTURED_INSTRUCTIONS = `你是视频提示词与分镜静帧提示词工程师。只返回 JSON {"video_prompt":"...","image_prompt":"...","opening_frame":{"use_scene":true,"names":[]}}。不要调用工具，不要输出 JSON 以外的说明。
 video_prompt 必须按时间轴分段：Seedance/其他用「0-3秒：」并 @角色名/@场景名/@道具名；Omni 用「[0-3s]」和 image_refs 里的 <IMAGE_REF_N>。最后一段结束秒数必须等于该分镜 duration。description 的每个【镜头N】映射为 1-2 个连续分段，不要创作新台词。
-image_prompt 是这段影片的第 0 帧，只画镜头 1。有 image_refs 时必须写成「第一张图 / 第二张图」锁定前面附上的人物／场景／道具图像素，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止时间轴，禁止把后面的镜头画进去，禁止把 video_prompt 原样复制过来。3D Chibi 项目的 image_prompt 必须写头身比约 1:2、盲盒风三维、光滑树脂，禁止电影质感真人。`
+image_prompt 是这段影片的第 0 帧，只画镜头 1。有 image_refs 时必须写成「第一张图 / 第二张图」锁定前面附上的人物／场景／道具图像素，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止时间轴，禁止把后面的镜头画进去，禁止把 video_prompt 原样复制过来。3D Chibi 项目的 image_prompt 必须写头身比约 1:2、盲盒风三维、光滑树脂，禁止电影质感真人。
+opening_frame 由你判断镜头 1 的第 0 帧要用哪些参考图。use_scene 只在镜头 1 的摄影机就在绑定场景图的空间里时为 true；镜头 1 在别的地方，或只是提到这个地方的外观时为 false。names 只列镜头 1 画面里看得见的角色和道具，用 image_refs 里的名字。`
 
 async function loadShotPromptContext(storyboard: {
   id: number
@@ -95,7 +100,7 @@ async function loadShotPromptContext(storyboard: {
       scene: scene && !scene.deletedAt
         ? { location: scene.location, image_url: scene.imageUrl, local_path: scene.localPath }
         : null,
-      characters: characters.map(row => ({ name: row.name, image_url: row.imageUrl, local_path: row.localPath })),
+      characters: characters.map(row => ({ name: row.name, role: row.role, image_url: row.imageUrl, local_path: row.localPath })),
       props: props.map(row => ({ name: row.name, image_url: row.imageUrl, local_path: row.localPath })),
     }),
   }
@@ -222,7 +227,7 @@ export async function startVideoPromptBatch(
             content: [
               withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})同时写视频提示词(video_prompt)和分镜静帧提示词(image_prompt)。视频模型:${videoLabel}。prompt_skill:${skill}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。
 ${skillHint}
-image_prompt 是这段影片的第 0 帧，只画下面的镜头 1。不要把镜头 2 及之后画进这张图。有 image_refs 时必须写「第一张图 / 第二张图」锁定 Gemini 请求里前面附上的人物图／场景图／道具图像素，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止换脸换景换包装。每一镜都是同一部短片：同一画风、色温、服装与发型，不要写成另一部电影。不要时间轴，不要旁白配音。若镜头 1 写手持镜头、自拍或对着镜头，那是机位：观众就是镜头。不要画相机、手机或她拿着设备。
+image_prompt 是这段影片的第 0 帧，只画下面的镜头 1。不要把镜头 2 及之后画进这张图。opening_frame 决定第 0 帧附上哪些参考图：use_scene 只在镜头 1 的摄影机就在绑定场景的空间里时为 true，镜头 1 在别的地方或只拍到该地的外观时为 false。names 只填镜头 1 看得见的角色和道具，用 image_refs 的名字。有附上的图才写「第一张图 / 第二张图」，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止换脸换景换包装。每一镜都是同一部短片：同一画风、色温、服装与发型，不要写成另一部电影。不要时间轴，不要旁白配音。若镜头 1 写手持镜头、自拍或对着镜头，那是机位：观众就是镜头。不要画相机、手机或她拿着设备。
 
 镜头 1（只画这一段）：
 ${firstStoryboardBeat(shot.description) || '（没有镜头 1）'}
@@ -238,7 +243,7 @@ ${shot.description}
 道具：${shot.propNames.join('、') || '无'}
 image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${ref.kind}:${ref.name}`).join('；') : '无'}
 
-只返回 JSON {"video_prompt":"...","image_prompt":"..."}。必须根据上面的 description 生成，不要调用工具。`, opts.locale),
+只返回 JSON {"video_prompt":"...","image_prompt":"...","opening_frame":{"use_scene":true,"names":[]}}。必须根据上面的 description 和镜头 1 判断 opening_frame，不要调用工具。`, opts.locale),
               dialogueLanguageInstruction(spoken),
               storyboardImageTextInstruction(spoken),
               voVoiceInstruction(narratorVoice),
@@ -270,13 +275,18 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
               })
               continue
             }
-            const imagePrompt = composeStoryboardImagePrompt({
+            const openingFrame = openingFrameChoiceFromPayload(payload)
+            const imageBody = composeStoryboardImagePrompt({
               description: shot.description,
               atmosphere: shot.atmosphere,
               imageRefs: shot.imageRefs,
               styleValue,
               onScreenText: storyboardImageTextInstruction(spoken),
+              openingFrame,
             })
+            const imagePrompt = openingFrame
+              ? `${imageBody}\n${formatOpeningFrameChoice(openingFrame)}`
+              : imageBody
             await persistShotPrompts(
               sb.id,
               applyHandheldViewpoint(spokenPrompt, shot.description),

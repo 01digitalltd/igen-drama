@@ -145,7 +145,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 
 ## 分镜静帧提示词
 
-与视频提示词同一请求时遵守 Skill storyboard-image：image_prompt 是这段影片的第 0 帧，只画镜头 1；有 image_refs 时必须写「第一张图 / 第二张图」锁定 Gemini 前面附上的人物／场景／道具图像素，不要写 @角色名 或 <IMAGE_REF_N>，不要时间轴、不要旁白配音、不要把镜头 2 及之后画进去、不要复制 video_prompt。全部分镜静帧必须像同一部短片：同一画风、色温、服装与发型，禁止每镜另造一套造型或媒介。
+与视频提示词同一请求时遵守 Skill storyboard-image：image_prompt 是这段影片的第 0 帧，只画镜头 1。同时返回 opening_frame：use_scene 只在镜头 1 的摄影机就在绑定场景的空间里时为 true；names 只列镜头 1 看得见的角色和道具。有附上的图才写「第一张图 / 第二张图」，不要写 @角色名 或 <IMAGE_REF_N>，不要时间轴、不要旁白配音、不要把镜头 2 及之后画进去、不要复制 video_prompt。全部分镜静帧必须像同一部短片：同一画风、色温、服装与发型，禁止每镜另造一套造型或媒介。
 
 通用规范：
 - 画面／运镜／氛围描述跟产品写作语言；「角色名说：「…」」与旁白跟项目对白语言（粤语／国语／普通话／英文），不要把整段提示词都改成对白语言

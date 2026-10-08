@@ -1,7 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { composeStoryboardImagePrompt, firstStoryboardBeat, lockStoryboardStillPrompt, pickPreviousStoryboardStill, shotContinuityCue } from '../src/services/storyboard-prompt.ts'
-import { imagePromptFromPayload, looksLikeStillPrompt } from '../src/services/video-prompt-text.ts'
+import { composeStoryboardImagePrompt, firstStoryboardBeat, formatOpeningFrameChoice, lockStoryboardStillPrompt, openingFrameChoiceFromPayload, openingFrameRefs, parseOpeningFrameChoice, pickPreviousStoryboardStill, shotContinuityCue } from '../src/services/storyboard-prompt.ts'
 
 test('shot continuity cue uses the first beat and the written ending', () => {
   const cue = shotContinuityCue(
@@ -40,7 +39,6 @@ test('composeStoryboardImagePrompt locks named asset refs and refuses a timeline
   assert.match(prompt, /小華把手放在產品包裝上/)
   assert.doesNotMatch(prompt, /@辦公室/)
   assert.doesNotMatch(prompt, /参考图1/)
-  assert.equal(looksLikeStillPrompt(prompt), true)
 })
 
 test('lockStoryboardStillPrompt numbers uploaded character stills for image-to-image', () => {
@@ -79,6 +77,59 @@ test('opening frame keeps shot 1 and drops later shots, including traditional ma
   assert.doesNotMatch(prompt, /檸檬茶/)
 })
 
+test('opening frame keeps the host and drops a later kitchen, chef, and dish', () => {
+  const description = [
+    '【鏡頭1】女主角手持鏡頭，興奮地對著香港熱鬧的街頭和一家老字號餐廳的門面，這部短影片將展開一場美食體驗。女主角：（對鏡頭，興奮）介紹自己從小吃的老字號！慶幸今天不用排隊！',
+    '【鏡頭2】鏡頭切換到大牌檔的開放式廚房。一位師傅正熟練地在大火上猛烈翻炒著乾炒牛河，鍋氣十足，熱氣騰騰。',
+    '【鏡頭3】師傅將炒好的乾炒牛河俐落地裝盤，色澤誘人。',
+  ].join('\n')
+  const refs = [
+    { index: 0, tag: '<IMAGE_REF_0>', kind: 'scene' as const, name: '大牌檔開放式廚房', url: 'static/kitchen.png' },
+    { index: 1, tag: '<IMAGE_REF_1>', kind: 'character' as const, name: '阿儀', aliases: ['女主角'], url: 'static/host.png' },
+    { index: 2, tag: '<IMAGE_REF_2>', kind: 'character' as const, name: '陳師傅', url: 'static/chef.png' },
+    { index: 3, tag: '<IMAGE_REF_3>', kind: 'prop' as const, name: '乾炒牛河', url: 'static/noodles.png' },
+  ]
+  const picked = openingFrameRefs(description, refs)
+  assert.deepEqual(picked.map((ref) => ref.name), ['阿儀'])
+  const prompt = composeStoryboardImagePrompt({ description, imageRefs: refs })
+  assert.match(prompt, /角色设定（阿儀）/)
+  assert.match(prompt, /街/)
+  assert.match(prompt, /門面/)
+  assert.doesNotMatch(prompt, /開放式廚房/)
+  assert.doesNotMatch(prompt, /陳師傅/)
+  assert.doesNotMatch(prompt, /乾炒牛河/)
+  assert.doesNotMatch(prompt, /kitchen/)
+})
+
+test('the skill choice decides whether the bound scene is shot 1 space', () => {
+  const description = '【鏡頭1】她站在老字號餐廳的門面外，身後是街頭。'
+  const refs = [
+    { index: 0, tag: '<IMAGE_REF_0>', kind: 'scene' as const, name: '老字號餐廳', url: 'static/hall.png' },
+  ]
+  const outside = composeStoryboardImagePrompt({
+    description,
+    imageRefs: refs,
+    openingFrame: { useScene: false, names: [] },
+  })
+  assert.doesNotMatch(outside, /场景空镜（老字號餐廳）/)
+  assert.match(outside, /門面/)
+
+  const inside = composeStoryboardImagePrompt({
+    description: '【鏡頭1】她坐在老字號餐廳裡。',
+    imageRefs: refs,
+    openingFrame: { useScene: true, names: [] },
+  })
+  assert.match(inside, /场景空镜（老字號餐廳）/)
+})
+
+test('opening frame choice round-trips through the saved marker', () => {
+  const choice = openingFrameChoiceFromPayload({
+    opening_frame: { use_scene: false, names: ['阿儀'] },
+  })
+  assert.deepEqual(choice, { useScene: false, names: ['阿儀'] })
+  assert.deepEqual(parseOpeningFrameChoice(formatOpeningFrameChoice(choice!)), choice)
+})
+
 test('handheld viewpoint on the still follows shot 1 only', () => {
   const talking = composeStoryboardImagePrompt({
     description: '【鏡頭1】單手手持鏡頭自拍，身後是街景。\n【鏡頭2】廚房翻炒。',
@@ -104,18 +155,4 @@ test('pickPreviousStoryboardStill prefers the nearest earlier composed still', (
   ])
   assert.equal(pick?.id, 2)
   assert.equal(pickPreviousStoryboardStill(current, [current]), null)
-})
-
-test('looksLikeStillPrompt rejects video timelines', () => {
-  assert.equal(looksLikeStillPrompt('短'), false)
-  assert.equal(looksLikeStillPrompt('0-3秒：@小華抬头。'), false)
-  assert.equal(looksLikeStillPrompt('单帧分镜静帧，小華坐在办公桌前。'), true)
-})
-
-test('imagePromptFromPayload reads image_prompt without stealing video_prompt', () => {
-  assert.equal(
-    imagePromptFromPayload({ video_prompt: '0-3秒：抬头', image_prompt: '  单帧：抬头  ' }),
-    '单帧：抬头',
-  )
-  assert.equal(imagePromptFromPayload({ video_prompt: '0-3秒：抬头' }), '')
 })

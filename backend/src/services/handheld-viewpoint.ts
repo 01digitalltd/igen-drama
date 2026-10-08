@@ -11,12 +11,18 @@ const VISIBLE_CAMERA_EN = /\b(?:holding|holds|hold)\s+(?:a|the|her|his)?\s*(?:ca
 
 export const HANDHELD_VIEWPOINT_TAG = '[CAMERA: Handheld, selfie, or looking into the lens is the camera angle, not a prop. The viewer is the camera. When the host speaks to the audience, they look into the lens with slight handheld sway. A cutaway of a street, kitchen, or food is what that camera sees. Do not show a camera, phone, gimbal, or anyone holding a recording device.]'
 
+export const OPENING_FRAME_CAMERA_TAG = '[CAMERA: Handheld, selfie, or looking into the lens is this opening frame\'s camera angle, not a prop. The viewer is the camera. This picture is shot 1 only: the host looks into the lens. Do not show a camera, phone, gimbal, or anyone holding a recording device. Do not replace this picture with a later room or subject.]'
+
 export function isHandheldViewpoint(text?: string | null) {
   return HANDHELD_VIEWPOINT.test(String(text || ''))
 }
 
 /** Drop a visible camera prop and state that the frame is the handheld camera. */
-export function applyHandheldViewpoint(prompt: string, description?: string | null) {
+export function applyHandheldViewpoint(
+  prompt: string,
+  description?: string | null,
+  opts?: { openingFrame?: boolean },
+) {
   const source = String(prompt || '').trim()
   const context = `${source}\n${description || ''}`
   if (!isHandheldViewpoint(context)) return source
@@ -24,5 +30,6 @@ export function applyHandheldViewpoint(prompt: string, description?: string | nu
     .replace(VISIBLE_CAMERA, '看著鏡頭')
     .replace(VISIBLE_CAMERA_EN, 'looking into the lens')
   if (rewritten.includes('[CAMERA:')) return rewritten
-  return rewritten ? `${rewritten}\n${HANDHELD_VIEWPOINT_TAG}` : HANDHELD_VIEWPOINT_TAG
+  const tag = opts?.openingFrame ? OPENING_FRAME_CAMERA_TAG : HANDHELD_VIEWPOINT_TAG
+  return rewritten ? `${rewritten}\n${tag}` : tag
 }

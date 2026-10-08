@@ -17,7 +17,7 @@ import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuc
 import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, appendAssetRestyleDirective, appendImageStyleDirective } from './style-preset.js'
-import { appendStoryboardImageTextDirective, appendVoLanguageDirective, getDramaDialogueLanguage, storyboardImageTextInstruction } from './dialogue-language.js'
+import { appendVoLanguageDirective, getDramaDialogueLanguage, storyboardImageTextInstruction } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
 import { assertSeedanceAllowedForStyle, canFallbackMiniMaxToSeedance, expectedVideoProvider, isRealisticDramaStyle, isSeedanceVideoConfig, isXaiVideoConfig, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE, MINIMAX_H3_MISSING_MESSAGE, XAI_VIDEO_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt } from './face-grid.js'
@@ -26,7 +26,7 @@ import {
   isCharacterMediaRef,
   overlayOrangeGridOnRef,
 } from './character-grid.js'
-import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, composeStoryboardImagePrompt, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
+import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, composeStoryboardImagePrompt, openingFrameRefs, parseOpeningFrameChoice, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
 import { fitXaiSpokenClip, lockXaiSpokenLines, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt } from './xai-prompt.js'
 import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import { appendBrandLogoDirective, brandLogoPropIfNeeded } from './brand-logo.js'
@@ -802,9 +802,14 @@ async function processTask(id: number, config: AIConfig) {
         ? [...boundStills.slice(0, assetBudget), continuity]
         : boundStills.slice(0, assetBudget)
       const assetKind = record.characterId ? 'character' as const : record.sceneId ? 'scene' as const : record.propId ? 'prop' as const : null
+      const storyboardStill = Boolean(record.storyboardId) && !record.characterId && !record.sceneId && !record.propId
+      const stillSource = storyboardStill ? await storyboardStillSource(record.storyboardId) : null
+      const openingFrame = Boolean(stillSource?.description.trim())
+      const openingChoice = openingFrame ? parseOpeningFrameChoice(record.prompt) : null
+      const frameRefs = openingFrame ? openingFrameRefs(stillSource?.description, stillsForLock, openingChoice) : stillsForLock
       const labeledRefs = assetKind
         ? await labeledAssetReferenceImages(clientRefs, assetKind)
-        : await labeledStoryboardReferenceImages(stillsForLock, clientRefs)
+        : await labeledStoryboardReferenceImages(frameRefs, clientRefs, { openingFrame })
       logTaskProgress(label, 'reference-images', {
         id,
         bound: boundStills.length,
@@ -813,29 +818,13 @@ async function processTask(id: number, config: AIConfig) {
         resolved: labeledRefs.length,
       })
       const imageVisual = await loadDramaVisualStyle(record.dramaId)
-      const rawImagePrompt = record.characterId
-        ? stripCharacterFaceGridPrompt(record.prompt || '')
-        : record.storyboardId && !record.sceneId && !record.propId
-          ? lockStoryboardStillPrompt(
-            record.prompt || '',
-            stillsForLock,
-            await resolveVideoDramaStyle(record),
-          )
-          : record.prompt
-      const imagePrompt = appendImageStyleDirective(
-        rawImagePrompt,
-        imageVisual.value,
-        imageVisual.prompt,
-        assetKind || (record.storyboardId ? 'still' : null),
-      )
-      const storyboardStill = Boolean(record.storyboardId) && !record.characterId && !record.sceneId && !record.propId
-      const stillSource = storyboardStill ? await storyboardStillSource(record.storyboardId) : null
-      const stillPrompt = stillSource?.description.trim()
+      const stillPrompt = openingFrame && stillSource
         ? appendImageStyleDirective(
           composeStoryboardImagePrompt({
             description: stillSource.description,
             atmosphere: stillSource.atmosphere,
-            imageRefs: stillsForLock,
+            imageRefs: frameRefs,
+            openingFrame: openingChoice,
             styleValue: imageVisual.value,
             onScreenText: storyboardImageTextInstruction(
               await getDramaDialogueLanguage(await resolveVideoDramaId(record)),
@@ -845,7 +834,20 @@ async function processTask(id: number, config: AIConfig) {
           imageVisual.prompt,
           'still',
         )
-        : imagePrompt
+        : appendImageStyleDirective(
+          record.characterId
+            ? stripCharacterFaceGridPrompt(record.prompt || '')
+            : record.storyboardId && !record.sceneId && !record.propId
+              ? lockStoryboardStillPrompt(
+                record.prompt || '',
+                stillsForLock,
+                await resolveVideoDramaStyle(record),
+              )
+              : record.prompt,
+          imageVisual.value,
+          imageVisual.prompt,
+          assetKind || (record.storyboardId ? 'still' : null),
+        )
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
@@ -1628,6 +1630,7 @@ async function labeledAssetReferenceImages(
 async function labeledStoryboardReferenceImages(
   boundStills: ShotImageRef[],
   clientRefs: string[],
+  opts?: { openingFrame?: boolean },
 ) {
   const out: { url: string; caption: string }[] = []
   const seen = new Set<string>()
@@ -1642,10 +1645,10 @@ async function labeledStoryboardReferenceImages(
   const assetBudget = continuity.length ? 5 : 6
   for (const [index, still] of assets.entries()) {
     if (out.length >= assetBudget) break
-    await push(still.url, geminiStillCaption(still, index))
+    await push(still.url, geminiStillCaption(still, index, { openingFrame: opts?.openingFrame }))
   }
   for (const still of continuity) {
-    await push(still.url, geminiStillCaption(still, out.length))
+    await push(still.url, geminiStillCaption(still, out.length, { openingFrame: opts?.openingFrame }))
   }
   for (const extra of clientRefs) {
     await push(String(extra || ''), `${geminiImageOrdinal(out.length)}是补充参考图。`)
