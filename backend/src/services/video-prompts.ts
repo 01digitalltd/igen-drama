@@ -16,7 +16,7 @@ import { getDramaStyleValue, visualStyleInstruction } from './style-preset.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
 import { firstConfigModel } from './video-clip-policy.js'
-import { lockXaiSpokenLines, orderXaiImageRefs } from './xai-prompt.js'
+import { orderXaiImageRefs, xaiSpokenLineIssues } from './xai-prompt.js'
 import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import {
   findRefAudioOverflows,
@@ -210,7 +210,7 @@ export async function startVideoPromptBatch(
         const skillHint = skill === 'omni'
           ? '当前是 Gemini Omni：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_REF_N> 标记参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。'
           : skill === 'xai'
-            ? '当前是 xAI Grok 真人影片：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_N>（角色在前，然后场景、道具）。不要写 @名字。description 里每一句「角色名说：「…」」必须原句放进引号，顺序相同，禁止改成另一句、漏句或缩短成口号。放对白的那一段要够念完（中文约每 2.5 字 1 秒），最后一句讲完后再留至少 1 秒。写实摄影，不要卡通。'
+            ? '当前是 xAI Grok 真人影片：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_N>（角色在前，然后场景、道具）。不要写 @名字。description 里每一句对白（「角色名说：「…」」或「角色名：（情绪）台词」）由你原句放进它所屬的【镜头N】那一段，只放一次。后面的段写无对白，不要把同一句复制到每一段，也不要改成另一句或缩短成口号。放对白的那一段要够念完（中文约每 2.5 字 1 秒），最后一句讲完后再留至少 1 秒。写实摄影，不要卡通。'
             : '当前是 Seedance/其他模型：时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'
         for (let attempt = 1; attempt <= VIDEO_PROMPT_ATTEMPTS && !saved; attempt++) {
           try {
@@ -262,9 +262,19 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
           const payload = await payloadFromGenerateResult(result)
           const drafted = videoPromptFromPayload(payload)
           if (looksLikeVideoPrompt(drafted)) {
-            const spokenPrompt = skill === 'xai'
-              ? lockXaiSpokenLines(rewriteNarratorLabels(drafted, narratorVoice), shot.description)
-              : rewriteNarratorLabels(drafted, narratorVoice)
+            const spokenPrompt = rewriteNarratorLabels(drafted, narratorVoice)
+            if (skill === 'xai') {
+              const issues = xaiSpokenLineIssues(spokenPrompt, shot.description)
+              if (issues.repeated.length || issues.missing.length) {
+                audioRetryNote = '上一稿把同一句对白重复写进多段，或漏了 description 里的一句。每一句只放在它所屬的【镜头N】那一段，只放一次，后面的段写无对白。不要改写句子，不要缩短成口号。'
+                logTaskWarn('VideoPrompt', 'batch-shot-retry', {
+                  storyboardId: sb.id,
+                  attempt,
+                  error: audioRetryNote,
+                })
+                continue
+              }
+            }
             const overflows = skill === 'xai' ? [] : findRefAudioOverflows(spokenPrompt, spoken)
             if (overflows.length) {
               audioRetryNote = `上一稿 ${overflows.map((row) => `${row.speaker}约 ${formatAudioSeconds(row.seconds)} 秒`).join('，')}，超过 ${SEEDANCE_R2V_MAX_AUDIO_SECONDS} 秒。请缩短这些对白后再输出，不要加长。`

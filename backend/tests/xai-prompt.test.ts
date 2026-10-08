@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildShotImageRefs } from '../src/services/storyboard-prompt.ts'
-import { fitXaiSpokenClip, lockXaiSpokenLines, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt } from '../src/services/xai-prompt.ts'
+import { fitXaiSpokenClip, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt, xaiSpokenLineIssues } from '../src/services/xai-prompt.ts'
 
 test('xAI reference order is character, scene, then prop', () => {
   const source = buildShotImageRefs({
@@ -40,10 +40,24 @@ test('xAI keeps the storyboard lines instead of a shortened slogan', () => {
     '[0-4s] <IMAGE_0> tastes the noodles.',
     '[4-8s] <IMAGE_0> says: "凍檸茶，正！"',
   ].join('\n')
-  const locked = lockXaiSpokenLines(prompt, description)
-  assert.match(locked, /哇！這個味道！太好吃了！/)
-  assert.match(locked, /吃完牛河，再來杯冰檸檬茶！地址在下面喔！/)
-  assert.doesNotMatch(locked, /凍檸茶，正！/)
+  const issues = xaiSpokenLineIssues(prompt, description)
+  assert.equal(issues.repeated.length, 0)
+  assert.equal(issues.missing.length, 2)
+})
+
+test('xAI says each storyboard line once when every beat copied the first line', () => {
+  const description = [
+    '【鏡頭1】女主角坐在露天座位。女主角：（滿足地咀嚼）太好吃了！',
+    '【鏡頭2】女主角拿著冰檸檬茶。女主角：（對鏡頭，開心）配冰檸檬茶，看底下地址與轉發！',
+  ].join('\n')
+  const prompt = [
+    '[0-3s] 女主角坐在露天座位。女主角：（滿足地咀嚼）太好吃了！',
+    '[3-6s] 她繼續品嚐。女主角：（滿足地咀嚼）太好吃了！',
+    '[6-9s] 她拿起檸檬茶。女主角：（滿足地咀嚼）太好吃了！',
+  ].join('\n')
+  const issues = xaiSpokenLineIssues(prompt, description)
+  assert.deepEqual(issues.repeated, ['太好吃了！'])
+  assert.deepEqual(issues.missing, ['配冰檸檬茶，看底下地址與轉發！'])
 })
 
 test('xAI keeps a parenthetical line from shot 2 when the prompt only quoted shot 1', () => {
@@ -52,9 +66,9 @@ test('xAI keeps a parenthetical line from shot 2 when the prompt only quoted sho
     '【鏡頭2】女主角手裡拿著一杯冰檸檬茶，對著鏡頭。女主角：（對鏡頭，開心）配冰檸檬茶，看底下地址與轉發！',
   ].join('\n')
   const prompt = '[0-4s] <IMAGE_0> tastes the noodles and says: "太好吃了！"'
-  const locked = lockXaiSpokenLines(prompt, description)
-  assert.match(locked, /太好吃了！/)
-  assert.match(locked, /配冰檸檬茶，看底下地址與轉發！/)
+  const issues = xaiSpokenLineIssues(prompt, description)
+  assert.equal(issues.repeated.length, 0)
+  assert.deepEqual(issues.missing, ['太好吃了！', '配冰檸檬茶，看底下地址與轉發！'])
 })
 
 test('pinning the storyboard still shifts asset tokens and keeps IMAGE_0 for the still', () => {
