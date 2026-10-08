@@ -16,7 +16,7 @@ import { getDramaStyleValue, visualStyleInstruction } from './style-preset.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
 import { firstConfigModel } from './video-clip-policy.js'
-import { orderXaiImageRefs, xaiSpokenLineIssues } from './xai-prompt.js'
+import { orderXaiImageRefs, xaiBeatImageIssues, xaiSpokenLineIssues } from './xai-prompt.js'
 import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import {
   findRefAudioOverflows,
@@ -210,7 +210,7 @@ export async function startVideoPromptBatch(
         const skillHint = skill === 'omni'
           ? '当前是 Gemini Omni：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_REF_N> 标记参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。'
           : skill === 'xai'
-            ? '当前是 xAI Grok 真人影片：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_N>（角色在前，然后场景、道具）。不要写 @名字。description 里每一句对白（「角色名说：「…」」或「角色名：（情绪）台词」）由你原句放进它所屬的【镜头N】那一段，只放一次。后面的段写无对白，不要把同一句复制到每一段，也不要改成另一句或缩短成口号。放对白的那一段要够念完（中文约每 2.5 字 1 秒），最后一句讲完后再留至少 1 秒。写实摄影，不要卡通。'
+            ? '当前是 xAI Grok 真人影片：时间轴写成 [0-3s]，用 image_refs 给出的 <IMAGE_N>，不要自己把编号加一，不要改用另一张图的编号。某一段写到某个参考图的名字，就必须带上它的 <IMAGE_N>。不要写 @名字。description 里每一句对白由你原句写进它所屬的【镜头N】那一段的时间轴里面，只放一次，不要写在时间轴外面。后面的段写无对白，不要把同一句复制到每一段，也不要改成另一句或缩短成口号。放对白的那一段要够念完（中文约每 2.5 字 1 秒），最后一句讲完后再留至少 1 秒。写实摄影，不要卡通。'
             : '当前是 Seedance/其他模型：时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'
         for (let attempt = 1; attempt <= VIDEO_PROMPT_ATTEMPTS && !saved; attempt++) {
           try {
@@ -265,8 +265,16 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
             const spokenPrompt = rewriteNarratorLabels(drafted, narratorVoice)
             if (skill === 'xai') {
               const issues = xaiSpokenLineIssues(spokenPrompt, shot.description)
-              if (issues.repeated.length || issues.missing.length) {
-                audioRetryNote = '上一稿把同一句对白重复写进多段，或漏了 description 里的一句。每一句只放在它所屬的【镜头N】那一段，只放一次，后面的段写无对白。不要改写句子，不要缩短成口号。'
+              const imageIssues = xaiBeatImageIssues(spokenPrompt, shot.imageRefs)
+              if (issues.repeated.length || issues.missing.length || imageIssues.length) {
+                const notes = []
+                if (issues.repeated.length || issues.missing.length) {
+                  notes.push('每一句对白只写进它所屬的【镜头N】那一段的时间轴里面，只写一次，不要写在时间轴外面。后面的段写无对白。不要改写句子，不要缩短成口号。')
+                }
+                if (imageIssues.length) {
+                  notes.push(`这些参考图的名字出现了，但该段没有用 image_refs 里对应的 <IMAGE_N>：${imageIssues.join('、')}。不要改用别的编号，也不要自己把编号加一。`)
+                }
+                audioRetryNote = `上一稿需要重写。${notes.join('')}`
                 logTaskWarn('VideoPrompt', 'batch-shot-retry', {
                   storyboardId: sb.id,
                   attempt,

@@ -72,9 +72,23 @@ export function pinXaiStoryboardStill(prompt: string) {
   return `${shifted}\n${XAI_STILL_TAG}`
 }
 
+const TIMELINE_LINE = /^(\s*)(?:\[(\d+)\s*[-–~—]\s*(\d+)\s*s\]|(\d+)\s*[-–~—]\s*(\d+)\s*秒)[：:]?\s*(.*)$/u
+
+function timelineLines(prompt: string) {
+  return String(prompt || '').split('\n').filter((line) => TIMELINE_LINE.test(line))
+}
+
+function refNameInText(name: string, text: string) {
+  const parts = String(name || '')
+    .split(/[·•|]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 2)
+  return parts.some((part) => text.includes(part))
+}
+
 /**
  * The video skill writes the lines. This only reports a draft that repeats a
- * line or drops one from the description, so the skill can write it again.
+ * line, drops one, or leaves one outside the timeline, so the skill can write it again.
  */
 export function xaiSpokenLineIssues(prompt: string, description?: string | null) {
   const wanted: string[] = []
@@ -85,7 +99,9 @@ export function xaiSpokenLineIssues(prompt: string, description?: string | null)
     seenWanted.add(text)
     wanted.push(text)
   }
-  const spoken = extractSpokenLines(String(prompt || '')).map((line) => line.text.trim()).filter(Boolean)
+  const spoken = timelineLines(prompt)
+    .flatMap((line) => extractSpokenLines(line).map((item) => item.text.trim()))
+    .filter(Boolean)
   const counts = new Map<string, number>()
   for (const text of spoken) counts.set(text, (counts.get(text) || 0) + 1)
   const repeated = [...counts.entries()].filter(([, count]) => count > 1).map(([text]) => text)
@@ -93,7 +109,25 @@ export function xaiSpokenLineIssues(prompt: string, description?: string | null)
   return { repeated, missing }
 }
 
-const TIMELINE_LINE = /^(\s*)(?:\[(\d+)\s*[-–~—]\s*(\d+)\s*s\]|(\d+)\s*[-–~—]\s*(\d+)\s*秒)[：:]?\s*(.*)$/u
+/** A beat that names a reference must use that reference's own `<IMAGE_N>`. */
+export function xaiBeatImageIssues(
+  prompt: string,
+  refs: Array<{ index: number; name?: string | null }>,
+) {
+  const named = refs.filter((ref) => String(ref.name || '').trim().length >= 2)
+  const mismatched: string[] = []
+  const seen = new Set<string>()
+  for (const line of timelineLines(prompt)) {
+    const tokens = new Set([...line.matchAll(/<IMAGE_(\d+)>/g)].map((item) => Number(item[1])))
+    for (const ref of named) {
+      const name = String(ref.name || '').trim()
+      if (!refNameInText(name, line) || tokens.has(ref.index) || seen.has(name)) continue
+      seen.add(name)
+      mismatched.push(name)
+    }
+  }
+  return mismatched
+}
 
 function stripXaiSpeechTag(prompt: string) {
   return prompt.replace(/\n*\[XAI_SPEECH:[\s\S]*?\]\s*$/u, '').trim()
@@ -227,10 +261,8 @@ export function fitXaiSpokenClip(prompt: string, requested?: number | null, max 
       if (segment.speech <= 0) return span
       return Math.max(span, Math.ceil(segment.speech))
     })
-    if (looseSpeech > 0) {
-      const host = segments.findIndex((segment) => segment.speech > 0)
-      const index = host >= 0 ? host : lengths.length - 1
-      lengths[index] += Math.ceil(looseSpeech)
+    if (looseSpeech > 0 && lengths.length) {
+      lengths[lengths.length - 1] += Math.ceil(looseSpeech)
     }
     const tail = XAI_SPEECH_TAIL_SECONDS
     const budget = Math.max(segments.length, cap - tail)

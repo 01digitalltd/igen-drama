@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildShotImageRefs } from '../src/services/storyboard-prompt.ts'
-import { fitXaiSpokenClip, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt, xaiSpokenLineIssues } from '../src/services/xai-prompt.ts'
+import { fitXaiSpokenClip, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt, xaiBeatImageIssues, xaiSpokenLineIssues } from '../src/services/xai-prompt.ts'
 
 test('xAI reference order is character, scene, then prop', () => {
   const source = buildShotImageRefs({
@@ -69,6 +69,48 @@ test('xAI keeps a parenthetical line from shot 2 when the prompt only quoted sho
   const issues = xaiSpokenLineIssues(prompt, description)
   assert.equal(issues.repeated.length, 0)
   assert.deepEqual(issues.missing, ['太好吃了！', '配冰檸檬茶，看底下地址與轉發！'])
+})
+
+test('a spoken line outside the timeline is still missing', () => {
+  const description = [
+    '【鏡頭1】女主角坐在露天座位。女主角：（滿足地咀嚼）太好吃了！',
+    '【鏡頭2】女主角拿著冰檸檬茶。女主角：（對鏡頭，開心）配冰檸檬茶，看底下地址與轉發！',
+  ].join('\n')
+  const prompt = [
+    '[0-1s] <IMAGE_0> 女主角坐在露天座位上吃乾炒牛河。',
+    '[1-4s] 女主角說：「太好吃了！」',
+    '[4-5s] 女主角手裡拿著一杯冰檸檬茶。',
+    '她說：「配冰檸檬茶，看底下地址與轉發！」',
+  ].join('\n')
+  const issues = xaiSpokenLineIssues(prompt, description)
+  assert.deepEqual(issues.missing, ['配冰檸檬茶，看底下地址與轉發！'])
+})
+
+test('a beat that names a reference must use that reference image', () => {
+  const refs = [
+    { index: 0, name: '女主角' },
+    { index: 1, name: '露天座位' },
+    { index: 2, name: '乾炒牛河' },
+    { index: 3, name: '冰檸檬茶' },
+    { index: 4, name: '品牌Logo' },
+  ]
+  const prompt = [
+    '[0-3s] <IMAGE_0><IMAGE_1><IMAGE_3> 女主角坐在露天座位上，面前是乾炒牛河。',
+    '[3-6s] <IMAGE_0><IMAGE_1><IMAGE_4> 女主角手裡拿著一杯冰檸檬茶。',
+  ].join('\n')
+  assert.deepEqual(xaiBeatImageIssues(prompt, refs), ['乾炒牛河', '冰檸檬茶'])
+})
+
+test('a trailing spoken line lengthens the last beat', () => {
+  const prompt = [
+    '[0-1s] <IMAGE_0> eats.',
+    '[1-4s] <IMAGE_0> says: "太好吃了！"',
+    '[4-5s] <IMAGE_0> holds a drink.',
+    '她說：「配冰檸檬茶，看底下地址與轉發！」',
+  ].join('\n')
+  const fitted = fitXaiSpokenClip(prompt, 8)
+  assert.match(fitted.prompt, /\[1-4s\]/)
+  assert.match(fitted.prompt, /\[4-11s\]/)
 })
 
 test('pinning the storyboard still shifts asset tokens and keeps IMAGE_0 for the still', () => {
