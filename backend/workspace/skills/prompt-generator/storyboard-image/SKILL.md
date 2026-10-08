@@ -48,6 +48,7 @@ description: Write Gemini still prompts that lock attached asset images.
 ## 禁止事项
 
 - 把 `video_prompt` 原样复制成 `image_prompt`
+- 把「手持镜头」「自拍」「对着镜头」画成她拿着相机、手机或稳定器。那是机位：观众就是镜头，她看着镜头；镜头对准的景物就是画面
 - 时间轴分段、运镜过程、「女声旁白／男声旁白」
 - 屏幕上把整段對白燒成字幕
 - 畫面文字用錯文字：粵語或台灣國語寫成簡體，大陸普通話寫成繁體

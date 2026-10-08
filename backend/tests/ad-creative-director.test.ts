@@ -78,7 +78,7 @@ test('vlog form owns host-to-camera filming instead of product showcase', () => 
   const skill = read('workspace/skills/ad-form-vlog/SKILL.md')
   const product = read('workspace/skills/ad-form-product/SKILL.md')
   assert.match(skill, /仅当 `ad_form=vlog` 时生效/)
-  assert.match(skill, /看着观众说话/)
+  assert.match(skill, /观众就是这台镜头/)
   assert.match(skill, /不要改成产品空镜/)
   assert.match(product, /对镜头的 Vlog 用 `ad_form=vlog`/)
   assert.doesNotMatch(product, /不要套用上面的空镜/)

@@ -17,6 +17,7 @@ import { publishEpisodeEvent } from './episode-events.js'
 import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
 import { firstConfigModel } from './video-clip-policy.js'
 import { lockXaiSpokenLines, orderXaiImageRefs } from './xai-prompt.js'
+import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import {
   findRefAudioOverflows,
   formatAudioSeconds,
@@ -223,7 +224,7 @@ export async function startVideoPromptBatch(
             content: [
               withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})同时写视频提示词(video_prompt)和分镜静帧提示词(image_prompt)。视频模型:${videoLabel}。prompt_skill:${skill}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。
 ${skillHint}
-image_prompt 遵守 Skill storyboard-image：只画 description 第一个【镜头N】的单帧，16:9。有 image_refs 时必须写「第一张图 / 第二张图」锁定 Gemini 请求里前面附上的人物图／场景图／道具图像素，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止换脸换景换包装。每一镜都是同一部短片：同一画风、色温、服装与发型，不要写成另一部电影。不要时间轴，不要旁白配音。
+image_prompt 遵守 Skill storyboard-image：只画 description 第一个【镜头N】的单帧，16:9。有 image_refs 时必须写「第一张图 / 第二张图」锁定 Gemini 请求里前面附上的人物图／场景图／道具图像素，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止换脸换景换包装。每一镜都是同一部短片：同一画风、色温、服装与发型，不要写成另一部电影。不要时间轴，不要旁白配音。手持镜头、自拍、对着镜头是机位：观众就是镜头，她看着镜头；镜头对准的景物就是画面。不要画相机、手机或她拿着设备在拍。
 ${skill === 'xai' ? 'xAI 对白照抄 description 原句。时间不够就加长分段，不要缩短对白。' : referenceAudioBudgetLine(spoken)}
 ${audioRetryNote}
 ${skill === 'xai' ? adHint.replace('产品/品牌Logo 出镜用 @道具名', '产品/品牌Logo 出镜用 image_refs 里对应道具的 <IMAGE_N>') : adHint}
@@ -278,7 +279,11 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
                 styleValue,
                 onScreenText: storyboardImageTextInstruction(spoken),
               })
-            await persistShotPrompts(sb.id, spokenPrompt, imagePrompt)
+            await persistShotPrompts(
+              sb.id,
+              applyHandheldViewpoint(spokenPrompt, shot.description),
+              applyHandheldViewpoint(imagePrompt, shot.description),
+            )
             saved = true
             break
           }

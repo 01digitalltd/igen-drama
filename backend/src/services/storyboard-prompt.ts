@@ -1,3 +1,4 @@
+import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import { visualStyleLabel, normalizeStyleValue } from './style-preset.js'
 import { clipDurationBounds } from './video-clip-policy.js'
 
@@ -231,7 +232,7 @@ export function composeStoryboardImagePrompt(opts: {
   const style = visualStyleLabel(opts.styleValue)
   const atmosphere = String(opts.atmosphere || '').trim()
   const onScreenText = String(opts.onScreenText || '').trim()
-  return [
+  return applyHandheldViewpoint([
     filmContinuityLine(opts.styleValue),
     `单帧分镜静帧，16:9 横图${style ? `，${style}` : ''}。`,
     normalizeStyleValue(opts.styleValue) === '3d' ? '头身比约 1:2 的 3D Chibi 盲盒风三维，光滑树脂，禁止电影质感真人。' : '',
@@ -240,7 +241,7 @@ export function composeStoryboardImagePrompt(opts: {
     atmosphere ? `氛围光线：${atmosphere}。` : '',
     '不要时间轴、不要配音旁白、不要把对白烧成字幕。',
     onScreenText,
-  ].filter(Boolean).join('')
+  ].filter(Boolean).join(''), opts.description)
 }
 
 export function resolveVideoGenerationDuration(opts: {
