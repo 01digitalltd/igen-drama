@@ -17,7 +17,7 @@ import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuc
 import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, appendAssetRestyleDirective, appendImageStyleDirective } from './style-preset.js'
-import { appendStoryboardImageTextDirective, appendVoLanguageDirective, getDramaDialogueLanguage } from './dialogue-language.js'
+import { appendStoryboardImageTextDirective, appendVoLanguageDirective, getDramaDialogueLanguage, storyboardImageTextInstruction } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
 import { assertSeedanceAllowedForStyle, canFallbackMiniMaxToSeedance, expectedVideoProvider, isRealisticDramaStyle, isSeedanceVideoConfig, isXaiVideoConfig, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE, MINIMAX_H3_MISSING_MESSAGE, XAI_VIDEO_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt } from './face-grid.js'
