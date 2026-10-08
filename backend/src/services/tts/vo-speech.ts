@@ -26,6 +26,10 @@ const NARRATOR_LINE =
   /(?<![无無])(?:女声|男声|女聲|男聲)?旁白(?:（[^）]*）)?[：:]\s*(.+)$/u
 const DIALOGUE_LINE =
   /[@＠]?([\u4e00-\u9fffA-Za-z0-9._-]{1,20}?)(?:说|說)[：:]\s*[「「""]([^」」""]+)[」」""]/gu
+/** 女主角：（滿足地咀嚼）太好吃了！ — a spoken line without 說：「」. */
+const ASIDE_DIALOGUE =
+  /(?<!說|说)([\u4e00-\u9fffA-Za-z0-9._-]{1,12})[：:]\s*(?:（[^）\n]{0,40}）|\([^)\n]{0,40}\))\s*([^。！？!?\n]{1,120}[。！？!?]?)/gu
+const NOT_A_SPEAKER = /^(?:镜头|鏡頭|画面|畫面|时间|時間|地点|地點|氛围|氛圍|景别|景別|角度|运镜|運鏡|旁白)$/u
 
 export function extractSpokenLines(prompt: string): VoSpeechLine[] {
   const lines: VoSpeechLine[] = []
@@ -37,10 +41,17 @@ export function extractSpokenLines(prompt: string): VoSpeechLine[] {
       const text = cleanSpeechText(narrator[1])
       if (text) lines.push({ kind: 'narrator', speaker: '旁白', text })
     }
-    for (const dialogue of line.matchAll(DIALOGUE_LINE)) {
+    for (const dialogue of line.matchAll(new RegExp(DIALOGUE_LINE.source, 'gu'))) {
       const speaker = String(dialogue[1] || '').trim()
       const text = cleanSpeechText(dialogue[2])
-      if (speaker && text && !SKIP_SPEECH.test(speaker) && !/旁白/.test(speaker)) {
+      if (isCharacterSpeaker(speaker) && text) {
+        lines.push({ kind: 'character', speaker, text })
+      }
+    }
+    for (const aside of line.matchAll(new RegExp(ASIDE_DIALOGUE.source, 'gu'))) {
+      const speaker = String(aside[1] || '').trim()
+      const text = cleanSpeechText(aside[2])
+      if (isCharacterSpeaker(speaker) && text) {
         lines.push({ kind: 'character', speaker, text })
       }
     }
@@ -75,8 +86,15 @@ function replaceChunkSpeech(chunk: string, take: () => string) {
   for (const match of chunk.matchAll(dialogueRe)) {
     const speaker = String(match[1] || '').trim()
     const raw = String(match[2] || '')
-    if (!speaker || !cleanSpeechText(raw) || SKIP_SPEECH.test(speaker) || /旁白/.test(speaker)) continue
-    if (match.index == null) continue
+    if (!isCharacterSpeaker(speaker) || !cleanSpeechText(raw) || match.index == null) continue
+    const start = match.index + match[0].lastIndexOf(raw)
+    edits.push({ start, end: start + raw.length, value: take() })
+  }
+  const asideRe = new RegExp(ASIDE_DIALOGUE.source, 'gu')
+  for (const match of chunk.matchAll(asideRe)) {
+    const speaker = String(match[1] || '').trim()
+    const raw = String(match[2] || '')
+    if (!isCharacterSpeaker(speaker) || !cleanSpeechText(raw) || match.index == null) continue
     const start = match.index + match[0].lastIndexOf(raw)
     edits.push({ start, end: start + raw.length, value: take() })
   }
@@ -86,6 +104,11 @@ function replaceChunkSpeech(chunk: string, take: () => string) {
     next = next.slice(0, edit.start) + edit.value + next.slice(edit.end)
   }
   return next
+}
+
+function isCharacterSpeaker(speaker: string) {
+  const name = speaker.trim()
+  return Boolean(name) && !SKIP_SPEECH.test(name) && !NOT_A_SPEAKER.test(name) && !/旁白/.test(name)
 }
 
 function cleanSpeechText(raw?: string | null) {

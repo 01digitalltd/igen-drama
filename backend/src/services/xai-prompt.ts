@@ -103,16 +103,20 @@ function stripXaiSpeechTag(prompt: string) {
 
 function spokenChunks(line: string) {
   const chunks: string[] = []
+  const seen = new Set<string>()
+  const push = (text: string) => {
+    const value = text.trim()
+    if (!value || seen.has(value)) return
+    seen.add(value)
+    chunks.push(value)
+  }
+  for (const row of extractSpokenLines(line)) push(row.text)
   const quoteRe = /[「“"]([^」”"\n]{1,300})[」”"]/g
   let match: RegExpExecArray | null
-  while ((match = quoteRe.exec(line))) {
-    const text = String(match[1] || '').trim()
-    if (text) chunks.push(text)
-  }
+  while ((match = quoteRe.exec(line))) push(String(match[1] || ''))
   if (!chunks.length) {
     const narrator = line.match(/(?:旁白)[：:]\s*(.+)$/u)
-    const text = String(narrator?.[1] || '').trim()
-    if (text) chunks.push(text)
+    if (narrator?.[1]) push(narrator[1])
   }
   return chunks
 }

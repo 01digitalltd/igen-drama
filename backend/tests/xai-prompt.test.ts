@@ -46,6 +46,17 @@ test('xAI keeps the storyboard lines instead of a shortened slogan', () => {
   assert.doesNotMatch(locked, /凍檸茶，正！/)
 })
 
+test('xAI keeps a parenthetical line from shot 2 when the prompt only quoted shot 1', () => {
+  const description = [
+    '【鏡頭1】鏡頭切回女主角，她坐在餐廳的露天座位上，面前擺著一盤香氣四溢的乾炒牛河。她迫不及待地夾起一大口送入口中。女主角：（滿足地咀嚼）太好吃了！',
+    '【鏡頭2】女主角手裡拿著一杯冰檸檬茶，對著鏡頭。女主角：（對鏡頭，開心）配冰檸檬茶，看底下地址與轉發！',
+  ].join('\n')
+  const prompt = '[0-4s] <IMAGE_0> tastes the noodles and says: "太好吃了！"'
+  const locked = lockXaiSpokenLines(prompt, description)
+  assert.match(locked, /太好吃了！/)
+  assert.match(locked, /配冰檸檬茶，看底下地址與轉發！/)
+})
+
 test('pinning the storyboard still shifts asset tokens and keeps IMAGE_0 for the still', () => {
   const pinned = pinXaiStoryboardStill('[0-4s] <IMAGE_0> tastes the noodles from <IMAGE_1>.')
   assert.match(pinned, /<IMAGE_1> tastes the noodles from <IMAGE_2>/)
