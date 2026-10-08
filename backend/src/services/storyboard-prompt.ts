@@ -22,12 +22,22 @@ export function resolveStoryboardVideoPrompt(shot: {
   return description || atmosphere
 }
 
+const SHOT_MARKER = '【[镜鏡][头頭]\\s*\\d+】'
+
+/** Sub-shots in order. Accepts both 【镜头1】 and 【鏡頭1】. */
+export function storyboardBeats(description?: string | null): string[] {
+  const text = String(description || '').trim()
+  if (!text) return []
+  const re = new RegExp(`${SHOT_MARKER}\\s*([\\s\\S]*?)(?=${SHOT_MARKER}|$)`, 'g')
+  return [...text.matchAll(re)]
+    .map((match) => String(match[1] || '').trim())
+    .filter(Boolean)
+}
+
 /** Opening and ending beats used to bridge one generated clip into the next. */
 export function shotContinuityCue(description?: string | null, result?: string | null) {
   const text = String(description || '').replace(/\s+/g, ' ').trim()
-  const beats = [...text.matchAll(/【镜头\s*\d+】\s*([^【]+)/g)]
-    .map((match) => match[1].trim())
-    .filter(Boolean)
+  const beats = storyboardBeats(text)
   const opening = (beats[0] || text).slice(0, 180)
   const ending = (String(result || '').trim() || beats[beats.length - 1] || text).slice(0, 180)
   return { opening, ending }
@@ -207,8 +217,8 @@ export function lockStoryboardStillPrompt(prompt: string, refs: ShotImageRef[], 
 export function firstStoryboardBeat(description?: string | null): string {
   const text = String(description || '').trim()
   if (!text) return ''
-  const beats = [...text.matchAll(/【镜头\s*\d+】\s*([\s\S]*?)(?=【镜头\s*\d+】|$)/g)]
-    .map((match) => String(match[1] || '').replace(/(?:女声|男声)?旁白[：:].*$/s, '').trim())
+  const beats = storyboardBeats(text)
+    .map((beat) => beat.replace(/(?:女声|男声)?旁白[：:].*$/s, '').trim())
     .filter(Boolean)
   if (beats[0]) return beats[0]
   return text.replace(/(?:女声|男声)?旁白[：:].*$/s, '').trim()
@@ -234,14 +244,14 @@ export function composeStoryboardImagePrompt(opts: {
   const onScreenText = String(opts.onScreenText || '').trim()
   return applyHandheldViewpoint([
     filmContinuityLine(opts.styleValue),
-    `单帧分镜静帧，16:9 横图${style ? `，${style}` : ''}。`,
+    `这是这段影片的第 0 帧，只画镜头 1 动作刚开始的瞬间${style ? `，${style}` : ''}。画幅跟项目。不要画镜头 2 及之后。`,
     normalizeStyleValue(opts.styleValue) === '3d' ? '头身比约 1:2 的 3D Chibi 盲盒风三维，光滑树脂，禁止电影质感真人。' : '',
     lock,
     beat,
     atmosphere ? `氛围光线：${atmosphere}。` : '',
     '不要时间轴、不要配音旁白、不要把对白烧成字幕。',
     onScreenText,
-  ].filter(Boolean).join(''), opts.description)
+  ].filter(Boolean).join(''), beat)
 }
 
 export function resolveVideoGenerationDuration(opts: {

@@ -59,7 +59,7 @@ const XAI_SPEECH_TAIL_SECONDS = 1
 const XAI_CJK_CHARS_PER_SECOND = 2.5
 const XAI_EN_WORDS_PER_SECOND = 1.7
 const XAI_SPEECH_TAG = '[XAI_SPEECH: Speak every quoted line exactly, in order, in full. Do not replace a line with a shorter slogan, and do not add a line that is not quoted. Finish the last word at least one second before the clip ends.]'
-const XAI_STILL_TAG = '[XAI_STILL: <IMAGE_0> is this shot\'s storyboard still and the exact opening frame. Keep its framing, people, food, props, and setting. Animate from that picture. Do not restage a new composition.]'
+const XAI_STILL_TAG = '[XAI_STILL: <IMAGE_0> is shot 1 of this clip and the exact opening instant. Keep its framing, people, food, props, and setting. Later beats in the timeline move away from this picture. Do not redraw those later beats into the opening frame.]'
 
 const SPOKEN_QUOTE = /[「“"]([^」”"\n]+)[」”"]/g
 

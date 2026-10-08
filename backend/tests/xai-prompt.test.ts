@@ -49,7 +49,7 @@ test('xAI keeps the storyboard lines instead of a shortened slogan', () => {
 test('pinning the storyboard still shifts asset tokens and keeps IMAGE_0 for the still', () => {
   const pinned = pinXaiStoryboardStill('[0-4s] <IMAGE_0> tastes the noodles from <IMAGE_1>.')
   assert.match(pinned, /<IMAGE_1> tastes the noodles from <IMAGE_2>/)
-  assert.match(pinned, /<IMAGE_0> is this shot's storyboard still/)
+  assert.match(pinned, /<IMAGE_0> is shot 1 of this clip and the exact opening instant/)
   assert.equal(pinXaiStoryboardStill(pinned), pinned)
 })
 

@@ -31,7 +31,7 @@ test('composeStoryboardImagePrompt locks named asset refs and refuses a timeline
       { index: 1, tag: '<IMAGE_REF_1>', kind: 'character', name: '小華', url: 'static/hua.png' },
     ],
   })
-  assert.match(prompt, /单帧分镜静帧/)
+  assert.match(prompt, /第 0 帧/)
   assert.match(prompt, /同一部短片/)
   assert.match(prompt, /3D Chibi/)
   assert.match(prompt, /头大身小/)
@@ -67,6 +67,31 @@ test('continuity still caption asks Gemini to stay in the same short film', () =
   })
   assert.match(prompt, /同一部短片/)
   assert.match(prompt, /第二张图是本片已生成的分镜静帧（分镜1）/)
+})
+
+test('opening frame keeps shot 1 and drops later shots, including traditional markers', () => {
+  const prompt = composeStoryboardImagePrompt({
+    description: '【鏡頭1】她在餐廳門口看著鏡頭，身後是街景。\n【鏡頭2】廚房鐵鍋翻炒。\n【鏡頭3】冰檸檬茶特寫。',
+  })
+  assert.match(prompt, /第 0 帧/)
+  assert.match(prompt, /街景/)
+  assert.doesNotMatch(prompt, /翻炒/)
+  assert.doesNotMatch(prompt, /檸檬茶/)
+})
+
+test('handheld viewpoint on the still follows shot 1 only', () => {
+  const talking = composeStoryboardImagePrompt({
+    description: '【鏡頭1】單手手持鏡頭自拍，身後是街景。\n【鏡頭2】廚房翻炒。',
+  })
+  assert.match(talking, /\[CAMERA:/)
+  assert.doesNotMatch(talking, /翻炒/)
+
+  const cutaway = composeStoryboardImagePrompt({
+    description: '【鏡頭1】鐵鍋裡的麵條特寫。\n【鏡頭2】她手持鏡頭說話。',
+  })
+  assert.doesNotMatch(cutaway, /\[CAMERA:/)
+  assert.match(cutaway, /麵條/)
+  assert.doesNotMatch(cutaway, /手持鏡頭/)
 })
 
 test('pickPreviousStoryboardStill prefers the nearest earlier composed still', () => {

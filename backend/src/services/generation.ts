@@ -26,7 +26,7 @@ import {
   isCharacterMediaRef,
   overlayOrangeGridOnRef,
 } from './character-grid.js'
-import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
+import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, composeStoryboardImagePrompt, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
 import { fitXaiSpokenClip, lockXaiSpokenLines, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt } from './xai-prompt.js'
 import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import { appendBrandLogoDirective, brandLogoPropIfNeeded } from './brand-logo.js'
@@ -829,13 +829,21 @@ async function processTask(id: number, config: AIConfig) {
         assetKind || (record.storyboardId ? 'still' : null),
       )
       const storyboardStill = Boolean(record.storyboardId) && !record.characterId && !record.sceneId && !record.propId
-      const stillPrompt = storyboardStill
-        ? applyHandheldViewpoint(
-          appendStoryboardImageTextDirective(
-            imagePrompt,
-            await getDramaDialogueLanguage(await resolveVideoDramaId(record)),
-          ),
-          await storyboardDescriptionText(record.storyboardId),
+      const stillSource = storyboardStill ? await storyboardStillSource(record.storyboardId) : null
+      const stillPrompt = stillSource?.description.trim()
+        ? appendImageStyleDirective(
+          composeStoryboardImagePrompt({
+            description: stillSource.description,
+            atmosphere: stillSource.atmosphere,
+            imageRefs: stillsForLock,
+            styleValue: imageVisual.value,
+            onScreenText: storyboardImageTextInstruction(
+              await getDramaDialogueLanguage(await resolveVideoDramaId(record)),
+            ),
+          }),
+          imageVisual.value,
+          imageVisual.prompt,
+          'still',
         )
         : imagePrompt
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
@@ -1699,11 +1707,18 @@ async function charactersForXaiVoices(storyboardId: unknown) {
   return characters
 }
 
-async function storyboardDescriptionText(storyboardId: unknown) {
+async function storyboardStillSource(storyboardId: unknown) {
   const id = Number(storyboardId)
-  if (!Number.isInteger(id) || id <= 0) return ''
+  if (!Number.isInteger(id) || id <= 0) return { description: '', atmosphere: '' }
   const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id))
-  return String(sb?.description || '')
+  return {
+    description: String(sb?.description || ''),
+    atmosphere: String(sb?.atmosphere || ''),
+  }
+}
+
+async function storyboardDescriptionText(storyboardId: unknown) {
+  return (await storyboardStillSource(storyboardId)).description
 }
 
 async function storyboardComposedStillUrl(storyboardId: unknown) {
