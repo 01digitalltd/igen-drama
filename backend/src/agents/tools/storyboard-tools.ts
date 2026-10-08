@@ -21,6 +21,7 @@ import { getDramaId, getEpisodeId } from '../context.js'
 import { buildShotImageRefs } from '../../services/storyboard-prompt.js'
 import { orderXaiImageRefs } from '../../services/xai-prompt.js'
 import { applyBrandLogoPlacement, dramaAdFields, loadDramaAdContext, logoPlacementFromMetadata, logoPlacementInstruction } from '../../services/brand-logo.js'
+import { formatMissingSourceFacts, missingSourceSpans, sourceFactClauses } from '../../services/source-clauses.js'
 
 async function syncStoryboardCharacters(storyboardId: number, characterIds: number[]) {
   await db.delete(schema.storyboardCharacters)
@@ -127,6 +128,7 @@ const readStoryboardContext = createTool({
       .where(eq(schema.episodes.id, episodeId))
     if (!ep) return { error: 'Episode not found' }
     const script = ep.scriptContent || ep.content
+    const sourceScript = String(ep.content || '').trim()
     if (!script) return { error: 'Episode has no script' }
 
     const charLinks = await db.select().from(schema.episodeCharacters)
@@ -239,6 +241,8 @@ const readStoryboardContext = createTool({
         description: ep.description || '',
       },
       script,
+      source_script: sourceScript && sourceScript !== String(script).trim() ? sourceScript : undefined,
+      source_clauses: sourceFactClauses(sourceScript || String(script || '')),
       characters,
       scenes,
       props,
@@ -383,6 +387,28 @@ const saveStoryboards = createTool({
         seconds: hit.seconds,
       }))
     })
+    const [episode] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, episodeId))
+    const sourceText = String(episode?.content || episode?.scriptContent || '')
+    let priorText = ''
+    if (replace_existing !== true) {
+      const priorRows = await db.select().from(schema.storyboards)
+        .where(eq(schema.storyboards.episodeId, episodeId))
+      priorText = priorRows.filter((row) => !row.deletedAt).map((row) => row.description || '').join('\n')
+    }
+    const storyboardText = [
+      priorText,
+      ...pending.map((sb) => sb.description || ''),
+    ].filter(Boolean).join('\n')
+    const missingFacts = missingSourceSpans(sourceText, storyboardText)
+    if (missingFacts.length) {
+      const message = formatMissingSourceFacts(missingFacts, 'storyboard')
+      logTaskWarn('StoryboardTool', 'save-missing-source-facts', {
+        episodeId,
+        missing: missingFacts.slice(0, 8).join('|'),
+      })
+      return { error: message, missing_source_facts: missingFacts.slice(0, 8) }
+    }
+
     if (audioOverflows.length) {
       const message = formatRefAudioSplitError(audioOverflows)
       logTaskWarn('StoryboardTool', 'save-ref-audio-too-long', {

@@ -11,6 +11,7 @@ import { getEpisodeId, getAgentLocale } from '../context.js'
 import { withContentLanguage } from '../../utils/content-language.js'
 import { dramaAdFields, loadDramaAdContext } from '../../services/brand-logo.js'
 import { isAdPromoCategory } from '../../utils/project-category.js'
+import { formatMissingSourceFacts, missingSourceSpans } from '../../services/source-clauses.js'
 
 async function episodeProjectMeta(episodeId: number) {
   const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, episodeId))
@@ -108,6 +109,12 @@ const saveScript = createTool({
   execute: async ({ content }, context) => {
     const episodeId = getEpisodeId(context?.requestContext)
     if (!episodeId) return { error: 'Missing episodeId in request context' }
+    const [episode] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, episodeId))
+    const sourceText = String(episode?.content || '').trim()
+    const missingFacts = sourceText ? missingSourceSpans(sourceText, content) : []
+    if (missingFacts.length) {
+      return { error: formatMissingSourceFacts(missingFacts, 'script'), missing_source_facts: missingFacts.slice(0, 8) }
+    }
     await db.update(schema.episodes)
       .set({ scriptContent: content, updatedAt: now() })
       .where(eq(schema.episodes.id, episodeId))

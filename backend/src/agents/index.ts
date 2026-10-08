@@ -103,7 +103,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 - 总量锚定：若 video_generation.target_duration_seconds 有值，它是硬上限——全部分镜 duration 之和不得超过 max_total_seconds，段落数必须落在 estimated_shot_count.min–max（建议 typical），每段优先用 suggested_shot_duration。宁可把多个节拍压进同一段落的【镜头N】子镜头，也不要多拆段落。没有目标秒数时，才用剧本字数 ÷ 500字/分钟估算
 - 节奏分层：过渡段靠近 duration_min；叙事段靠近 typical_shot 或 suggested_shot_duration；爆点段不超过 duration_max。子镜头节奏在上限内放慢
 - 台词下限：段落时长 ≥ 段内台词与旁白总字数（写在 description 中的部分）÷ dialogue_chars_per_second + acting_padding_seconds，且不得超过 duration_max。装不下的台词拆到下一个段落；若拆完会超过段数上限，把台词压进现有段落，只删招呼、感叹和重复
-- 一句里的事实：按句号、分号、问号、感叹号，以及「并、且、然后、接着」切开。每一小句的谁、动作、对象，以及写出的品质、比较、条件、否定或要观众做的事，都要出现在画面或对白里。可以改口语，不能改成空泛反应或另一句口号。一句里连续几个动作，每个都要留下。不要插入剧本没有的动作或空镜
+- 一句里的事实：read_storyboard_context 的 source_clauses 来自用户原稿。每一小句都要在某一镜的画面或对白里留下原句里的字，可以接在口语前后，不能改成空泛反应或另一句口号。一句里连续几个动作，每个都要留下。不要插入剧本没有的动作或空镜。save_storyboards 少了这些字会拒绝，按返回的原句补上再整批重存
 - 参考音讯：同一段落里，所有「旁白：」合成一条，每个角色的「角色名说：「…」」各自合成一条。每一条不得超过 video_generation.reference_audio_max_seconds 秒（中文上限是 reference_audio_max_chars 个字，英文是 reference_audio_max_words 个词）。【镜头N】里的同一说话人要加总。超过就把后面的句子放到下一镜；若会超出段数或总时长，只删招呼、感叹和重复，不要塞回同一镜。save_storyboards 会拒绝超标段落
 - 达到 estimated_shot_count.max 后必须停止保存，不要再追加批次
 
