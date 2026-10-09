@@ -145,6 +145,39 @@ test('handheld viewpoint on the still follows shot 1 only', () => {
   assert.doesNotMatch(cutaway, /手持鏡頭/)
 })
 
+test('a role that names someone else does not enter shot 1 frame 0', () => {
+  const description = '【鏡頭1】美玲坐在梳妝台前塗抹護膚品。\n【鏡頭2】志明和小寶走進來。'
+  const refs = [
+    { index: 0, tag: '<IMAGE_REF_0>', kind: 'scene' as const, name: '客廳', url: 'static/room.png' },
+    { index: 1, tag: '<IMAGE_REF_1>', kind: 'character' as const, name: '美玲', aliases: ['女主角'], url: 'static/mei.png' },
+    { index: 2, tag: '<IMAGE_REF_2>', kind: 'character' as const, name: '志明', aliases: ['美玲的老公'], url: 'static/zhi.png' },
+    { index: 3, tag: '<IMAGE_REF_3>', kind: 'character' as const, name: '小寶', aliases: ['美玲與志明的孩子'], url: 'static/bao.png' },
+    { index: 4, tag: '<IMAGE_REF_4>', kind: 'character' as const, name: '美容師', aliases: ['美容院員工'], url: 'static/staff.png' },
+    { index: 5, tag: '<IMAGE_REF_5>', kind: 'prop' as const, name: '朗然美肌護膚品', url: 'static/jar.png' },
+    { index: 6, tag: '<IMAGE_REF_6>', kind: 'continuity' as const, name: '分鏡1', url: 'static/prev.png' },
+  ]
+  const picked = openingFrameRefs(description, refs, {
+    useScene: true,
+    names: ['美玲', '朗然美肌護膚品', '美容院'],
+  })
+  assert.deepEqual(picked.map((ref) => ref.name), ['客廳', '美玲', '朗然美肌護膚品'])
+  const prompt = composeStoryboardImagePrompt({
+    description,
+    atmosphere: '溫馨、柔和，隨後轉為感動。',
+    imageRefs: refs,
+    openingFrame: { useScene: true, names: ['美玲', '朗然美肌護膚品'] },
+  })
+  assert.match(prompt, /角色设定（美玲）/)
+  assert.match(prompt, /朗然美肌護膚品/)
+  assert.match(prompt, /只画第一眼/)
+  assert.match(prompt, /溫馨、柔和/)
+  assert.doesNotMatch(prompt, /志明/)
+  assert.doesNotMatch(prompt, /小寶/)
+  assert.doesNotMatch(prompt, /美容師/)
+  assert.doesNotMatch(prompt, /分鏡1/)
+  assert.doesNotMatch(prompt, /感動/)
+})
+
 test('pickPreviousStoryboardStill prefers the nearest earlier composed still', () => {
   const current = { id: 3, storyboardNumber: 3, composedImage: null, firstFrameImage: null }
   const pick = pickPreviousStoryboardStill(current, [

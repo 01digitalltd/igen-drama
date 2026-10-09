@@ -286,7 +286,16 @@ function shotShowsPerson(beat: string) {
 }
 
 function choiceSelects(names: string[], labels: string[]) {
-  return names.some((name) => textMentions(name, labels) || labels.some((label) => textMentions(label, [name])))
+  const wanted = new Set(names.map((name) => name.trim()).filter(Boolean))
+  return labels.some((label) => wanted.has(label))
+}
+
+function openingAtmosphere(raw: string) {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  const cut = text.split(/(?:隨後|随后|然後|然后|後來|后来|之後|之后)/)[0].replace(/[，,。；;]\s*$/, '').trim()
+  if (!cut) return ''
+  return `镜头 1 刚开始时的光线：${cut}。不要把镜头 1 后半段或后面镜头的情绪画进这一帧。`
 }
 
 /**
@@ -334,7 +343,9 @@ export function openingFrameRefs(
   if (!namedCharacter && shotShowsPerson(beat) && unknownCharacters.length === 1) {
     kept.push(unknownCharacters[0])
   }
-  const continuity = refs.filter((ref) => ref.kind === 'continuity')
+  // A previous still is another shot. Once the skill picked frame 0's files,
+  // attaching it makes Gemini redraw that shot instead of this 镜头1.
+  const continuity = choice ? [] : refs.filter((ref) => ref.kind === 'continuity')
   const order: Record<ShotImageRef['kind'], number> = { scene: 0, character: 1, prop: 2, continuity: 3 }
   return [...kept, ...continuity]
     .sort((a, b) => order[a.kind] - order[b.kind])
@@ -369,16 +380,17 @@ export function composeStoryboardImagePrompt(opts: {
       ].join('')
     : '按画面描述绘制，不要发明无关角色。'
   const style = visualStyleLabel(opts.styleValue)
-  const atmosphere = String(opts.atmosphere || '').trim()
+  const atmosphere = openingAtmosphere(String(opts.atmosphere || ''))
   const onScreenText = String(opts.onScreenText || '').trim()
   return applyHandheldViewpoint([
     filmContinuityLine(opts.styleValue, { allowShotPlace: !sceneLocked }),
     `这是这段影片的第 0 帧，只画镜头 1 动作刚开始的瞬间${style ? `，${style}` : ''}。画幅跟项目。不要画镜头 2 及之后。`,
+    '镜头 1 如果有好几句，只画第一眼：人刚入画、动作还没做完。后半句的结果不要画成已经发生。',
     sceneLocked ? '' : '这一帧的地点只跟镜头 1。没有附上场景图时，不要改画成这段后面镜头的房间。',
     normalizeStyleValue(opts.styleValue) === '3d' ? '头身比约 1:2 的 3D Chibi 盲盒风三维，光滑树脂，禁止电影质感真人。' : '',
     lock,
     beat,
-    atmosphere ? `氛围光线：${atmosphere}。` : '',
+    atmosphere ? `${atmosphere}` : '',
     '不要时间轴、不要配音旁白、不要把对白烧成字幕。',
     onScreenText,
   ].filter(Boolean).join(''), beat, { openingFrame: true })
