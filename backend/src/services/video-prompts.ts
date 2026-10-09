@@ -209,13 +209,13 @@ export async function startVideoPromptBatch(
         const endCap = Math.min(duration, durationMax)
         const timelineEnd = skill === 'xai' ? xaiTimelineEndSeconds(shot.description, duration, durationMax) : endCap
         const lengthLine = skill === 'xai'
-          ? `本镜标注 ${duration}s。对白念完需要把时间轴加长，最后一段结束秒数写成 ${timelineEnd}s，不得超过 ${durationMax}s。不要为了凑 ${duration}s 而删掉或改写任何一句对白。`
+          ? `本镜标注 ${duration}s。对白念完需要把时间轴加长，最后一段结束秒数写成 ${timelineEnd}s，不得超过 ${durationMax}s。没有对白的镜头至少 2 秒。不要为了凑 ${duration}s 而漏句。`
           : `单段时长必须落在 ${bounds?.min ?? 4}-${durationMax} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。`
         let audioRetryNote = ''
         const skillHint = skill === 'omni'
           ? '当前是 Gemini Omni：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_REF_N> 标记参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。'
           : skill === 'xai'
-            ? '当前是 xAI Grok 真人影片：时间轴写成 [0-3s]，用 image_refs 给出的 <IMAGE_N>，不要自己把编号加一，不要改用另一张图的编号。某一段写到某个参考图的名字，就必须带上它的 <IMAGE_N>。不要写 @名字。description 里每一句对白由你原句写进它所屬的【镜头N】那一段的时间轴里面，只放一次。同一对引号里有好几句时，按句号或惊叹号拆开，每一句各占该镜头的连续一行。不要写在时间轴外面。后面的段写无对白，不要把同一句复制到每一段，也不要改成另一句或缩短成口号。放对白的那一段要够念完（中文约每 2.5 字 1 秒），最后一句讲完后再留至少 1 秒。写实摄影，不要卡通。'
+            ? '当前是 xAI Grok 真人影片：时间轴写成 [0-3s]，用 image_refs 给出的 <IMAGE_N>，不要自己把编号加一，不要改用另一张图的编号。某一段写到某个参考图的名字，就必须带上它的 <IMAGE_N>。不要写 @名字。description 里每一句对白改成项目对白语言的口语，一句对一句，写进它所屬的【镜头N】那一行里面，只写一次。同一对引号里有好几句时，按句号或惊叹号拆开，每一句各占该镜头的连续一行。可以改成粤语口语，不要合并，不要漏句，不要缩成更短的口号，不要写在时间轴外面。没有对白的镜头至少 2 秒。放对白的那一段要够念完（中文约每 2.5 字 1 秒），最后一句讲完后再留至少 1 秒。写实摄影，不要卡通。'
             : '当前是 Seedance/其他模型：时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'
         for (let attempt = 1; attempt <= VIDEO_PROMPT_ATTEMPTS && !saved; attempt++) {
           try {
@@ -236,7 +236,7 @@ image_prompt 是这段影片的第 0 帧，只画下面的镜头 1。不要把�
 
 镜头 1（只画这一段）：
 ${firstStoryboardBeat(shot.description) || '（没有镜头 1）'}
-${skill === 'xai' ? 'xAI 对白照抄 description 原句。时间不够就加长分段，不要缩短对白。' : referenceAudioBudgetLine(spoken)}
+${skill === 'xai' ? 'xAI 每一句对白改成项目对白语言的口语，一句对一句写进时间轴。不要合并，不要漏，不要缩短。没有对白的镜头至少 2 秒。' : referenceAudioBudgetLine(spoken)}
 ${audioRetryNote}
 ${skill === 'xai' ? adHint.replace('产品/品牌Logo 出镜用 @道具名', '产品/品牌Logo 出镜用 image_refs 里对应道具的 <IMAGE_N>') : adHint}
 
@@ -275,7 +275,7 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
                 const notes = []
                 if (issues.repeated.length || issues.missing.length) {
                   const missing = issues.missing.length ? `没有写进时间轴的原句：${issues.missing.join(' / ')}。` : ''
-                  notes.push(`${missing}每一句用角色說：「原句」写进它所屬的【镜头N】那一行里面，只写一次，不要写在时间轴外面。后面的段写无对白。不要改写句子，不要缩短成口号。`)
+                  notes.push(`${missing}每一句改成对白语言的口语，一句对一句写进它所屬的【镜头N】那一行里面。不要合并，不要漏，不要缩成更短的口号，不要写在时间轴外面。`)
                 }
                 if (imageIssues.length) {
                   notes.push(`这些参考图的名字出现了，但该段没有用 image_refs 里对应的 <IMAGE_N>：${imageIssues.join('、')}。不要改用别的编号，也不要自己把编号加一。`)

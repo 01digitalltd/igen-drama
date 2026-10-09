@@ -42,7 +42,7 @@ test('xAI keeps the storyboard lines instead of a shortened slogan', () => {
   ].join('\n')
   const issues = xaiSpokenLineIssues(prompt, description)
   assert.equal(issues.repeated.length, 0)
-  assert.deepEqual(issues.missing, ['哇！', '這個味道！', '太好吃了！', '吃完牛河，再來杯冰檸檬茶！', '地址在下面喔！'])
+  assert.deepEqual(issues.missing, ['這個味道！', '太好吃了！', '吃完牛河，再來杯冰檸檬茶！', '地址在下面喔！'])
 })
 
 test('xAI says each storyboard line once when every beat copied the first line', () => {
@@ -89,6 +89,24 @@ test('a multi-sentence quote can be split across beats of the same shot', () => 
   const issues = xaiSpokenLineIssues(prompt, description)
   assert.deepEqual(issues.missing, [])
   assert.deepEqual(issues.repeated, [])
+})
+
+test('a Cantonese oral rendering of each sentence is kept', () => {
+  const description = '【鏡頭1】女主角說：「今天介紹自己從小吃到大的老字號！幸好今天不用排隊！」'
+  const prompt = [
+    '[0-7s] 女主角說：「今日介紹自己由細食到大嘅老字號！」',
+    '[7-11s] 女主角說：「好彩今日唔使排隊！」',
+  ].join('\n')
+  const issues = xaiSpokenLineIssues(prompt, description)
+  assert.deepEqual(issues.missing, [])
+  assert.deepEqual(issues.repeated, [])
+})
+
+test('a shortened slogan does not stand in for a longer sentence', () => {
+  const description = '【鏡頭1】女主角說：「今天介紹自己從小吃到大的老字號！」'
+  const prompt = '[0-3s] 女主角說：「好好味！」'
+  const issues = xaiSpokenLineIssues(prompt, description)
+  assert.deepEqual(issues.missing, ['今天介紹自己從小吃到大的老字號！'])
 })
 
 test('a quoted line inside the timeline counts as that storyboard line', () => {

@@ -95,9 +95,22 @@ function refNameInText(name: string, text: string) {
   return parts.some((part) => text.includes(part))
 }
 
+function cjkCount(text: string) {
+  return (text.match(/[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/g) || []).length
+}
+
+function spokenSentencesInTimeline(prompt: string) {
+  const sentences: string[] = []
+  for (const line of timelineLines(prompt)) {
+    for (const chunk of spokenChunks(line)) sentences.push(...speechSentences(chunk))
+  }
+  return sentences.filter(Boolean)
+}
+
 /**
- * The video skill writes the lines. This only reports a draft that repeats a
- * line, drops one, or leaves one outside the timeline, so the skill can write it again.
+ * The video skill writes the lines in the project's spoken language.
+ * A sentence may be an oral rendering of the source. It still has to stay
+ * inside the timeline, keep its length, and not be dropped or repeated.
  */
 export function xaiSpokenLineIssues(prompt: string, description?: string | null) {
   const wanted: string[] = []
@@ -109,17 +122,25 @@ export function xaiSpokenLineIssues(prompt: string, description?: string | null)
       wanted.push(text)
     }
   }
-  const timeline = timelineLines(prompt)
+  const spoken = spokenSentencesInTimeline(prompt)
   const counts = new Map<string, number>()
-  for (const line of timeline) {
-    for (const text of spokenChunks(line)) counts.set(text, (counts.get(text) || 0) + 1)
-  }
-  for (const text of wanted) {
-    const hits = timeline.filter((line) => line.includes(text)).length
-    if (hits > (counts.get(text) || 0)) counts.set(text, hits)
-  }
+  for (const text of spoken) counts.set(text, (counts.get(text) || 0) + 1)
   const repeated = [...counts.entries()].filter(([, count]) => count > 1).map(([text]) => text)
-  const missing = wanted.filter((text) => (counts.get(text) || 0) === 0)
+  const missing: string[] = []
+  let cursor = 0
+  for (const text of wanted) {
+    const need = Math.max(1, Math.ceil(cjkCount(text) * 0.7))
+    let found = -1
+    for (let index = cursor; index < spoken.length; index++) {
+      const line = spoken[index]
+      if (line.includes(text) || cjkCount(line) >= need) {
+        found = index
+        break
+      }
+    }
+    if (found < 0) missing.push(text)
+    else cursor = found + 1
+  }
   return { repeated, missing }
 }
 
@@ -177,7 +198,7 @@ export function xaiTimelineEndSeconds(description: string, duration: number, max
   const speech = Math.ceil(xaiSpeechSeconds(String(description || '')))
   if (speech <= 0) return asked
   const shots = (String(description || '').match(/【[镜鏡][头頭]\s*\d+】/g) || []).length
-  const room = speech + XAI_SPEECH_TAIL_SECONDS + Math.max(0, shots - 1)
+  const room = speech + XAI_SPEECH_TAIL_SECONDS + Math.max(0, shots - 1) * 2
   return Math.min(cap, Math.max(asked, room))
 }
 
