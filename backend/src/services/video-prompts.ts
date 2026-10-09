@@ -269,7 +269,8 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
               if (issues.repeated.length || issues.missing.length || imageIssues.length) {
                 const notes = []
                 if (issues.repeated.length || issues.missing.length) {
-                  notes.push('每一句对白只写进它所屬的【镜头N】那一段的时间轴里面，只写一次，不要写在时间轴外面。后面的段写无对白。不要改写句子，不要缩短成口号。')
+                  const missing = issues.missing.length ? `没有写进时间轴的原句：${issues.missing.join(' / ')}。` : ''
+                  notes.push(`${missing}每一句用角色說：「原句」写进它所屬的【镜头N】那一行里面，只写一次，不要写在时间轴外面。后面的段写无对白。不要改写句子，不要缩短成口号。`)
                 }
                 if (imageIssues.length) {
                   notes.push(`这些参考图的名字出现了，但该段没有用 image_refs 里对应的 <IMAGE_N>：${imageIssues.join('、')}。不要改用别的编号，也不要自己把编号加一。`)

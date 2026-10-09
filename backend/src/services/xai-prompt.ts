@@ -99,13 +99,17 @@ export function xaiSpokenLineIssues(prompt: string, description?: string | null)
     seenWanted.add(text)
     wanted.push(text)
   }
-  const spoken = timelineLines(prompt)
-    .flatMap((line) => extractSpokenLines(line).map((item) => item.text.trim()))
-    .filter(Boolean)
+  const timeline = timelineLines(prompt)
   const counts = new Map<string, number>()
-  for (const text of spoken) counts.set(text, (counts.get(text) || 0) + 1)
+  for (const line of timeline) {
+    for (const text of spokenChunks(line)) counts.set(text, (counts.get(text) || 0) + 1)
+  }
+  for (const text of wanted) {
+    const hits = timeline.filter((line) => line.includes(text)).length
+    if (hits > (counts.get(text) || 0)) counts.set(text, hits)
+  }
   const repeated = [...counts.entries()].filter(([, count]) => count > 1).map(([text]) => text)
-  const missing = wanted.filter((text) => !spoken.includes(text))
+  const missing = wanted.filter((text) => (counts.get(text) || 0) === 0)
   return { repeated, missing }
 }
 

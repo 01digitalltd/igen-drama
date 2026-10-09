@@ -1,5 +1,5 @@
 ---
-name: video-prompt-xai
+name: xai
 description: xAI Grok 真人影片提示词 — 用 <IMAGE_N> 引用参考图，模型自己念对白
 ---
 
