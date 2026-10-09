@@ -516,7 +516,7 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
       characters,
     })
     prompt = appendXaiVoiceDirective(prompt, xaiVoices)
-    const fitted = fitXaiSpokenClip(prompt, duration)
+    const fitted = fitXaiSpokenClip(prompt, shotDuration || duration)
     prompt = fitted.prompt
     duration = fitted.duration
   }
@@ -1021,12 +1021,29 @@ async function processTask(id: number, config: AIConfig) {
     const generateFetchTimeoutMs = type === 'image' ? 45_000 : 600_000
     let result: any = null
     for (let attempt = 1; attempt <= maxGenerateAttempts; attempt++) {
-      const resp = await fetch(url, {
-        method,
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(generateFetchTimeoutMs),
-      })
+      let resp: Response
+      try {
+        resp = await fetch(url, {
+          method,
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(generateFetchTimeoutMs),
+        })
+      } catch (err) {
+        // AbortSignal.timeout rejects with an abort error. That is not a user
+        // cancel — swallowing it left the task in `processing`, so the wizard
+        // waited on this still and never moved on to the next storyboard.
+        if (await isCancelled(id)) return
+        if (attempt < maxGenerateAttempts && isAbortError(err)) {
+          logTaskWarn(label, 'generate-retry', { id, attempt, error: 'timeout' })
+          if (await sleepOrCancel(id, attempt * 4000)) return
+          continue
+        }
+        if (isAbortError(err)) {
+          throw new Error(type === 'image' ? '图片生成超时，请重试' : '视频生成请求超时，请重试')
+        }
+        throw err
+      }
       const rawText = await resp.text()
       if (!resp.ok) {
         const message = parseProviderErrorText(resp.status, rawText, `API error ${resp.status}`)
@@ -1101,7 +1118,7 @@ async function processTask(id: number, config: AIConfig) {
     await markPolling(id, taskId)
     await pollTask(record, config, taskId!)
   } catch (err: any) {
-    if (isAbortError(err) || await isCancelled(id)) return
+    if (await isCancelled(id)) return
     const [row] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, id))
     if (row && await switchVideoTaskToSeedanceIfNeeded(row, config, err)) return
     await failTask(id, annotateProviderSafetyBlock(rewriteSeedanceAudioLimitError(String(err?.message || err || ''))))
@@ -1281,7 +1298,7 @@ async function pollTask(
         return
       }
     } catch (err: any) {
-      if (isAbortError(err) || await isCancelled(record.id)) return
+      if (await isCancelled(record.id)) return
       const exhausted = i === profile.attempts - 1
         || (profile.maxDurationMs != null && Date.now() - startedAt >= profile.maxDurationMs)
       if (exhausted) {

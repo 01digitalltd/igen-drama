@@ -209,13 +209,13 @@ export async function startVideoPromptBatch(
         const endCap = Math.min(duration, durationMax)
         const timelineEnd = skill === 'xai' ? xaiTimelineEndSeconds(shot.description, duration, durationMax) : endCap
         const lengthLine = skill === 'xai'
-          ? `本镜标注 ${duration}s。对白念完需要把时间轴加长，最后一段结束秒数写成 ${timelineEnd}s，不得超过 ${durationMax}s。没有对白的镜头至少 2 秒。不要为了凑 ${duration}s 而漏句。`
+          ? `本镜 ${duration}s。时间轴从 0 开始，最后一段必须正好结束在 ${timelineEnd}s。不要加长，也不要提前结束。没有对白的镜头至少 2 秒。对白放进这段秒数里，不要为了念完把影片加长。`
           : `单段时长必须落在 ${bounds?.min ?? 4}-${durationMax} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。`
         let audioRetryNote = ''
         const skillHint = skill === 'omni'
           ? '当前是 Gemini Omni：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_REF_N> 标记参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。'
           : skill === 'xai'
-            ? '当前是 xAI Grok 真人影片：时间轴写成 [0-3s]，用 image_refs 给出的 <IMAGE_N>，不要自己把编号加一，不要改用另一张图的编号。某一段写到某个参考图的名字，就必须带上它的 <IMAGE_N>。不要写 @名字。description 里每一句对白改成项目对白语言的口语，一句对一句，写进它所屬的【镜头N】那一行里面，只写一次。同一对引号里有好几句时，按句号或惊叹号拆开，每一句各占该镜头的连续一行。可以改成粤语口语，不要合并，不要漏句，不要缩成更短的口号，不要写在时间轴外面。没有对白的镜头至少 2 秒。放对白的那一段要够念完（中文约每 2.5 字 1 秒），最后一句讲完后再留至少 1 秒。写实摄影，不要卡通。'
+            ? '当前是 xAI Grok 真人影片：时间轴写成 [0-3s]，用 image_refs 给出的 <IMAGE_N>，不要自己把编号加一，不要改用另一张图的编号。某一段写到某个参考图的名字，就必须带上它的 <IMAGE_N>。不要写 @名字。description 里每一句对白改成项目对白语言的口语，一句对一句，写进它所屬的【镜头N】那一行里面，只写一次。同一对引号里有好几句时，按句号或惊叹号拆开，每一句各占该镜头的连续一行。可以改成粤语口语，不要合并，不要漏句，不要缩成更短的口号，不要写在时间轴外面。没有对白的镜头至少 2 秒。放对白的那一段要够念完（中文约每 2.5 字 1 秒），最后一句讲完后再留至少 1 秒。整段影片结束秒数等于分镜 duration，不要加长。写实摄影，不要卡通。'
             : '当前是 Seedance/其他模型：时间轴写成 0-3秒：，用 @角色名/@场景名/@道具名。'
         for (let attempt = 1; attempt <= VIDEO_PROMPT_ATTEMPTS && !saved; attempt++) {
           try {

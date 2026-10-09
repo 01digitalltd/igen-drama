@@ -97,6 +97,10 @@ test('video poll fails fast on non-retryable HTTP errors instead of exhausting a
   assert.match(generation, /const maxGenerateAttempts = type === 'image' \? 3 : 1/)
   assert.match(generation, /type === 'image' \? 45_000 : 600_000/)
   assert.doesNotMatch(generation, /if \(!resp\.ok\) continue/)
+  // A provider timeout is an abort error. Treating it as cancel left the
+  // task in `processing`, so later storyboard stills never started.
+  assert.doesNotMatch(generation, /if \(isAbortError\(err\) \|\| await isCancelled/)
+  assert.match(generation, /图片生成超时，请重试/)
 })
 
 test('agent jobs surface AI SDK responseBody instead of empty execution failed', () => {

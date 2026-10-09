@@ -1,6 +1,7 @@
 import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import { visualStyleLabel, normalizeStyleValue } from './style-preset.js'
 import { clipDurationBounds } from './video-clip-policy.js'
+import { isXaiVideoConfig } from './video-model-policy.js'
 
 /**
  * Video generation prefers a dedicated video_prompt. Storyboard breakdown
@@ -391,7 +392,13 @@ export function resolveVideoGenerationDuration(opts: {
 }): number {
   const bounds = clipDurationBounds(opts.provider, opts.model)
   const parsed = parseVideoPromptDurationSeconds(opts.prompt)
-  const raw = parsed ?? Number(opts.shotDuration)
+  const shot = Number(opts.shotDuration)
+  const shotOk = Number.isFinite(shot) && shot > 0
+  // xAI clips follow the storyboard seconds. A longer timeline in the prompt
+  // must not stretch the video past that field.
+  const raw = isXaiVideoConfig(opts.provider, opts.model) && shotOk
+    ? shot
+    : (parsed ?? (shotOk ? shot : NaN))
   const n = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 10
   return Math.min(bounds.max, Math.max(bounds.min, n))
 }

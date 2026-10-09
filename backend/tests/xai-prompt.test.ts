@@ -71,11 +71,9 @@ test('xAI keeps a parenthetical line from shot 2 when the prompt only quoted sho
   assert.deepEqual(issues.missing, ['配冰檸檬茶，看底下地址與轉發！'])
 })
 
-test('a short storyboard grows so every spoken sentence fits', () => {
+test('a storyboard keeps its labeled duration', () => {
   const description = '【鏡頭1】女主角說：「哈囉大家！今天介紹自己從小吃到大的老字號！幸好今天不用排隊！」【鏡頭2】廚房翻炒。【鏡頭3】裝盤。'
-  const end = xaiTimelineEndSeconds(description, 7, 15)
-  assert.ok(end > 7)
-  assert.ok(end <= 15)
+  assert.equal(xaiTimelineEndSeconds(description, 7, 15), 7)
   assert.equal(xaiTimelineEndSeconds('【鏡頭1】她走過街道。', 8, 15), 8)
 })
 
@@ -153,7 +151,7 @@ test('a beat that names a reference must use that reference image', () => {
   assert.deepEqual(xaiBeatImageIssues(prompt, refs), ['乾炒牛河', '冰檸檬茶'])
 })
 
-test('a trailing spoken line lengthens the last beat', () => {
+test('a trailing spoken line stays inside the storyboard duration', () => {
   const prompt = [
     '[0-1s] <IMAGE_0> eats.',
     '[1-4s] <IMAGE_0> says: "太好吃了！"',
@@ -161,8 +159,12 @@ test('a trailing spoken line lengthens the last beat', () => {
     '她說：「配冰檸檬茶，看底下地址與轉發！」',
   ].join('\n')
   const fitted = fitXaiSpokenClip(prompt, 8)
+  assert.equal(fitted.duration, 8)
   assert.match(fitted.prompt, /\[1-4s\]/)
-  assert.match(fitted.prompt, /\[4-11s\]/)
+  assert.match(fitted.prompt, /\[7-8s\]/)
+  assert.doesNotMatch(fitted.prompt, /\[4-11s\]/)
+  const ends = [...fitted.prompt.matchAll(/\[(\d+)-(\d+)s\]/g)].map((item) => Number(item[2]))
+  assert.equal(Math.max(...ends), 8)
 })
 
 test('pinning the storyboard still shifts asset tokens and keeps IMAGE_0 for the still', () => {
@@ -172,17 +174,17 @@ test('pinning the storyboard still shifts asset tokens and keeps IMAGE_0 for the
   assert.equal(pinXaiStoryboardStill(pinned), pinned)
 })
 
-test('xAI gives a spoken line enough time and a silent tail', () => {
+test('xAI keeps a spoken clip at the storyboard duration', () => {
   const prompt = [
     '[0-3s] <IMAGE_0> sits at the desk.',
     '[3-6s] <IMAGE_0> says: "你今天终于肯过来看我了。"',
   ].join('\n')
   const fitted = fitXaiSpokenClip(prompt, 8)
-  assert.ok(fitted.duration > 8)
-  assert.ok(fitted.duration <= 15)
-  assert.match(fitted.prompt, /\[3-8s\].*你今天终于肯过来看我了/)
-  assert.match(fitted.prompt, /\[8-9s\] Hold\. The spoken line has already finished/)
+  assert.equal(fitted.duration, 8)
+  assert.match(fitted.prompt, /\[7-8s\] Hold\. The spoken line has already finished/)
   assert.match(fitted.prompt, /\[XAI_SPEECH:/)
+  const ends = [...fitted.prompt.matchAll(/\[(\d+)-(\d+)s\]/g)].map((item) => Number(item[2]))
+  assert.equal(Math.max(...ends), 8)
   const again = fitXaiSpokenClip(fitted.prompt, fitted.duration)
   assert.equal(again.duration, fitted.duration)
   assert.equal(again.prompt, fitted.prompt)
@@ -195,10 +197,10 @@ test('xAI keeps a clip that has no spoken line', () => {
   assert.equal(fitted.prompt, prompt)
 })
 
-test('xAI speech fit never exceeds 15 seconds', () => {
+test('xAI speech fit stays on the storyboard duration', () => {
   const prompt = `[0-3s] says: "${'我'.repeat(80)}"`
   const fitted = fitXaiSpokenClip(prompt, 8)
-  assert.equal(fitted.duration, 15)
+  assert.equal(fitted.duration, 8)
   const ends = [...fitted.prompt.matchAll(/\[(\d+)-(\d+)s\]/g)].map((item) => Number(item[2]))
-  assert.ok(Math.max(...ends) <= 15)
+  assert.equal(Math.max(...ends), 8)
 })

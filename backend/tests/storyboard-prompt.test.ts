@@ -58,6 +58,10 @@ test('generation duration follows prompt timeline and clamps to the model', () =
     resolveVideoGenerationDuration({ prompt: '', shotDuration: 9, provider: 'minimax' }),
     9,
   )
+  assert.equal(
+    resolveVideoGenerationDuration({ prompt, shotDuration: 7, provider: 'xai', model: 'grok-imagine-video-1.5' }),
+    7,
+  )
 })
 
 test('Omni image_refs follow scene then character then prop order', () => {
