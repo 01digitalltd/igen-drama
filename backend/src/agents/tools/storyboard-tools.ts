@@ -18,7 +18,7 @@ import {
 import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
 import { logTaskProgress, logTaskSuccess, logTaskWarn } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
-import { buildShotImageRefs } from '../../services/storyboard-prompt.js'
+import { buildShotImageRefs, formatInnerShotOverflow, innerShotSecondsNeeded, innerShotsOverflow, type BeatTimeBudget } from '../../services/storyboard-prompt.js'
 import { orderXaiImageRefs } from '../../services/xai-prompt.js'
 import { applyBrandLogoPlacement, dramaAdFields, loadDramaAdContext, logoPlacementFromMetadata, logoPlacementInstruction } from '../../services/brand-logo.js'
 import { formatMissingSourceFacts, missingSourceSpans, sourceFactClauses } from '../../services/source-clauses.js'
@@ -52,6 +52,11 @@ async function syncStoryboardProps(storyboardId: number, propIds: number[]) {
       propId,
     })
   }
+}
+
+function beatBudgetFor(clip: { videoGeneration?: { prompt_skill?: string | null } } | null | undefined): BeatTimeBudget | undefined {
+  if (clip?.videoGeneration?.prompt_skill !== 'xai') return undefined
+  return { charsPerSecond: 2.5, tailSeconds: 1 }
 }
 
 async function getEpisodeSceneIds(episodeId: number) {
@@ -333,7 +338,7 @@ const saveStoryboards = createTool({
     })
     if (replace_existing === true && maxShots && uniqueIncoming > maxShots) {
       const suggested = clip?.videoGeneration?.suggested_shot_duration
-      const message = `本集目标 ${targetSeconds} 秒，最多 ${maxShots} 个分镜（建议每段 ${suggested} 秒）。本次提交了 ${uniqueIncoming} 个。请把全剧压缩进不超过 ${maxShots} 个段落（用【镜头N】承载节拍），然后重新调用 save_storyboards，第一批 replace_existing: true。总 duration 之和不得超过 ${targetSeconds} 秒。`
+      const message = `本集目标 ${targetSeconds} 秒，最多 ${maxShots} 个分镜（建议每段 ${suggested} 秒）。本次提交了 ${uniqueIncoming} 个。请减到不超过 ${maxShots} 个分镜，但不要把多个有对白的镜头塞回同一段。每个镜头都要在该段时长里演完。然后重新调用 save_storyboards，第一批 replace_existing: true。总 duration 之和不得超过 ${targetSeconds} 秒。`
       logTaskWarn('StoryboardTool', 'save-over-budget', {
         episodeId,
         submitted: uniqueIncoming,
@@ -357,25 +362,35 @@ const saveStoryboards = createTool({
       const filtered = acceptShotsWithinCount(existingShotNumbers, storyboards, maxShots)
       pending = filtered.accepted
       if (filtered.rejected.length) {
-        durationWarnings.push(
-          `rejected shots ${filtered.rejected.map(sb => sb.shot_number).join(',')}: episode budget is ${maxShots} shots / ${targetSeconds}s`,
-        )
         logTaskWarn('StoryboardTool', 'save-reject-extra', {
           episodeId,
           rejected: filtered.rejected.map(sb => sb.shot_number).join(','),
           maxShots,
           targetSeconds,
         })
-      }
-      if (!pending.length) {
         return {
-          error: `本集已达 ${maxShots} 个分镜上限（目标 ${targetSeconds} 秒），不要再追加。若需重拆，第一批带 replace_existing: true 并只提交不超过 ${maxShots} 个段落。`,
+          error: `本集已达 ${maxShots} 个分镜上限（目标 ${targetSeconds} 秒），多出来的 #${filtered.rejected.map(sb => sb.shot_number).join(',')} 不会保存。请整批重拆到不超过 ${maxShots} 个分镜，但不要把多个有对白的镜头塞回同一段。每个镜头都要在该段时长里演完。第一批带 replace_existing: true。`,
           max_shots: maxShots,
           max_total_seconds: targetSeconds,
           count: 0,
           rejected: filtered.rejected.map(sb => sb.shot_number),
         }
       }
+    }
+
+    const crowded = pending.flatMap((sb) => {
+      const rawDuration = sb.duration || 10
+      const duration = bounds ? clampShotDurationForModel(rawDuration, bounds, bounds.typical) : rawDuration
+      const hit = innerShotsOverflow(sb.description, duration, beatBudgetFor(clip))
+      return hit ? [{ shotNumber: sb.shot_number, duration, ...hit }] : []
+    })
+    if (crowded.length) {
+      const message = formatInnerShotOverflow(crowded)
+      logTaskWarn('StoryboardTool', 'save-inner-shots-overflow', {
+        episodeId,
+        shots: crowded.map((row) => row.shotNumber).join(','),
+      })
+      return { error: message }
     }
 
     const spokenLanguage = await getDramaDialogueLanguage(dramaId)
@@ -418,6 +433,31 @@ const saveStoryboards = createTool({
       return {
         error: message,
         reference_audio_max_seconds: SEEDANCE_R2V_MAX_AUDIO_SECONDS,
+      }
+    }
+
+    if (bounds && targetSeconds) {
+      const existingLive = replace_existing === true
+        ? []
+        : (await db.select().from(schema.storyboards).where(eq(schema.storyboards.episodeId, episodeId)))
+          .filter(sb => !sb.deletedAt && !pending.some(item => item.shot_number === sb.storyboardNumber))
+      const planned = [
+        ...existingLive.map(sb => ({
+          duration: sb.duration || bounds.typical,
+          needed: innerShotSecondsNeeded(sb.description, beatBudgetFor(clip)),
+        })),
+        ...pending.map(sb => ({
+          duration: clampShotDurationForModel(sb.duration || bounds.typical, bounds, bounds.typical),
+          needed: innerShotSecondsNeeded(sb.description, beatBudgetFor(clip)),
+        })),
+      ]
+      const floorSum = planned.reduce((sum, item) => (
+        sum + Math.min(bounds.max, Math.max(bounds.min, item.needed || bounds.min))
+      ), 0)
+      if (floorSum > targetSeconds) {
+        const message = `这些分镜里的镜头至少要 ${floorSum} 秒，超过本集目标 ${targetSeconds} 秒。请减少用不到的空镜，对白留在各自的分镜里，不要把某一段压到镜头演不完。然后重新调用 save_storyboards，第一批 replace_existing: true。`
+        logTaskWarn('StoryboardTool', 'save-beat-budget', { episodeId, floorSum, targetSeconds })
+        return { error: message, max_total_seconds: targetSeconds, needed_seconds: floorSum }
       }
     }
 
@@ -489,10 +529,15 @@ const saveStoryboards = createTool({
     const liveRows = allRows.filter(sb => !sb.deletedAt)
     let totalDuration = liveRows.reduce((sum, sb) => sum + (sb.duration || 0), 0)
     if (bounds && targetSeconds && liveRows.length && totalDuration > targetSeconds) {
+      const floors = liveRows.map(sb => Math.min(
+        bounds.max,
+        Math.max(bounds.min, innerShotSecondsNeeded(sb.description, beatBudgetFor(clip)) || bounds.min),
+      ))
       const fitted = fitShotDurationsToBudget(
         liveRows.map(sb => sb.duration || bounds.typical),
         targetSeconds,
         bounds,
+        floors,
       )
       for (let i = 0; i < liveRows.length; i++) {
         if (fitted[i] === liveRows[i].duration) continue
@@ -593,6 +638,29 @@ const updateStoryboard = createTool({
         currentCharacterIds,
         currentPropIds,
       )
+    }
+
+    if ('description' in fields || 'duration' in fields) {
+      const nextDescription = 'description' in fields ? String(fields.description || '') : String(storyboard.description || '')
+      const descriptionChanged = 'description' in fields && nextDescription !== String(storyboard.description || '')
+      const durationChanged = 'duration' in fields && Number(fields.duration) !== Number(storyboard.duration)
+      if (descriptionChanged || durationChanged) {
+        const clip = await loadEpisodeClipPolicy(episodeId)
+        const rawDuration = 'duration' in fields ? fields.duration : storyboard.duration
+        const duration = clip?.bounds
+          ? clampShotDurationForModel(rawDuration, clip.bounds, clip.bounds.typical)
+          : (rawDuration || 10)
+        const hit = innerShotsOverflow(nextDescription, duration || 10, beatBudgetFor(clip))
+        if (hit) {
+          return {
+            error: formatInnerShotOverflow([{
+              shotNumber: storyboard.storyboardNumber,
+              duration: duration || 10,
+              ...hit,
+            }]),
+          }
+        }
+      }
     }
 
     const updates: Record<string, any> = { updatedAt: now() }

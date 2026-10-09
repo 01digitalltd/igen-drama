@@ -43,12 +43,13 @@ test('estimated shot count follows typical clip length ±20%', () => {
   assert.deepEqual(estimatedShotCount(80, 10), { typical: 8, min: 6, max: 10 })
 })
 
-test('episode duration budget caps MiniMax 30s to a few shots that can still fit', () => {
+test('episode duration budget lets a 30s ad split when dialogue will not fit one clip', () => {
   const bounds = clipDurationBounds('minimax', 'MiniMax-H3')
   const budget = episodeDurationBudget(30, bounds)
   assert.equal(budget.target_seconds, 30)
   assert.equal(budget.max_total_seconds, 30)
-  assert.deepEqual(budget.estimated_shot_count, { typical: 3, min: 2, max: 4 })
+  assert.equal(budget.estimated_shot_count.typical, 3)
+  assert.equal(budget.estimated_shot_count.max, 7)
   assert.equal(budget.suggested_shot_duration, 10)
   assert.ok(budget.estimated_shot_count.max * bounds.min <= 30)
 })
@@ -56,6 +57,8 @@ test('episode duration budget caps MiniMax 30s to a few shots that can still fit
 test('fitShotDurationsToBudget scales 3x12s MiniMax shots down to 30s', () => {
   const bounds = clipDurationBounds('minimax', 'MiniMax-H3')
   assert.deepEqual(fitShotDurationsToBudget([12, 12, 12], 30, bounds), [10, 10, 10])
+  assert.deepEqual(fitShotDurationsToBudget([12, 12, 12], 30, bounds, [9, 9, 9]), [10, 10, 10])
+  assert.deepEqual(fitShotDurationsToBudget([12, 12, 12], 30, bounds, [12, 12, 12]), [12, 12, 12])
 })
 
 test('acceptShotsWithinCount keeps updates and rejects extra shot numbers', () => {

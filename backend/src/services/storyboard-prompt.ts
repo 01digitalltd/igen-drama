@@ -1,7 +1,8 @@
 import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import { visualStyleLabel, normalizeStyleValue } from './style-preset.js'
-import { clipDurationBounds } from './video-clip-policy.js'
+import { clipDurationBounds, DIALOGUE_CHARS_PER_SECOND } from './video-clip-policy.js'
 import { isXaiVideoConfig } from './video-model-policy.js'
+import { extractSpokenLines } from './tts/vo-speech.js'
 
 /**
  * Video generation prefers a dedicated video_prompt. Storyboard breakdown
@@ -24,6 +25,83 @@ export function resolveStoryboardVideoPrompt(shot: {
 }
 
 const SHOT_MARKER = '【[镜鏡][头頭]\\s*\\d+】'
+
+/** A cut with no line still needs a moment. A cut that speaks needs longer. */
+export const MIN_SILENT_BEAT_SECONDS = 2
+export const MIN_SPOKEN_BEAT_SECONDS = 3
+
+export type InnerShotOverflow = {
+  beats: number
+  spoken: number
+  needed: number
+}
+
+/** Seconds one 【镜头N】 needs. Speech time stacks; a spoken cut is never under 3s. */
+export function innerBeatSeconds(beat: string, charsPerSecond = DIALOGUE_CHARS_PER_SECOND): number {
+  const lines = extractSpokenLines(beat)
+  if (!lines.length) return MIN_SILENT_BEAT_SECONDS
+  const chars = lines.reduce((sum, line) => sum + line.text.replace(/\s/g, '').length, 0)
+  const speech = Math.ceil(chars / charsPerSecond)
+  return Math.max(MIN_SPOKEN_BEAT_SECONDS, speech)
+}
+
+function spokenLineSeconds(text: string, charsPerSecond: number): number {
+  const chars = text.replace(/\s/g, '').length
+  return Math.max(MIN_SPOKEN_BEAT_SECONDS, Math.ceil(chars / charsPerSecond))
+}
+
+export type BeatTimeBudget = {
+  charsPerSecond?: number
+  /** Extra seconds after the last spoken line, used by xAI. */
+  tailSeconds?: number
+}
+
+/** Seconds the cuts in one storyboard need. Several spoken lines each take their own time. */
+export function innerShotSecondsNeeded(description?: string | null, budget?: BeatTimeBudget): number {
+  const charsPerSecond = budget?.charsPerSecond && budget.charsPerSecond > 0
+    ? budget.charsPerSecond
+    : DIALOGUE_CHARS_PER_SECOND
+  const beats = storyboardBeats(description)
+  const lines = extractSpokenLines(String(description || ''))
+  const fromBeats = beats.length >= 2
+    ? beats.reduce((sum, beat) => sum + innerBeatSeconds(beat, charsPerSecond), 0)
+    : 0
+  const fromLines = lines.length >= 2
+    ? lines.reduce((sum, line) => sum + spokenLineSeconds(line.text, charsPerSecond), 0)
+    : 0
+  const needed = Math.max(fromBeats, fromLines)
+  if (!needed || !lines.length) return needed
+  return needed + Math.max(0, Math.round(Number(budget?.tailSeconds) || 0))
+}
+
+/**
+ * Reject a storyboard whose cuts cannot play inside its duration.
+ * One short line in an unmarked description is left alone.
+ */
+export function innerShotsOverflow(
+  description: string | null | undefined,
+  duration: number,
+  budget?: BeatTimeBudget,
+): InnerShotOverflow | null {
+  const needed = innerShotSecondsNeeded(description, budget)
+  if (needed <= 0) return null
+  const seconds = Math.max(0, Math.round(Number(duration) || 0))
+  if (needed <= seconds) return null
+  const beats = storyboardBeats(description)
+  const lines = extractSpokenLines(String(description || ''))
+  const cuts = Math.max(beats.length >= 2 ? beats.length : 0, lines.length >= 2 ? lines.length : 0)
+  return { beats: cuts, spoken: lines.length, needed }
+}
+
+export function formatInnerShotOverflow(
+  rows: Array<{ shotNumber: number; duration: number } & InnerShotOverflow>,
+) {
+  const detail = rows.map((row) => {
+    const spoken = row.spoken ? `，其中 ${row.spoken} 个有对白` : ''
+    return `#${row.shotNumber} 只有 ${row.duration} 秒，却有 ${row.beats} 个镜头${spoken}，至少要 ${row.needed} 秒`
+  }).join('；')
+  return `镜头装不下：${detail}。把装不下的镜头拆成后面的分镜。没对白的镜头至少 ${MIN_SILENT_BEAT_SECONDS} 秒，有对白的镜头至少 ${MIN_SPOKEN_BEAT_SECONDS} 秒并够把那句说完。不要把多句不同对白塞进同一个短分镜。总时长仍不得超过目标秒数。然后重新调用 save_storyboards，第一批 replace_existing: true。`
+}
 
 /** Sub-shots in order. Accepts both 【镜头1】 and 【鏡頭1】. */
 export function storyboardBeats(description?: string | null): string[] {

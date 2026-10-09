@@ -118,7 +118,11 @@ export function episodeDurationBudget(targetSeconds: number, bounds: ClipDuratio
   const target = Math.max(bounds.min, Math.round(Number(targetSeconds) || 0))
   const raw = estimatedShotCount(target, bounds.typical)
   const maxFit = Math.max(1, Math.floor(target / bounds.min))
-  const max = Math.min(raw.max, maxFit)
+  // A spoken cut needs its own storyboard when it will not fit beside others.
+  // Allow as many clips as still fit at 3s (or the model minimum), not only ±20% of typical.
+  const splitFloor = Math.max(bounds.min, 3)
+  const roomForSplits = Math.max(1, Math.floor(target / splitFloor))
+  const max = Math.min(maxFit, Math.max(raw.max, roomForSplits))
   const typical = Math.min(Math.max(1, raw.typical), max)
   const min = Math.min(raw.min, typical)
   const suggested = clampShotDurationForModel(
@@ -138,20 +142,29 @@ export function fitShotDurationsToBudget(
   durations: number[],
   budget: number,
   bounds: ClipDurationPolicy,
+  floors: number[] = [],
 ) {
-  const next = durations.map((item) => clampShotDurationForModel(item, bounds, bounds.typical))
+  const floorAt = (index: number) => Math.min(
+    bounds.max,
+    Math.max(bounds.min, Math.round(Number(floors[index]) || bounds.min)),
+  )
+  const next = durations.map((item, index) => Math.min(
+    bounds.max,
+    Math.max(floorAt(index), clampShotDurationForModel(item, bounds, bounds.typical)),
+  ))
   let sum = next.reduce((total, item) => total + item, 0)
   const cap = Math.max(bounds.min, Math.round(Number(budget) || 0))
   while (sum > cap) {
     let idx = -1
-    let best = bounds.min
+    let slack = 0
     for (let i = 0; i < next.length; i++) {
-      if (next[i] > best) {
-        best = next[i]
+      const room = next[i] - floorAt(i)
+      if (room > slack) {
+        slack = room
         idx = i
       }
     }
-    if (idx < 0) break
+    if (idx < 0 || slack <= 0) break
     next[idx] -= 1
     sum -= 1
   }
