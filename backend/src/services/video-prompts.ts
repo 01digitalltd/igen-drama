@@ -16,7 +16,7 @@ import { getDramaStyleValue, visualStyleInstruction } from './style-preset.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
 import { firstConfigModel } from './video-clip-policy.js'
-import { orderXaiImageRefs, xaiBeatImageIssues, xaiSpokenLineIssues } from './xai-prompt.js'
+import { orderXaiImageRefs, xaiBeatImageIssues, xaiSpokenLineIssues, xaiTimelineEndSeconds } from './xai-prompt.js'
 import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import {
   findRefAudioOverflows,
@@ -205,7 +205,12 @@ export async function startVideoPromptBatch(
         if (!shot.description) throw new Error('分镜没有画面描述，无法生成视频提示词')
         let saved = false
         const duration = shot.duration || bounds?.typical || 10
-        const endCap = Math.min(duration, bounds?.max || 15)
+        const durationMax = bounds?.max || 15
+        const endCap = Math.min(duration, durationMax)
+        const timelineEnd = skill === 'xai' ? xaiTimelineEndSeconds(shot.description, duration, durationMax) : endCap
+        const lengthLine = skill === 'xai'
+          ? `本镜标注 ${duration}s。对白念完需要把时间轴加长，最后一段结束秒数写成 ${timelineEnd}s，不得超过 ${durationMax}s。不要为了凑 ${duration}s 而删掉或改写任何一句对白。`
+          : `单段时长必须落在 ${bounds?.min ?? 4}-${durationMax} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。`
         let audioRetryNote = ''
         const skillHint = skill === 'omni'
           ? '当前是 Gemini Omni：时间轴写成 [0-3s]，用 image_refs 的 <IMAGE_REF_N> 标记参考图（不要写 @名字，不要写 [# Sources]/[# References]），每段写音频（有对白则写对白；无对白写「无对白」）。'
@@ -225,7 +230,7 @@ export async function startVideoPromptBatch(
           const result = await withTimeout(agent.generate([{
             role: 'user',
             content: [
-              withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})同时写视频提示词(video_prompt)和分镜静帧提示词(image_prompt)。视频模型:${videoLabel}。prompt_skill:${skill}。单段时长必须落在 ${bounds?.min ?? 4}-${bounds?.max ?? 15} 秒（本镜 duration=${duration}s），按 ${bounds?.promptSegment || 3} 秒分段换行，时间轴最后一段的结束秒数不得超过 ${endCap}s。
+              withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})同时写视频提示词(video_prompt)和分镜静帧提示词(image_prompt)。视频模型:${videoLabel}。prompt_skill:${skill}。${lengthLine}
 ${skillHint}
 image_prompt 是这段影片的第 0 帧，只画下面的镜头 1。不要把镜头 2 及之后画进这张图。opening_frame 决定第 0 帧附上哪些参考图：use_scene 只在镜头 1 的摄影机就在绑定场景的空间里时为 true，镜头 1 在别的地方或只拍到该地的外观时为 false。names 只填镜头 1 看得见的角色和道具，用 image_refs 的名字。有附上的图才写「第一张图 / 第二张图」，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止换脸换景换包装。每一镜都是同一部短片：同一画风、色温、服装与发型，不要写成另一部电影。不要时间轴，不要旁白配音。若镜头 1 写手持镜头、自拍或对着镜头，那是机位：观众就是镜头。不要画相机、手机或她拿着设备。
 
@@ -280,6 +285,7 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
                   storyboardId: sb.id,
                   attempt,
                   error: audioRetryNote,
+                  text: spokenPrompt.slice(0, 400),
                 })
                 continue
               }

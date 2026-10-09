@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildShotImageRefs } from '../src/services/storyboard-prompt.ts'
-import { fitXaiSpokenClip, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt, xaiBeatImageIssues, xaiSpokenLineIssues } from '../src/services/xai-prompt.ts'
+import { fitXaiSpokenClip, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt, xaiBeatImageIssues, xaiSpokenLineIssues, xaiTimelineEndSeconds } from '../src/services/xai-prompt.ts'
 
 test('xAI reference order is character, scene, then prop', () => {
   const source = buildShotImageRefs({
@@ -69,6 +69,14 @@ test('xAI keeps a parenthetical line from shot 2 when the prompt only quoted sho
   const issues = xaiSpokenLineIssues(prompt, description)
   assert.equal(issues.repeated.length, 0)
   assert.deepEqual(issues.missing, ['配冰檸檬茶，看底下地址與轉發！'])
+})
+
+test('a short storyboard grows so every spoken sentence fits', () => {
+  const description = '【鏡頭1】女主角說：「哈囉大家！今天介紹自己從小吃到大的老字號！幸好今天不用排隊！」【鏡頭2】廚房翻炒。【鏡頭3】裝盤。'
+  const end = xaiTimelineEndSeconds(description, 7, 15)
+  assert.ok(end > 7)
+  assert.ok(end <= 15)
+  assert.equal(xaiTimelineEndSeconds('【鏡頭1】她走過街道。', 8, 15), 8)
 })
 
 test('a multi-sentence quote can be split across beats of the same shot', () => {
