@@ -78,6 +78,15 @@ function timelineLines(prompt: string) {
   return String(prompt || '').split('\n').filter((line) => TIMELINE_LINE.test(line))
 }
 
+/** One quoted speech can hold several sentences. Each sentence is placed on its own beat. */
+function speechSentences(text: string) {
+  const parts = String(text || '')
+    .split(/(?<=[。！？!?])/u)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  return parts.length ? parts : []
+}
+
 function refNameInText(name: string, text: string) {
   const parts = String(name || '')
     .split(/[·•|]/)
@@ -94,10 +103,11 @@ export function xaiSpokenLineIssues(prompt: string, description?: string | null)
   const wanted: string[] = []
   const seenWanted = new Set<string>()
   for (const line of extractSpokenLines(String(description || ''))) {
-    const text = line.text.trim()
-    if (!text || seenWanted.has(text)) continue
-    seenWanted.add(text)
-    wanted.push(text)
+    for (const text of speechSentences(line.text)) {
+      if (seenWanted.has(text)) continue
+      seenWanted.add(text)
+      wanted.push(text)
+    }
   }
   const timeline = timelineLines(prompt)
   const counts = new Map<string, number>()
