@@ -96,7 +96,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 - prop_ids：当前段落出现的关键道具 ID 列表（道具在画面中被看到、使用或特写时绑定），可以为空；必须从 props 中选择
 - scene_id：若可匹配到 scenes 中已有场景，必须填写正确 scene_id；无匹配时置空
 - duration：段落总时长，必须在 video_generation.duration_min–duration_max 之间
-- description：画面描述，按【镜头1】【镜头2】…逐子镜头描述观众实际看到和听到的内容——画面（谁+具体动作+肢体细节+表情）写在前；该子镜头有台词时以「角色名说：「台词」」写在对应【镜头N】内，旁白写「旁白：内容」
+- description：每个【镜头N】都写清场景、人物、动作、谁在说话。场景用已有场景名，一个镜头只有一个地方，换地方就换镜头。人物用角色列表里的名字，这一镜看得到谁就写谁，不要只用她/他。动作写这一眼的肢体。有人说话必须写「角色名说：「台词」」，自语和心想也用这个格式，不要没名字的引号。没人说话就不要写引号。旁白只有剧本有画外叙述时才写「旁白：…」
 - atmosphere：氛围、光线、色调、环境感受
 
 时长规则（硬约束，全部以 read_storyboard_context.video_generation 为准）：
