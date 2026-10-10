@@ -385,7 +385,7 @@ const saveStoryboards = createTool({
       return hit ? [{ shotNumber: sb.shot_number, duration, ...hit }] : []
     })
     if (crowded.length) {
-      const message = formatInnerShotOverflow(crowded)
+      const message = formatInnerShotOverflow(crowded, bounds?.max)
       logTaskWarn('StoryboardTool', 'save-inner-shots-overflow', {
         episodeId,
         shots: crowded.map((row) => row.shotNumber).join(','),
@@ -657,7 +657,7 @@ const updateStoryboard = createTool({
               shotNumber: storyboard.storyboardNumber,
               duration: duration || 10,
               ...hit,
-            }]),
+            }], clip?.bounds.max),
           }
         }
       }

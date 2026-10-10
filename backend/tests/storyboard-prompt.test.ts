@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs, rewriteSeedancePromptRefs, innerShotsOverflow } from '../src/services/storyboard-prompt.ts'
+import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs, rewriteSeedancePromptRefs, innerShotsOverflow, formatInnerShotOverflow } from '../src/services/storyboard-prompt.ts'
 
 test('prefers dedicated video_prompt over storyboard description', () => {
   assert.equal(
@@ -110,6 +110,15 @@ test('five spoken cuts do not fit in nine seconds', () => {
   assert.equal(hit?.beats, 5)
   assert.equal(hit?.spoken, 5)
   assert.ok((hit?.needed || 0) > 9)
+})
+
+test('a short clip with two shots is lengthened instead of split into shot 1 only', () => {
+  const two = '【镜头1】阿仪说：「今晚开始。」\n【镜头2】陈生说：「这些给你。」'
+  const hit = innerShotsOverflow(two, 4)
+  assert.ok(hit)
+  const message = formatInnerShotOverflow([{ shotNumber: 1, duration: 4, ...hit! }], 15)
+  assert.match(message, /镜头2、镜头3留在这一段/)
+  assert.match(message, /不要拆成每段只有镜头1/)
 })
 
 test('two spoken cuts fit in nine seconds and one unmarked shot is not split', () => {

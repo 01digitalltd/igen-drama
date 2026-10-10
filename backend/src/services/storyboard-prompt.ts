@@ -95,12 +95,17 @@ export function innerShotsOverflow(
 
 export function formatInnerShotOverflow(
   rows: Array<{ shotNumber: number; duration: number } & InnerShotOverflow>,
+  durationMax?: number,
 ) {
   const detail = rows.map((row) => {
     const spoken = row.spoken ? `，其中 ${row.spoken} 个有对白` : ''
-    return `#${row.shotNumber} 只有 ${row.duration} 秒，却有 ${row.beats} 个镜头${spoken}，至少要 ${row.needed} 秒`
+    const cap = durationMax && row.needed <= durationMax
+      ? `把这段 duration 改成 ${row.needed} 秒，镜头2、镜头3留在这一段`
+      : `这段加到 ${durationMax || 'duration_max'} 秒仍不够，才把多出来的镜头拆到下一个分镜`
+    return `#${row.shotNumber} 只有 ${row.duration} 秒，却有 ${row.beats} 个镜头${spoken}，至少要 ${row.needed} 秒。${cap}`
   }).join('；')
-  return `镜头装不下：${detail}。把装不下的镜头拆成后面的分镜。没对白的镜头至少 ${MIN_SILENT_BEAT_SECONDS} 秒，有对白的镜头至少 ${MIN_SPOKEN_BEAT_SECONDS} 秒并够把那句说完。不要把多句不同对白塞进同一个短分镜。总时长仍不得超过目标秒数。然后重新调用 save_storyboards，第一批 replace_existing: true。`
+  const ceiling = durationMax ? `${durationMax} 秒` : 'duration_max'
+  return `镜头装不下：${detail}。先加长该分镜的 duration，不得超过 ${ceiling}。不要拆成每段只有镜头1。没对白的镜头至少 ${MIN_SILENT_BEAT_SECONDS} 秒，有对白的镜头至少 ${MIN_SPOKEN_BEAT_SECONDS} 秒并够把那句说完。总时长仍不得超过目标秒数。然后重新调用 save_storyboards，第一批 replace_existing: true。`
 }
 
 /** Sub-shots in order. Accepts both 【镜头1】 and 【鏡頭1】. */
