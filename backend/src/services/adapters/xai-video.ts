@@ -64,7 +64,7 @@ export function parseXaiVoiceRefs(raw?: string | null): XaiVoiceRef[] {
 export function normalizeXaiDuration(duration?: number | null) {
   const parsed = Math.round(Number(duration || 8))
   if (!Number.isFinite(parsed)) return 8
-  return Math.min(15, Math.max(1, parsed))
+  return Math.min(15, Math.max(3, parsed))
 }
 
 export function normalizeXaiAspectRatio(ratio?: string | null) {

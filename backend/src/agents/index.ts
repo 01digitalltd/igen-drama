@@ -77,7 +77,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
     name: '分镜拆解',
     instructions: `你是资深影视分镜师，擅长将剧本拆解为分镜方案。
 
-核心定义：一个分镜 = 一个「分镜段落」= 一个视频生成任务。每个段落时长必须落在 read_storyboard_context 返回的 video_generation.duration_min–duration_max 秒。按故事顺序往下拆。同一场景里前后相接、并且加起来不超过 duration_max 的动作放在一个分镜，写成镜头1、镜头2，需要时再加镜头3。超过 duration_max 就拆成下一个分镜，下一段可以仍是这个场景。不要为了同一场景把超过上限的镜头硬放在一段，也不要把下一个地方的镜头拉进来凑数。这一场只有一个动作时，可以只有镜头1。换了场景才开下一个分镜。中途离开再回来，是后面的新分镜，不要并回前面那场。每个镜头至少 2 秒；有自己对白的镜头至少 3 秒，还要够把那句说完。9 秒放不下 5 个各说一句的镜头。秒数仍不超过 duration_max 时，先把这段 duration 加长。已经超过 duration_max 就立刻拆开。不得删掉剧本里的事件。禁止写出超过 duration_max 的 duration。
+核心定义：一个分镜 = 一个「分镜段落」= 一个视频生成任务。每个段落时长必须落在 read_storyboard_context 返回的 video_generation.duration_min–duration_max 秒。按故事顺序往下拆。同一场景里前后相接、并且加起来不超过 duration_max 的动作放在一个分镜，写成镜头1、镜头2，需要时再加镜头3。超过 duration_max 就拆成下一个分镜，下一段可以仍是这个场景。不要为了同一场景把超过上限的镜头硬放在一段，也不要把下一个地方的镜头拉进来凑数。这一场只有一个动作时，可以只有镜头1。换了场景才开下一个分镜。中途离开再回来，是后面的新分镜，不要并回前面那场。每个分镜 duration 至少 3 秒，不要写 1 秒。段内没对白的镜头至少 2 秒；有自己对白的镜头至少 3 秒，还要够把那句说完。9 秒放不下 5 个各说一句的镜头。秒数仍不超过 duration_max 时，先把这段 duration 加长。已经超过 duration_max 就立刻拆开。不得删掉剧本里的事件。禁止写出超过 duration_max 的 duration。
 
 工作流程：
 1. 调用 read_storyboard_context 读取剧本、角色列表、场景列表、道具列表
@@ -95,7 +95,7 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
 - character_ids：当前段落涉及的角色 ID 列表，可以为空，也可以包含多个角色；必须从 characters 中选择
 - prop_ids：当前段落出现的关键道具 ID 列表（道具在画面中被看到、使用或特写时绑定），可以为空；必须从 props 中选择
 - scene_id：若可匹配到 scenes 中已有场景，必须填写正确 scene_id；无匹配时置空
-- duration：段落总时长，必须在 video_generation.duration_min–duration_max 之间
+- duration：段落总时长，至少 3 秒，并且必须在 video_generation.duration_min–duration_max 之间。不要写 1 秒
 - description：每个【镜头N】都写清场景、人物、动作、谁在说话。场景用已有场景名，一个镜头只有一个地方，换地方就换镜头。人物用角色列表里的名字，这一镜看得到谁就写谁，不要只用她/他。动作写这一眼的肢体。有人说话必须写「角色名说：「台词」」，自语和心想也用这个格式，不要没名字的引号。没人说话就不要写引号。旁白只有剧本有画外叙述时才写「旁白：…」
 - atmosphere：氛围、光线、色调、环境感受
 

@@ -102,7 +102,7 @@ test('prompt_skill routes Gemini Omni away from Seedance format', () => {
   assert.equal(promptSkillForVideo('minimax', 'MiniMax-H3'), 'seedance')
   assert.equal(promptSkillForVideo('xai', 'grok-imagine-video-1.5'), 'xai')
   assert.deepEqual(clipDurationBounds('xai', 'grok-imagine-video-1.5'), {
-    min: 1,
+    min: 3,
     max: 15,
     typical: 8,
     promptSegment: 3,

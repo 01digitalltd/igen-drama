@@ -68,7 +68,7 @@ export function clipDurationBounds(provider?: string | null, model?: string | nu
   const p = String(provider || '').toLowerCase()
   const m = String(model || '').toLowerCase()
   if (isXaiClip(p, m)) {
-    return { min: 1, max: 15, typical: 8, promptSegment: 3 }
+    return { min: 3, max: 15, typical: 8, promptSegment: 3 }
   }
   if (isOmniVideoConfig(p, m)) {
     return { min: 3, max: 10, typical: 8, promptSegment: 3 }
