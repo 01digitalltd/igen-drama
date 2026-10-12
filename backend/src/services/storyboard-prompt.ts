@@ -123,9 +123,9 @@ export function sameSceneSplits(
     const leftKeys = storyboardPlaceKeys(rows[index].description)
     const rightKeys = storyboardPlaceKeys(rows[index + 1].description)
     if (leftKeys.length !== 1 || rightKeys.length !== 1 || leftKeys[0] !== rightKeys[0]) continue
-    const room = cap - Math.max(0, Math.round(rows[index].duration))
+    const leftNeeded = storyboardActionSeconds(rows[index].description, budget)
     const nextNeeded = storyboardActionSeconds(rows[index + 1].description, budget)
-    if (nextNeeded > 0 && nextNeeded <= room) {
+    if (nextNeeded > 0 && leftNeeded + nextNeeded <= cap) {
       hits.push({
         shotNumber: rows[index].shotNumber,
         nextShotNumber: rows[index + 1].shotNumber,
@@ -146,7 +146,7 @@ export function formatSameSceneSplits(
 ) {
   const detail = rows.map((row) => `#${row.shotNumber} 和 #${row.nextShotNumber} 都是${row.place}`).join('；')
   const ceiling = durationMax ? `${durationMax} 秒` : 'duration_max'
-  return `同一场景被拆开：${detail}。下一段的动作还能放进上一段，上限 ${ceiling}。按故事顺序合成一个分镜，镜头2、镜头3留在这一段。换了场景才开下一个分镜。不要把顺序打乱，也不要拆成每段只有镜头1。`
+  return `同一场景被拆开：${detail}。两段加起来仍不超过上限 ${ceiling}，所以合成一个分镜。超过 ${ceiling} 就保持拆开，不要为了同一场景硬放回一段。`
 }
 
 /**
@@ -172,15 +172,20 @@ export function formatInnerShotOverflow(
   rows: Array<{ shotNumber: number; duration: number } & InnerShotOverflow>,
   durationMax?: number,
 ) {
+  const ceiling = durationMax ? `${durationMax} 秒` : 'duration_max'
   const detail = rows.map((row) => {
     const spoken = row.spoken ? `，其中 ${row.spoken} 个有对白` : ''
-    const cap = durationMax && row.needed <= durationMax
-      ? `把这段 duration 改成 ${row.needed} 秒，镜头2、镜头3留在这一段`
-      : `这段加到 ${durationMax || 'duration_max'} 秒仍不够，才把这一场景还没演完的镜头拆到下一个分镜`
+    const over = Boolean(durationMax && row.needed > durationMax)
+    const cap = over
+      ? `已经超过 ${ceiling}，现在就把后面的镜头拆到下一个分镜。这一段 duration 不要超过 ${ceiling}。下一段可以仍是同一场景`
+      : `把这段 duration 改成 ${row.needed} 秒，镜头2、镜头3留在这一段`
     return `#${row.shotNumber} 只有 ${row.duration} 秒，却有 ${row.beats} 个镜头${spoken}，至少要 ${row.needed} 秒。${cap}`
   }).join('；')
-  const ceiling = durationMax ? `${durationMax} 秒` : 'duration_max'
-  return `镜头装不下：${detail}。先加长该分镜的 duration，不得超过 ${ceiling}。同一场景的镜头留在这一段。不要拆成每段只有镜头1，也不要把另一个地方的镜头拉进来。没对白的镜头至少 ${MIN_SILENT_BEAT_SECONDS} 秒，有对白的镜头至少 ${MIN_SPOKEN_BEAT_SECONDS} 秒并够把那句说完。总时长仍不得超过目标秒数。然后重新调用 save_storyboards，第一批 replace_existing: true。`
+  const anyOver = rows.some((row) => Boolean(durationMax && row.needed > durationMax))
+  const rule = anyOver
+    ? `超过 ${ceiling} 就拆成下一个分镜，不要为了同一场景硬放在一段。拆开后每一段仍可有镜头2、镜头3，只要该段不超过 ${ceiling}。`
+    : `先加长该分镜的 duration，不得超过 ${ceiling}。放得下的同一场景留在这一段。不要拆成每段只有镜头1。`
+  return `镜头装不下：${detail}。${rule}没对白的镜头至少 ${MIN_SILENT_BEAT_SECONDS} 秒，有对白的镜头至少 ${MIN_SPOKEN_BEAT_SECONDS} 秒并够把那句说完。总时长仍不得超过目标秒数。然后重新调用 save_storyboards，第一批 replace_existing: true。`
 }
 
 /** Sub-shots in order. Accepts both 【镜头1】 and 【鏡頭1】. */

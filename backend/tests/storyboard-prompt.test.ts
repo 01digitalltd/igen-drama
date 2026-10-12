@@ -121,6 +121,24 @@ test('a short clip with two shots is lengthened instead of split into shot 1 onl
   assert.match(message, /不要拆成每段只有镜头1/)
 })
 
+test('a scene longer than the cap is split instead of kept together', () => {
+  const line = '今晚开始把这件事完整说完喔呀'
+  const description = [1, 2, 3, 4, 5].map((n) => `【镜头${n}】人物：甲。甲说：「${line}」`).join('\n')
+  const hit = innerShotsOverflow(description, 9)
+  assert.ok(hit)
+  assert.ok((hit?.needed || 0) > 15)
+  const message = formatInnerShotOverflow([{ shotNumber: 3, duration: 8, ...hit! }], 15)
+  assert.match(message, /已经超过 15 秒/)
+  assert.match(message, /拆到下一个分镜/)
+  assert.match(message, /不要为了同一场景硬放在一段/)
+  assert.doesNotMatch(message, /镜头2、镜头3留在这一段/)
+  const beat = (n: number) => `【镜头${n}】场景：客厅。人物：甲。甲说：「${line}」`
+  assert.equal(sameSceneSplits([
+    { shotNumber: 3, description: [beat(1), beat(2), beat(3)].join('\n'), duration: 15 },
+    { shotNumber: 4, description: [beat(1), beat(2)].join('\n'), duration: 8 },
+  ], 15).length, 0)
+})
+
 test('two spoken cuts fit in nine seconds and one unmarked shot is not split', () => {
   const two = '【镜头1】阿仪说：「今晚开始。」\n【镜头2】陈生说：「这些给你。」'
   assert.equal(innerShotsOverflow(two, 9), null)
@@ -161,9 +179,12 @@ test('adjacent beats of one place stay together and a later place does not', () 
     { shotNumber: 3, description: livingNext, duration: 8 },
   ], 15)
   assert.equal(ordered.length, 0)
+  const line = '今晚开始把这件事完整说完喔呀'
+  const crowded = [1, 2, 3].map((n) => `【镜头${n}】场景：客厅。人物：阿仪。阿仪说：「${line}」`).join('\n')
+  const crowdedNext = [1, 2].map((n) => `【镜头${n}】场景：客厅。人物：阿仪。阿仪说：「${line}」`).join('\n')
   const full = sameSceneSplits([
-    { shotNumber: 1, description: living, duration: 15 },
-    { shotNumber: 2, description: livingNext, duration: 8 },
+    { shotNumber: 1, description: crowded, duration: 15 },
+    { shotNumber: 2, description: crowdedNext, duration: 8 },
   ], 15)
   assert.equal(full.length, 0)
 })
