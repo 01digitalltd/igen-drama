@@ -16,6 +16,7 @@ import { applyHostVlogForm } from './vlog-form.js'
 import {
   STORYBOARD_SAVE_FOLLOW_UP,
   storyboardBreakerFailure,
+  shouldRetryStoryboardBreaker,
   storyboardBreakerPrepareStep,
   storyboardGenerateDiagnostic,
   type AgentToolResult,
@@ -175,7 +176,7 @@ export function startAgentJob(params: {
       liveShotCount: await countLiveStoryboards(episodeId),
       toolResults: normalizeGenerateToolResults(result),
     })
-    if (!preview) return result
+    if (!preview || !shouldRetryStoryboardBreaker(preview)) return result
     logTaskWarn('Agent', 'storyboard_breaker-retry', {
       episodeId,
       jobId: job.id,

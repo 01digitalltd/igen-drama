@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
   STORYBOARD_SAVE_FOLLOW_UP,
+  shouldRetryStoryboardBreaker,
   storyboardBreakerFailure,
   storyboardBreakerPrepareStep,
   storyboardGenerateDiagnostic,
@@ -88,6 +89,16 @@ test('storyboard breaker forces a read, then a save, then stops forcing after a 
     stepNumber: 2,
     steps: [{ toolCalls: [{ toolName: 'saveStoryboards' }] }],
   }), { toolChoice: 'auto' })
+  assert.deepEqual(storyboardBreakerPrepareStep({
+    stepNumber: 2,
+    steps: [{ toolResults: [{ result: '{"error":"停止拆分镜：这些镜头至少要 33 秒"}' }] }],
+  }), { toolChoice: 'none' })
+})
+
+test('a stop error does not start another storyboard generate', () => {
+  assert.equal(shouldRetryStoryboardBreaker(null), false)
+  assert.equal(shouldRetryStoryboardBreaker('镜头装不下'), true)
+  assert.equal(shouldRetryStoryboardBreaker('停止拆分镜：这些镜头至少要 33 秒'), false)
 })
 
 test('storyboard generate diagnostic keeps the finish reason', () => {

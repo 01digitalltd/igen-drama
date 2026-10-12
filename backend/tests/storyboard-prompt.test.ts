@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs, rewriteSeedancePromptRefs, innerShotsOverflow, formatInnerShotOverflow, storyboardPlaceKeys, sameSceneSplits, formatSameSceneSplits, formatMixedScenes } from '../src/services/storyboard-prompt.ts'
+import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs, rewriteSeedancePromptRefs, innerShotsOverflow, formatInnerShotOverflow, formatEpisodeFloorStop, storyboardPlaceKeys, sameSceneSplits, formatSameSceneSplits, formatMixedScenes } from '../src/services/storyboard-prompt.ts'
 
 test('prefers dedicated video_prompt over storyboard description', () => {
   assert.equal(
@@ -117,8 +117,10 @@ test('a short clip with two shots is lengthened instead of split into shot 1 onl
   const hit = innerShotsOverflow(two, 4)
   assert.ok(hit)
   const message = formatInnerShotOverflow([{ shotNumber: 1, duration: 4, ...hit! }], 15)
-  assert.match(message, /镜头2、镜头3留在这一段/)
-  assert.match(message, /不要拆成每段只有镜头1/)
+  assert.match(message, /把这段 duration 改成 \d+ 秒/)
+  assert.match(message, /只把上面的 duration 改成写明的秒数/)
+  assert.doesNotMatch(message, /拆/)
+  assert.doesNotMatch(message, /合并/)
 })
 
 test('a scene longer than the cap is split instead of kept together', () => {
@@ -187,4 +189,17 @@ test('adjacent beats of one place stay together and a later place does not', () 
     { shotNumber: 2, description: crowdedNext, duration: 8 },
   ], 15)
   assert.equal(full.length, 0)
+  assert.equal(sameSceneSplits([
+    { shotNumber: 1, description: living, duration: 8 },
+    { shotNumber: 2, description: livingNext, duration: 8 },
+  ], 15, undefined, false).length, 0)
+})
+
+test('an episode that cannot hold its speech stops instead of asking for another save', () => {
+  const message = formatEpisodeFloorStop(33, 30)
+  assert.match(message, /^停止拆分镜：/)
+  assert.match(message, /至少要 33 秒/)
+  assert.match(message, /目标只有 30 秒/)
+  assert.match(message, /不要再调用 save_storyboards/)
+  assert.doesNotMatch(message, /重新调用/)
 })

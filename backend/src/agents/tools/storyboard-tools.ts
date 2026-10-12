@@ -18,7 +18,7 @@ import {
 import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
 import { logTaskProgress, logTaskSuccess, logTaskWarn } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
-import { buildShotImageRefs, formatInnerShotOverflow, formatMixedScenes, formatSameSceneSplits, innerShotSecondsNeeded, innerShotsOverflow, sameSceneSplits, storyboardPlaceKeys, type BeatTimeBudget } from '../../services/storyboard-prompt.js'
+import { buildShotImageRefs, formatEpisodeFloorStop, formatInnerShotOverflow, formatMixedScenes, formatSameSceneSplits, innerShotSecondsNeeded, innerShotsOverflow, sameSceneSplits, storyboardPlaceKeys, type BeatTimeBudget } from '../../services/storyboard-prompt.js'
 import { orderXaiImageRefs } from '../../services/xai-prompt.js'
 import { applyBrandLogoPlacement, dramaAdFields, loadDramaAdContext, logoPlacementFromMetadata, logoPlacementInstruction } from '../../services/brand-logo.js'
 import { formatMissingSourceFacts, missingSourceSpans, sourceFactClauses } from '../../services/source-clauses.js'
@@ -378,6 +378,29 @@ const saveStoryboards = createTool({
       }
     }
 
+    if (bounds && targetSeconds) {
+      const existingLive = replace_existing === true
+        ? []
+        : (await db.select().from(schema.storyboards).where(eq(schema.storyboards.episodeId, episodeId)))
+          .filter(sb => !sb.deletedAt && !pending.some(item => item.shot_number === sb.storyboardNumber))
+      const planned = [
+        ...existingLive.map(sb => ({
+          needed: innerShotSecondsNeeded(sb.description, beatBudgetFor(clip)),
+        })),
+        ...pending.map(sb => ({
+          needed: innerShotSecondsNeeded(sb.description, beatBudgetFor(clip)),
+        })),
+      ]
+      const floorSum = planned.reduce((sum, item) => (
+        sum + Math.min(bounds.max, Math.max(bounds.min, item.needed || bounds.min))
+      ), 0)
+      if (floorSum > targetSeconds) {
+        const message = formatEpisodeFloorStop(floorSum, targetSeconds)
+        logTaskWarn('StoryboardTool', 'save-beat-budget', { episodeId, floorSum, targetSeconds })
+        return { error: message, max_total_seconds: targetSeconds, needed_seconds: floorSum }
+      }
+    }
+
     const crowded = pending.flatMap((sb) => {
       const rawDuration = sb.duration || 10
       const duration = bounds ? clampShotDurationForModel(rawDuration, bounds, bounds.typical) : rawDuration
@@ -408,7 +431,7 @@ const saveStoryboards = createTool({
       duration: bounds
         ? clampShotDurationForModel(sb.duration || 10, bounds, bounds.typical)
         : (sb.duration || 10),
-    })), bounds?.max, beatBudgetFor(clip))
+    })), bounds?.max, beatBudgetFor(clip), true)
     if (splitScenes.length) {
       const message = formatSameSceneSplits(splitScenes, bounds?.max)
       logTaskWarn('StoryboardTool', 'save-same-scene-split', {
@@ -458,31 +481,6 @@ const saveStoryboards = createTool({
       return {
         error: message,
         reference_audio_max_seconds: SEEDANCE_R2V_MAX_AUDIO_SECONDS,
-      }
-    }
-
-    if (bounds && targetSeconds) {
-      const existingLive = replace_existing === true
-        ? []
-        : (await db.select().from(schema.storyboards).where(eq(schema.storyboards.episodeId, episodeId)))
-          .filter(sb => !sb.deletedAt && !pending.some(item => item.shot_number === sb.storyboardNumber))
-      const planned = [
-        ...existingLive.map(sb => ({
-          duration: sb.duration || bounds.typical,
-          needed: innerShotSecondsNeeded(sb.description, beatBudgetFor(clip)),
-        })),
-        ...pending.map(sb => ({
-          duration: clampShotDurationForModel(sb.duration || bounds.typical, bounds, bounds.typical),
-          needed: innerShotSecondsNeeded(sb.description, beatBudgetFor(clip)),
-        })),
-      ]
-      const floorSum = planned.reduce((sum, item) => (
-        sum + Math.min(bounds.max, Math.max(bounds.min, item.needed || bounds.min))
-      ), 0)
-      if (floorSum > targetSeconds) {
-        const message = `这些分镜里的镜头至少要 ${floorSum} 秒，超过本集目标 ${targetSeconds} 秒。请减少用不到的空镜，对白留在各自的分镜里，不要把某一段压到镜头演不完。然后重新调用 save_storyboards，第一批 replace_existing: true。`
-        logTaskWarn('StoryboardTool', 'save-beat-budget', { episodeId, floorSum, targetSeconds })
-        return { error: message, max_total_seconds: targetSeconds, needed_seconds: floorSum }
       }
     }
 

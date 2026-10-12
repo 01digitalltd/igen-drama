@@ -4,6 +4,8 @@
  * over-budget batches and still return a successful generate().
  */
 
+import { STORYBOARD_STOP_MARKER } from './storyboard-prompt.js'
+
 export type AgentToolResult = {
   toolName: string | null
   result: string
@@ -55,6 +57,19 @@ function stepCalledSave(step: { toolCalls?: unknown[]; toolResults?: unknown[] }
   return calls.some((call) => /save[_]?storyboard/i.test(toolNameOf(call)))
 }
 
+function stepText(step: unknown) {
+  try {
+    return JSON.stringify(step)
+  } catch {
+    return ''
+  }
+}
+
+export function shouldRetryStoryboardBreaker(failure: string | null) {
+  if (!failure) return false
+  return !failure.includes(STORYBOARD_STOP_MARKER)
+}
+
 /**
  * Step 0 must read context. Later steps must save until one save call exists,
  * so a text-only turn cannot end the job.
@@ -64,6 +79,9 @@ export function storyboardBreakerPrepareStep(args: {
   stepNumber?: number
   steps?: Array<{ toolCalls?: unknown[]; toolResults?: unknown[] }>
 }) {
+  if ((args.steps || []).some((step) => stepText(step).includes(STORYBOARD_STOP_MARKER))) {
+    return { toolChoice: 'none' as const }
+  }
   if ((args.steps || []).some((step) => stepCalledSave(step))) {
     return { toolChoice: 'auto' as const }
   }
