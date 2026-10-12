@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildShotImageRefs } from '../src/services/storyboard-prompt.ts'
-import { fitXaiSpokenClip, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt, xaiBeatImageIssues, xaiSpokenLineIssues, xaiTimelineEndSeconds } from '../src/services/xai-prompt.ts'
+import { fitXaiSpokenClip, muteUnspokenCalls, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt, xaiBeatImageIssues, xaiSpokenLineIssues, xaiTimelineEndSeconds } from '../src/services/xai-prompt.ts'
 
 test('xAI reference order is character, scene, then prop', () => {
   const source = buildShotImageRefs({
@@ -194,7 +194,33 @@ test('xAI keeps a clip that has no spoken line', () => {
   const prompt = '[0-3s] <IMAGE_0> walks in.\n[3-8s] <IMAGE_0> sits down.'
   const fitted = fitXaiSpokenClip(prompt, 8)
   assert.equal(fitted.duration, 8)
-  assert.equal(fitted.prompt, prompt)
+  assert.match(fitted.prompt, /This shot has no dialogue/)
+  assert.match(fitted.prompt, /walks in/)
+  const again = fitXaiSpokenClip(fitted.prompt, fitted.duration)
+  assert.equal(again.prompt, fitted.prompt)
+})
+
+test('a heard call is not turned into a spoken line', () => {
+  const description = '【鏡頭1】場景：阿美家中 · 臥室。人物：阿美。動作：阿美猛地從床上驚醒，彷彿聽到小朋友叫媽咪。她走到梳妝台前，看著鏡中的自己。'
+  const prompt = [
+    '[0-4s] 阿美從床上驚醒，彷彿聽到小朋友叫媽咪。',
+    '[4-8s] 阿美說：「媽咪。」',
+  ].join('\n')
+  const issues = xaiSpokenLineIssues(prompt, description)
+  assert.deepEqual(issues.invented, ['媽咪。'])
+  const muted = muteUnspokenCalls(prompt, description)
+  assert.doesNotMatch(muted, /媽咪/)
+  assert.match(muted, /自己沒有開口/)
+  assert.match(muted, /无对白/)
+  const fitted = fitXaiSpokenClip(muted, 8)
+  assert.match(fitted.prompt, /This shot has no dialogue/)
+  assert.doesNotMatch(fitted.prompt, /媽咪/)
+
+  const said = muteUnspokenCalls(
+    '[0-4s] 阿美說：「我聽到小朋友叫媽咪。」',
+    '【鏡頭1】阿美說：「我聽到小朋友叫媽咪。」',
+  )
+  assert.match(said, /叫媽咪/)
 })
 
 test('xAI speech fit stays on the storyboard duration', () => {

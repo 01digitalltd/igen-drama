@@ -5,6 +5,7 @@ import {
   narratorInlineLabel,
   normalizeVoVoice,
   rewriteNarratorLabels,
+  stripUnsourcedNarration,
   voVoiceInstruction,
   voVoiceLabel,
 } from '../src/services/vo-voice.ts'
@@ -43,4 +44,17 @@ test('generation appends a narrator tag without duplicating it', () => {
   assert.match(first, /VO_NARRATOR: female \| speaker=S1/)
   const second = appendVoVoiceDirective(first, 'female')
   assert.equal(second, first)
+})
+
+test('a shot with no narrator does not get a narrator voice', () => {
+  const prompt = '[0-3s] 美玲坐下。女声旁白：今晚開始。\n[3-6s] 美玲说：「你好。」'
+  const stripped = stripUnsourcedNarration(prompt, '【镜头1】美玲坐下。美玲说：「你好。」')
+  assert.match(stripped, /无旁白/)
+  assert.match(stripped, /美玲说：「你好。」/)
+  assert.doesNotMatch(stripped, /今晚開始/)
+  const kept = stripUnsourcedNarration(prompt, '【镜头1】旁白：今晚開始。美玲说：「你好。」')
+  assert.match(kept, /今晚開始/)
+  const directive = appendVoVoiceDirective('[0-3s] 美玲坐下。无旁白。', 'female')
+  assert.match(directive, /VO_NO_NARRATOR/)
+  assert.doesNotMatch(directive, /VO_NARRATOR:/)
 })

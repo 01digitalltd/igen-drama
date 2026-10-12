@@ -117,7 +117,7 @@ export function appendVoLanguageDirective(prompt: string, codeRaw?: string | nul
   const code = normalizeDialogueLanguage(codeRaw)
   const label = LABELS[code]
   const base = String(prompt || '').trim()
-  const tag = `[VO_DIALOGUE_LANGUAGE: ${label} | code=${code} | All spoken dialogue and voice-over must be in this language only — **audio only**; never render this language as on-screen text, subtitles, captions, titles, or CJK glyphs.]`
+  const tag = `[VO_DIALOGUE_LANGUAGE: ${label} | code=${code} | Spoken dialogue must be in this language only — **audio only**; never render this language as on-screen text, subtitles, captions, titles, or CJK glyphs. Do not add voice-over unless the shot already has a narrator line.]`
   const withLang = base.includes('VO_DIALOGUE_LANGUAGE')
     ? base
     : base ? `${base}\n\n${tag}` : tag

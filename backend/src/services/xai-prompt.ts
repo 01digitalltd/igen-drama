@@ -58,7 +58,10 @@ const XAI_DURATION_MAX = 15
 const XAI_SPEECH_TAIL_SECONDS = 1
 const XAI_CJK_CHARS_PER_SECOND = 2.5
 const XAI_EN_WORDS_PER_SECOND = 1.7
-const XAI_SPEECH_TAG = '[XAI_SPEECH: Speak every quoted line exactly, in order, in full, once. Do not repeat a line in a later beat. Do not replace a line with a shorter slogan, and do not add a line that is not quoted. Finish the last word at least one second before the clip ends.]'
+const XAI_SPEECH_TAG = '[XAI_SPEECH: Speak every quoted line exactly, in order, in full, once. Do not repeat a line in a later beat. Do not replace a line with a shorter slogan, and do not add a line that is not quoted. Do not add an off-screen narrator or voice-over unless a narrator line is already written. A word someone only hears, remembers, or imagines is not a line. Finish the last word at least one second before the clip ends.]'
+const XAI_SILENT_TAG = '[XAI_SPEECH: This shot has no dialogue. Do not speak any word. A word someone only hears, remembers, or imagines is not a line. Keep every mouth closed except for breathing.]'
+const HEARD_CALL = /(?:彷彿|仿佛|好像|似乎|像是)?(?:聽到|听到|聽見|听见)[^。\n]{0,24}?(?:叫|喊)(?:著|着)?[^。，,！？!?\n]{1,8}/g
+const INVENTED_QUOTE = /[@＠]?[\u4e00-\u9fffA-Za-z0-9._\s-]{0,24}?(?:说|說|says)\s*[：:]?\s*[「“"][^」”"\n]{1,200}[」”"]|[「“"][^」”"\n]{1,80}[」”"]/giu
 const XAI_STILL_TAG = '[XAI_STILL: <IMAGE_0> is shot 1 of this clip and the exact opening instant. Keep its framing, people, food, props, and setting. Later beats in the timeline move away from this picture. Do not redraw those later beats into the opening frame.]'
 
 /**
@@ -141,7 +144,8 @@ export function xaiSpokenLineIssues(prompt: string, description?: string | null)
     if (found < 0) missing.push(text)
     else cursor = found + 1
   }
-  return { repeated, missing }
+  const invented = wanted.length ? [] : spoken
+  return { repeated, missing, invented }
 }
 
 /** A beat that names a reference must use that reference's own `<IMAGE_N>`. */
@@ -166,6 +170,35 @@ export function xaiBeatImageIssues(
 
 function stripXaiSpeechTag(prompt: string) {
   return prompt.replace(/\n*\[XAI_SPEECH:[\s\S]*?\]\s*$/u, '').trim()
+}
+
+function insideQuotes(text: string, offset: number) {
+  const before = text.slice(0, offset)
+  const opened = (before.match(/[「“"]/g) || []).length
+  const closed = (before.match(/[」”"]/g) || []).length
+  return opened > closed
+}
+
+/**
+ * A heard call is not a line. When the description has no 「說：「…」」
+ * or narrator line, drop quotes the prompt invented from that call.
+ */
+export function muteUnspokenCalls(prompt: string, description?: string | null) {
+  const source = String(prompt || '')
+  const heard = source.replace(HEARD_CALL, (match, offset) => (
+    insideQuotes(source, offset) ? match : '彷彿聽到遠處的呼叫，自己沒有開口'
+  ))
+  if (extractSpokenLines(String(description || '')).length) return heard
+  return heard
+    .replace(INVENTED_QUOTE, '无对白')
+    .replace(/(?:无对白\s*){2,}/g, '无对白')
+}
+
+function withSpeechTag(body: string, hasSpeech: boolean) {
+  const text = body.trim()
+  if (text.includes('[XAI_SPEECH:')) return text
+  const tag = hasSpeech ? XAI_SPEECH_TAG : XAI_SILENT_TAG
+  return text ? `${text}\n\n${tag}` : tag
 }
 
 function spokenChunks(line: string) {
@@ -295,13 +328,12 @@ export function fitXaiSpokenClip(prompt: string, requested?: number | null, max 
   }, 0)
   const segmentSpeech = segments.reduce((sum, segment) => sum + segment.speech, 0)
   if (!segments.length) {
-    const tagged = segmentSpeech + looseSpeech > 0 ? `${clean}\n\n${XAI_SPEECH_TAG}` : clean
-    return { prompt: tagged, duration: asked }
+    return { prompt: withSpeechTag(clean, segmentSpeech + looseSpeech > 0), duration: asked }
   }
   if (segmentSpeech + looseSpeech <= 0) {
     const endsAt = Math.max(...segments.map((segment) => segment.end))
     const startsAt = Math.min(...segments.map((segment) => segment.start))
-    if (startsAt === 0 && endsAt === asked) return { prompt: clean, duration: asked }
+    if (startsAt === 0 && endsAt === asked) return { prompt: withSpeechTag(clean, false), duration: asked }
   }
 
   const speech = segments.map((segment) => segment.speech)
@@ -335,6 +367,5 @@ export function fitXaiSpokenClip(prompt: string, requested?: number | null, max 
     nextLines.push(`[${cursor}-${asked}s] Hold. The spoken line has already finished. No more speech.`)
   }
   const body = nextLines.join('\n').trim()
-  const tagged = segmentSpeech + looseSpeech > 0 ? `${body}\n\n${XAI_SPEECH_TAG}` : body
-  return { prompt: tagged, duration: asked }
+  return { prompt: withSpeechTag(body, segmentSpeech + looseSpeech > 0), duration: asked }
 }

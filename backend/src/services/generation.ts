@@ -18,7 +18,7 @@ import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, appendAssetRestyleDirective, appendImageStyleDirective } from './style-preset.js'
 import { appendVoLanguageDirective, getDramaDialogueLanguage, storyboardImageTextInstruction } from './dialogue-language.js'
-import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels } from './vo-voice.js'
+import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels, stripUnsourcedNarration } from './vo-voice.js'
 import { assertSeedanceAllowedForStyle, canFallbackMiniMaxToSeedance, expectedVideoProvider, isRealisticDramaStyle, isSeedanceVideoConfig, isXaiVideoConfig, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE, MINIMAX_H3_MISSING_MESSAGE, XAI_VIDEO_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt } from './face-grid.js'
 import {
@@ -27,7 +27,7 @@ import {
   overlayOrangeGridOnRef,
 } from './character-grid.js'
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, composeStoryboardImagePrompt, openingFrameRefs, parseOpeningFrameChoice, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
-import { fitXaiSpokenClip, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt } from './xai-prompt.js'
+import { fitXaiSpokenClip, muteUnspokenCalls, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt } from './xai-prompt.js'
 import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import { appendBrandLogoDirective, brandLogoPropIfNeeded } from './brand-logo.js'
 import { isBrandLogoProp } from '../utils/project-category.js'
@@ -445,11 +445,13 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
 
   let prompt = (params.prompt || '').trim()
   let shotDuration: number | undefined
+  let sourceDescription = ''
   if (params.storyboardId) {
     const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, params.storyboardId))
     if (sb) {
       if (!prompt) prompt = resolveStoryboardVideoPrompt(sb)
       shotDuration = sb.duration || undefined
+      sourceDescription = sb.description || ''
     }
   }
   let duration = resolveVideoGenerationDuration({
@@ -460,6 +462,10 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
   })
   const spoken = await getDramaDialogueLanguage(params.dramaId)
   const narratorVoice = await getDramaVoVoice(params.dramaId)
+  if (sourceDescription) {
+    prompt = stripUnsourcedNarration(prompt, sourceDescription)
+    prompt = muteUnspokenCalls(prompt, sourceDescription)
+  }
   prompt = rewriteNarratorLabels(prompt, narratorVoice)
   if (!isXaiVideoConfig(config.provider, model)) {
     prompt = await rewritePromptSpokenLines(prompt, spoken)

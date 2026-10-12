@@ -74,6 +74,81 @@ export function innerShotSecondsNeeded(description?: string | null, budget?: Bea
   return needed + Math.max(0, Math.round(Number(budget?.tailSeconds) || 0))
 }
 
+function scenePlaceKey(label: string) {
+  const parts = label.split(/[·•｜|]/).map((part) => part.trim()).filter(Boolean)
+  return parts[parts.length - 1] || ''
+}
+
+/** Place names written on each 【镜头】. One storyboard should name only one. */
+export function storyboardPlaceKeys(description?: string | null) {
+  const keys: string[] = []
+  const seen = new Set<string>()
+  for (const beat of storyboardBeats(description)) {
+    const match = beat.match(/(?:場景|场景)[：:]\s*([^。\n]+)/)
+    const key = scenePlaceKey(match?.[1] || '')
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    keys.push(key)
+  }
+  return keys
+}
+
+/** Seconds of action in a storyboard, including a single beat. */
+export function storyboardActionSeconds(description?: string | null, budget?: BeatTimeBudget) {
+  const needed = innerShotSecondsNeeded(description, budget)
+  if (needed > 0) return needed
+  const beats = storyboardBeats(description)
+  const text = (beats[0] || String(description || '')).trim()
+  if (!text) return 0
+  const charsPerSecond = budget?.charsPerSecond && budget.charsPerSecond > 0
+    ? budget.charsPerSecond
+    : DIALOGUE_CHARS_PER_SECOND
+  const floor = innerBeatSeconds(text, charsPerSecond)
+  return floor + (extractSpokenLines(text).length ? Math.max(0, Math.round(Number(budget?.tailSeconds) || 0)) : 0)
+}
+
+/**
+ * Adjacent storyboards of the same place that still fit in one clip.
+ * A later return to that place, after somewhere else, stays separate.
+ */
+export function sameSceneSplits(
+  rows: Array<{ shotNumber: number; description?: string | null; duration: number }>,
+  durationMax?: number,
+  budget?: BeatTimeBudget,
+) {
+  const cap = Math.round(Number(durationMax) || 0)
+  if (cap <= 0) return [] as Array<{ shotNumber: number; nextShotNumber: number; place: string }>
+  const hits: Array<{ shotNumber: number; nextShotNumber: number; place: string }> = []
+  for (let index = 0; index < rows.length - 1; index++) {
+    const leftKeys = storyboardPlaceKeys(rows[index].description)
+    const rightKeys = storyboardPlaceKeys(rows[index + 1].description)
+    if (leftKeys.length !== 1 || rightKeys.length !== 1 || leftKeys[0] !== rightKeys[0]) continue
+    const room = cap - Math.max(0, Math.round(rows[index].duration))
+    const nextNeeded = storyboardActionSeconds(rows[index + 1].description, budget)
+    if (nextNeeded > 0 && nextNeeded <= room) {
+      hits.push({
+        shotNumber: rows[index].shotNumber,
+        nextShotNumber: rows[index + 1].shotNumber,
+        place: leftKeys[0],
+      })
+    }
+  }
+  return hits
+}
+
+export function formatMixedScenes(shotNumber: number, places: string[]) {
+  return `#${shotNumber} 同一分镜混了不同场景：${places.join('、')}。按故事顺序，同一场景的镜头留在这一段；换场景才放到下一个分镜，不要把后面的地方提前塞进来。`
+}
+
+export function formatSameSceneSplits(
+  rows: Array<{ shotNumber: number; nextShotNumber: number; place: string }>,
+  durationMax?: number,
+) {
+  const detail = rows.map((row) => `#${row.shotNumber} 和 #${row.nextShotNumber} 都是${row.place}`).join('；')
+  const ceiling = durationMax ? `${durationMax} 秒` : 'duration_max'
+  return `同一场景被拆开：${detail}。下一段的动作还能放进上一段，上限 ${ceiling}。按故事顺序合成一个分镜，镜头2、镜头3留在这一段。换了场景才开下一个分镜。不要把顺序打乱，也不要拆成每段只有镜头1。`
+}
+
 /**
  * Reject a storyboard whose cuts cannot play inside its duration.
  * One short line in an unmarked description is left alone.
@@ -101,11 +176,11 @@ export function formatInnerShotOverflow(
     const spoken = row.spoken ? `，其中 ${row.spoken} 个有对白` : ''
     const cap = durationMax && row.needed <= durationMax
       ? `把这段 duration 改成 ${row.needed} 秒，镜头2、镜头3留在这一段`
-      : `这段加到 ${durationMax || 'duration_max'} 秒仍不够，才把多出来的镜头拆到下一个分镜`
+      : `这段加到 ${durationMax || 'duration_max'} 秒仍不够，才把这一场景还没演完的镜头拆到下一个分镜`
     return `#${row.shotNumber} 只有 ${row.duration} 秒，却有 ${row.beats} 个镜头${spoken}，至少要 ${row.needed} 秒。${cap}`
   }).join('；')
   const ceiling = durationMax ? `${durationMax} 秒` : 'duration_max'
-  return `镜头装不下：${detail}。先加长该分镜的 duration，不得超过 ${ceiling}。不要拆成每段只有镜头1。没对白的镜头至少 ${MIN_SILENT_BEAT_SECONDS} 秒，有对白的镜头至少 ${MIN_SPOKEN_BEAT_SECONDS} 秒并够把那句说完。总时长仍不得超过目标秒数。然后重新调用 save_storyboards，第一批 replace_existing: true。`
+  return `镜头装不下：${detail}。先加长该分镜的 duration，不得超过 ${ceiling}。同一场景的镜头留在这一段。不要拆成每段只有镜头1，也不要把另一个地方的镜头拉进来。没对白的镜头至少 ${MIN_SILENT_BEAT_SECONDS} 秒，有对白的镜头至少 ${MIN_SPOKEN_BEAT_SECONDS} 秒并够把那句说完。总时长仍不得超过目标秒数。然后重新调用 save_storyboards，第一批 replace_existing: true。`
 }
 
 /** Sub-shots in order. Accepts both 【镜头1】 and 【鏡頭1】. */
@@ -381,6 +456,100 @@ function openingAtmosphere(raw: string) {
   return `镜头 1 刚开始时的光线：${cut}。不要把镜头 1 后半段或后面镜头的情绪画进这一帧。`
 }
 
+function namesInClause(body: string, people: string[]) {
+  const visible = body.replace(/「[^」]*」/g, '').replace(/『[^』]*』/g, '')
+  return people.filter((name) => textMentions(visible, [name]))
+}
+
+/** 場景／人物 are the shot roster, not who is already in frame 0. */
+function rosterSkipRanges(beat: string) {
+  const ranges: Array<[number, number]> = []
+  const re = /(?:場景|场景|人物|角色)[：:][^。\n]*[。]?/g
+  let match: RegExpExecArray | null
+  while ((match = re.exec(beat))) ranges.push([match.index, match.index + match[0].length])
+  return ranges
+}
+
+function clauseSpans(text: string) {
+  const spans: Array<{ start: number, body: string }> = []
+  let start = 0
+  let quote: string | null = null
+  const openers: Record<string, string> = { '「': '」', '『': '』' }
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (!quote && openers[ch]) {
+      quote = openers[ch]
+      continue
+    }
+    if (quote && ch === quote) {
+      quote = null
+      continue
+    }
+    if (!quote && '。！？!?；;，,、'.includes(ch)) {
+      const body = text.slice(start, i).trim()
+      if (body) spans.push({ start, body })
+      start = i + 1
+    }
+  }
+  const tail = text.slice(start).trim()
+  if (tail) spans.push({ start, body: tail })
+  return spans
+}
+
+function openingPeople(description: string | null | undefined, refs: ShotImageRef[]) {
+  const beat = firstStoryboardBeat(description)
+  const found = new Set<string>()
+  const roster = beat.match(/(?:人物|角色)[：:]\s*([^。\n]+)/)
+  if (roster) {
+    for (const name of roster[1].split(/[、,，/]/)) {
+      const trimmed = name.trim()
+      if (trimmed.length >= 2) found.add(trimmed)
+    }
+  }
+  for (const ref of refs) {
+    if (ref.kind !== 'character') continue
+    for (const label of refLabels(ref)) found.add(label)
+  }
+  return [...found]
+}
+
+function shrinkRoster(beat: string, present: string[]) {
+  if (!present.length) return beat
+  return beat.replace(/(人物|角色)([：:])([^。\n]*)/, (_match, label, colon, body) => {
+    const listed = String(body).split(/[、,，/]/).map((name) => name.trim()).filter(Boolean)
+    const kept = listed.filter((name) => present.some((person) => person === name || person.includes(name) || name.includes(person)))
+    const names = kept.length ? kept : present
+    return `${label}${colon}${names.join('、')}`
+  })
+}
+
+/**
+ * Frame 0 is the first instant of shot 1. People named only in a later
+ * clause — after the door opens, after they walk in — are not in it yet.
+ * The 人物 line lists the whole shot and is not itself an entrance.
+ */
+export function openingInstantBeat(description?: string | null, people: string[] = []) {
+  const beat = firstStoryboardBeat(description)
+  if (!beat || people.length < 2) return beat
+  const skip = rosterSkipRanges(beat)
+  const named = new Set<string>()
+  let cut: number | null = null
+  for (const span of clauseSpans(beat)) {
+    if (skip.some(([from, to]) => span.start >= from && span.start < to)) continue
+    const hits = namesInClause(span.body, people)
+    const fresh = hits.filter((name) => !named.has(name))
+    if (named.size > 0 && fresh.length > 0) {
+      cut = span.start
+      break
+    }
+    for (const name of hits) named.add(name)
+  }
+  let next = beat
+  if (cut != null) next = beat.slice(0, cut).replace(/[，,、\s]+$/u, '').trim()
+  if (named.size > 0) next = shrinkRoster(next, [...named])
+  return next
+}
+
 /**
  * Frame 0 attaches the files the storyboard-image skill selected.
  * Without that selection, a later-shot name stays off and the scene stays
@@ -392,7 +561,8 @@ export function openingFrameRefs(
   choice?: OpeningFrameChoice | null,
 ): ShotImageRef[] {
   const beats = storyboardBeats(description)
-  const beat = firstStoryboardBeat(description)
+  const full = firstStoryboardBeat(description)
+  const beat = openingInstantBeat(description, openingPeople(description, refs))
   const later = beats.slice(1).join('\n')
   const kept: ShotImageRef[] = []
   const unknownCharacters: ShotImageRef[] = []
@@ -408,7 +578,7 @@ export function openingFrameRefs(
         kept.push(ref)
         continue
       }
-      if (choiceSelects(choice.names, labels)) kept.push(ref)
+      if (choiceSelects(choice.names, labels) && (!textMentions(full, labels) || textMentions(beat, labels))) kept.push(ref)
       continue
     }
     if (ref.kind === 'character') {
@@ -453,7 +623,7 @@ export function composeStoryboardImagePrompt(opts: {
   onScreenText?: string | null
   openingFrame?: OpeningFrameChoice | null
 }): string {
-  const beat = firstStoryboardBeat(opts.description)
+  const beat = openingInstantBeat(opts.description, openingPeople(opts.description, opts.imageRefs || []))
   const refs = openingFrameRefs(opts.description, opts.imageRefs || [], opts.openingFrame)
   const sceneLocked = refs.some((ref) => ref.kind === 'scene')
   const lock = refs.length
@@ -469,6 +639,7 @@ export function composeStoryboardImagePrompt(opts: {
     filmContinuityLine(opts.styleValue, { allowShotPlace: !sceneLocked }),
     `这是这段影片的第 0 帧，只画镜头 1 动作刚开始的瞬间${style ? `，${style}` : ''}。画幅跟项目。不要画镜头 2 及之后。`,
     '镜头 1 如果有好几句，只画第一眼：人刚入画、动作还没做完。后半句的结果不要画成已经发生。',
+    '人物名单是这一整段镜头里会出现的人。这一帧只画动作最前面的瞬间。后一句才进门、跑来或开口的人现在还不在画面里，不要画他们，也不要在门口补一个没被点名的人。',
     sceneLocked ? '' : '这一帧的地点只跟镜头 1。没有附上场景图时，不要改画成这段后面镜头的房间。',
     normalizeStyleValue(opts.styleValue) === '3d' ? '头身比约 1:2 的 3D Chibi 盲盒风三维，光滑树脂，禁止电影质感真人。' : '',
     lock,

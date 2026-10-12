@@ -18,7 +18,7 @@ import {
 import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
 import { logTaskProgress, logTaskSuccess, logTaskWarn } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
-import { buildShotImageRefs, formatInnerShotOverflow, innerShotSecondsNeeded, innerShotsOverflow, type BeatTimeBudget } from '../../services/storyboard-prompt.js'
+import { buildShotImageRefs, formatInnerShotOverflow, formatMixedScenes, formatSameSceneSplits, innerShotSecondsNeeded, innerShotsOverflow, sameSceneSplits, storyboardPlaceKeys, type BeatTimeBudget } from '../../services/storyboard-prompt.js'
 import { orderXaiImageRefs } from '../../services/xai-prompt.js'
 import { applyBrandLogoPlacement, dramaAdFields, loadDramaAdContext, logoPlacementFromMetadata, logoPlacementInstruction } from '../../services/brand-logo.js'
 import { formatMissingSourceFacts, missingSourceSpans, sourceFactClauses } from '../../services/source-clauses.js'
@@ -393,6 +393,31 @@ const saveStoryboards = createTool({
       return { error: message }
     }
 
+    const mixed = pending.flatMap((sb) => {
+      const places = storyboardPlaceKeys(sb.description)
+      return places.length > 1 ? [formatMixedScenes(sb.shot_number, places)] : []
+    })
+    if (mixed.length) {
+      logTaskWarn('StoryboardTool', 'save-mixed-scenes', { episodeId, shots: mixed.length })
+      return { error: `${mixed.join('；')}然后重新调用 save_storyboards，第一批 replace_existing: true。` }
+    }
+
+    const splitScenes = sameSceneSplits(pending.map((sb) => ({
+      shotNumber: sb.shot_number,
+      description: sb.description,
+      duration: bounds
+        ? clampShotDurationForModel(sb.duration || 10, bounds, bounds.typical)
+        : (sb.duration || 10),
+    })), bounds?.max, beatBudgetFor(clip))
+    if (splitScenes.length) {
+      const message = formatSameSceneSplits(splitScenes, bounds?.max)
+      logTaskWarn('StoryboardTool', 'save-same-scene-split', {
+        episodeId,
+        shots: splitScenes.map((row) => row.shotNumber).join(','),
+      })
+      return { error: `${message}然后重新调用 save_storyboards，第一批 replace_existing: true。` }
+    }
+
     const spokenLanguage = await getDramaDialogueLanguage(dramaId)
     const audioOverflows = pending.flatMap((sb) => {
       const text = [sb.description, sb.atmosphere].filter(Boolean).join('\n')
@@ -659,6 +684,10 @@ const updateStoryboard = createTool({
               ...hit,
             }], clip?.bounds.max),
           }
+        }
+        const places = storyboardPlaceKeys(nextDescription)
+        if (descriptionChanged && places.length > 1) {
+          return { error: formatMixedScenes(storyboard.storyboardNumber, places) }
         }
       }
     }

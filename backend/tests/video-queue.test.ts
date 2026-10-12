@@ -2,16 +2,27 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   MINIMAX_VIDEO_CONCURRENT_DEFAULT,
+  XAI_VIDEO_CONCURRENT_DEFAULT,
   splitVideoQueueByConcurrency,
   videoMaxConcurrentForProvider,
 } from '../src/services/video-queue.ts'
 
-test('MiniMax can run several clips; Gemini stays serial', () => {
+test('MiniMax and xAI can run several clips; Gemini stays serial', () => {
   assert.equal(videoMaxConcurrentForProvider('minimax'), MINIMAX_VIDEO_CONCURRENT_DEFAULT)
   assert.equal(videoMaxConcurrentForProvider('minimax', { DRAMA_VIDEO_CONCURRENT_MINIMAX: '8' }), 8)
   assert.equal(videoMaxConcurrentForProvider('minimax', { DRAMA_VIDEO_CONCURRENT_MINIMAX: '99' }), 15)
+  assert.equal(videoMaxConcurrentForProvider('xai'), XAI_VIDEO_CONCURRENT_DEFAULT)
+  assert.equal(videoMaxConcurrentForProvider('xai', { DRAMA_VIDEO_CONCURRENT_XAI: '8' }), 8)
+  assert.equal(videoMaxConcurrentForProvider('xai', { DRAMA_VIDEO_CONCURRENT_XAI: '99' }), 15)
   assert.equal(videoMaxConcurrentForProvider('gemini'), 1)
   assert.equal(videoMaxConcurrentForProvider('volcengine'), 1)
+})
+
+test('splitVideoQueueByConcurrency starts xAI clips together', () => {
+  const queued = [1, 2, 3, 4].map((id) => ({ id, provider: 'xai' }))
+  const { start, defer } = splitVideoQueueByConcurrency(queued, {})
+  assert.deepEqual(start.map((item) => item.id), [1, 2, 3, 4])
+  assert.deepEqual(defer, [])
 })
 
 test('splitVideoQueueByConcurrency starts MiniMax in parallel and defers the rest', () => {

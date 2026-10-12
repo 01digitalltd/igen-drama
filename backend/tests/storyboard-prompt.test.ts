@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs, rewriteSeedancePromptRefs, innerShotsOverflow, formatInnerShotOverflow } from '../src/services/storyboard-prompt.ts'
+import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs, rewriteSeedancePromptRefs, innerShotsOverflow, formatInnerShotOverflow, storyboardPlaceKeys, sameSceneSplits, formatSameSceneSplits, formatMixedScenes } from '../src/services/storyboard-prompt.ts'
 
 test('prefers dedicated video_prompt over storyboard description', () => {
   assert.equal(
@@ -141,4 +141,29 @@ test('xAI speech rate keeps a long line from borrowing a faster model budget', (
   assert.equal(innerShotsOverflow(description, 8), null)
   const xai = innerShotsOverflow(description, 8, { charsPerSecond: 2.5, tailSeconds: 1 })
   assert.ok((xai?.needed || 0) > 8)
+})
+
+test('adjacent beats of one place stay together and a later place does not', () => {
+  const living = '【镜头1】场景：阿仪家中 · 客厅。人物：阿仪。动作：阿仪坐下。'
+  const livingNext = '【镜头1】场景：客厅。人物：阿仪、陈生。动作：陈生把花递给阿仪。'
+  const bedroom = '【镜头1】场景：阿仪家中 · 卧室。人物：阿仪。动作：阿仪醒来。'
+  assert.deepEqual(storyboardPlaceKeys(`${living}\n【镜头2】场景：卧室。人物：阿仪。动作：阿仪躺下。`), ['客厅', '卧室'])
+  const early = sameSceneSplits([
+    { shotNumber: 1, description: living, duration: 8 },
+    { shotNumber: 2, description: livingNext, duration: 8 },
+  ], 15)
+  assert.equal(early.length, 1)
+  assert.match(formatSameSceneSplits(early, 15), /客厅/)
+  assert.match(formatMixedScenes(1, ['客厅', '卧室']), /换场景才放到下一个分镜/)
+  const ordered = sameSceneSplits([
+    { shotNumber: 1, description: living, duration: 8 },
+    { shotNumber: 2, description: bedroom, duration: 8 },
+    { shotNumber: 3, description: livingNext, duration: 8 },
+  ], 15)
+  assert.equal(ordered.length, 0)
+  const full = sameSceneSplits([
+    { shotNumber: 1, description: living, duration: 15 },
+    { shotNumber: 2, description: livingNext, duration: 8 },
+  ], 15)
+  assert.equal(full.length, 0)
 })

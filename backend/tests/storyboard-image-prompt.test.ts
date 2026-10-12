@@ -178,6 +178,32 @@ test('a role that names someone else does not enter shot 1 frame 0', () => {
   assert.doesNotMatch(prompt, /感動/)
 })
 
+test('frame 0 stops before a person who enters later in the same shot', () => {
+  const description = '【鏡頭1】場景：阿美家中 · 客廳。人物：阿美、阿華、小寶。動作：門鈴聲響起。阿美疑惑地走向門口，打開門。阿華手捧著一大束鮮紅的玫瑰花，站在門外。阿華說：「老婆，這束花送給妳。」阿美接過花，阿華上前輕輕擁抱她。小寶也跑過來，一家三口緊緊相擁。'
+  const refs = [
+    { index: 0, tag: '<IMAGE_REF_0>', kind: 'scene' as const, name: '客廳', url: 'static/room.png' },
+    { index: 1, tag: '<IMAGE_REF_1>', kind: 'character' as const, name: '阿美', url: 'static/mei.png' },
+    { index: 2, tag: '<IMAGE_REF_2>', kind: 'character' as const, name: '阿華', url: 'static/hua.png' },
+    { index: 3, tag: '<IMAGE_REF_3>', kind: 'character' as const, name: '小寶', url: 'static/bao.png' },
+    { index: 4, tag: '<IMAGE_REF_4>', kind: 'prop' as const, name: '玫瑰花', url: 'static/rose.png' },
+  ]
+  const choice = { useScene: true, names: ['阿美', '阿華', '小寶', '玫瑰花'] }
+  const picked = openingFrameRefs(description, refs, choice)
+  assert.deepEqual(picked.map((ref) => ref.name), ['客廳', '阿美'])
+  const prompt = composeStoryboardImagePrompt({ description, imageRefs: refs, openingFrame: choice })
+  assert.match(prompt, /角色设定（阿美）/)
+  assert.match(prompt, /走向門口/)
+  assert.doesNotMatch(prompt, /阿華/)
+  assert.doesNotMatch(prompt, /小寶/)
+  assert.doesNotMatch(prompt, /玫瑰/)
+  assert.doesNotMatch(prompt, /擁抱/)
+  assert.doesNotMatch(prompt, /相擁/)
+
+  const together = '【鏡頭1】場景：客廳。人物：阿美、阿華、小寶。動作：阿美和阿華坐在沙發上看電視。小寶隨後跑進來。'
+  const staying = openingFrameRefs(together, refs, { useScene: true, names: ['阿美', '阿華', '小寶'] })
+  assert.deepEqual(staying.map((ref) => ref.name), ['客廳', '阿美', '阿華'])
+})
+
 test('pickPreviousStoryboardStill prefers the nearest earlier composed still', () => {
   const current = { id: 3, storyboardNumber: 3, composedImage: null, firstFrameImage: null }
   const pick = pickPreviousStoryboardStill(current, [

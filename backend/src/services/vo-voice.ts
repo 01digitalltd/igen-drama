@@ -3,6 +3,8 @@
  * Each shot is a separate POST; without a locked voice the model picks male/female at random.
  */
 
+import { extractSpokenLines } from './tts/vo-speech.js'
+
 export const VO_VOICE_CODES = ['female', 'male'] as const
 export type VoVoice = (typeof VO_VOICE_CODES)[number]
 
@@ -63,8 +65,22 @@ export function voVoiceInstruction(codeRaw?: string | null) {
     `凡旁白必须写成「${narratorInlineLabel(voice)}：内容」。`,
     `同一项目每一镜都用这一个声线，不要换成${other}，也不要镜间换音色。`,
     '角色开口仍用该角色自己的声音，不要用 S1。',
-    '无旁白的段写「无旁白」，不要硬加旁白。',
+    '描述里没有「旁白：」时，不要写出旁白，该段写「无旁白」。不要新加画外音。',
   ].join('')
+}
+
+const NARRATOR_CLAUSE = /(?<![无無])(?:女声|男声|女聲|男聲)?旁白(?:（[^）]{0,80}）)?[：:]\s*[^。\n！？!?]{0,200}[。！？!?]?/gu
+
+function hasNarratorLine(text: string) {
+  return extractSpokenLines(text).some((line) => line.kind === 'narrator')
+}
+
+/** Drop narrator lines the description never wrote. Character dialogue stays. */
+export function stripUnsourcedNarration(prompt: string, description?: string | null) {
+  if (hasNarratorLine(String(description || ''))) return String(prompt || '')
+  return String(prompt || '')
+    .replace(NARRATOR_CLAUSE, '无旁白')
+    .replace(/(?:无旁白\s*){2,}/g, '无旁白')
 }
 
 export function appendVoVoiceDirective(prompt: string, voiceRaw?: string | null) {
@@ -72,8 +88,12 @@ export function appendVoVoiceDirective(prompt: string, voiceRaw?: string | null)
   const spec = SPECS[voice]
   const otherEn = voice === 'female' ? 'male' : 'female'
   const base = String(prompt || '').trim()
+  if (base.includes('VO_NARRATOR') || base.includes('VO_NO_NARRATOR')) return base
+  if (!hasNarratorLine(base)) {
+    const tag = '[VO_NO_NARRATOR: This shot has no off-screen narrator. Do not add voice-over, narration, or a commentator. Only speak quoted on-screen character lines that are already written. If there is no quoted line, stay silent.]'
+    return base ? `${base}\n\n${tag}` : tag
+  }
   const tag = `[VO_NARRATOR: ${spec.en} | speaker=S1 | One consistent off-screen narrator for this entire project. ${spec.timbre}. Every 旁白 / voice-over / narrator line MUST use this same S1 voice. Do NOT switch to a ${otherEn} narrator between shots. If the shot says 无旁白 / no voice-over, do not add a narrator. On-screen character dialogue uses each character's own voice — not S1.]`
-  if (base.includes('VO_NARRATOR')) return base
   return base ? `${base}\n\n${tag}` : tag
 }
 

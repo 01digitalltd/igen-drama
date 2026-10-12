@@ -1,7 +1,17 @@
-/** MiniMax H3 V2 is CONN-capped (2 free / 15 paid). Gemini/Seedance stay serial. */
+/** MiniMax H3 V2 is CONN-capped (2 free / 15 paid). xAI Imagine accepts parallel jobs. Gemini/Seedance stay serial. */
 
 export const MINIMAX_VIDEO_CONCURRENT_DEFAULT = 5
 export const MINIMAX_VIDEO_CONCURRENT_CAP = 15
+export const XAI_VIDEO_CONCURRENT_DEFAULT = 5
+export const XAI_VIDEO_CONCURRENT_CAP = 15
+
+function cappedConcurrent(raw: string | undefined, fallback: number, cap: number) {
+  const fromEnv = Number(raw)
+  if (Number.isFinite(fromEnv) && fromEnv >= 1) {
+    return Math.min(cap, Math.max(1, Math.round(fromEnv)))
+  }
+  return fallback
+}
 
 export function videoMaxConcurrentForProvider(
   provider?: string | null,
@@ -9,11 +19,10 @@ export function videoMaxConcurrentForProvider(
 ) {
   const p = String(provider || '').toLowerCase()
   if (p === 'minimax') {
-    const fromEnv = Number(env.DRAMA_VIDEO_CONCURRENT_MINIMAX)
-    if (Number.isFinite(fromEnv) && fromEnv >= 1) {
-      return Math.min(MINIMAX_VIDEO_CONCURRENT_CAP, Math.max(1, Math.round(fromEnv)))
-    }
-    return MINIMAX_VIDEO_CONCURRENT_DEFAULT
+    return cappedConcurrent(env.DRAMA_VIDEO_CONCURRENT_MINIMAX, MINIMAX_VIDEO_CONCURRENT_DEFAULT, MINIMAX_VIDEO_CONCURRENT_CAP)
+  }
+  if (p === 'xai') {
+    return cappedConcurrent(env.DRAMA_VIDEO_CONCURRENT_XAI, XAI_VIDEO_CONCURRENT_DEFAULT, XAI_VIDEO_CONCURRENT_CAP)
   }
   return 1
 }

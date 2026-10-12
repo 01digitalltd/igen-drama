@@ -11,12 +11,12 @@ import { buildAgentRequestContext } from '../agents/context.js'
 import { logTaskError, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn } from '../utils/task-logger.js'
 import { withContentLanguage } from '../utils/content-language.js'
 import { dialogueLanguageInstruction, getDramaDialogueLanguage, storyboardImageTextInstruction } from './dialogue-language.js'
-import { getDramaVoVoice, rewriteNarratorLabels, voVoiceInstruction } from './vo-voice.js'
+import { getDramaVoVoice, rewriteNarratorLabels, stripUnsourcedNarration, voVoiceInstruction } from './vo-voice.js'
 import { getDramaStyleValue, visualStyleInstruction } from './style-preset.js'
 import { publishEpisodeEvent } from './episode-events.js'
 import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
 import { firstConfigModel } from './video-clip-policy.js'
-import { orderXaiImageRefs, xaiBeatImageIssues, xaiSpokenLineIssues, xaiTimelineEndSeconds } from './xai-prompt.js'
+import { muteUnspokenCalls, orderXaiImageRefs, xaiBeatImageIssues, xaiSpokenLineIssues, xaiTimelineEndSeconds } from './xai-prompt.js'
 import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import {
   findRefAudioOverflows,
@@ -61,7 +61,7 @@ const VIDEO_PROMPT_SCHEMA = z.object({
 const STRUCTURED_INSTRUCTIONS = `你是视频提示词与分镜静帧提示词工程师。只返回 JSON {"video_prompt":"...","image_prompt":"...","opening_frame":{"use_scene":true,"names":[]}}。不要调用工具，不要输出 JSON 以外的说明。
 video_prompt 必须按时间轴分段：Seedance/其他用「0-3秒：」并 @角色名/@场景名/@道具名；Omni 用「[0-3s]」和 image_refs 里的 <IMAGE_REF_N>。最后一段结束秒数必须等于该分镜 duration。description 的每个【镜头N】只对应这一个镜头的连续时间，不要再拆出 description 里没有的新镜头，不要创作新台词。
 image_prompt 是这段影片的第 0 帧，只画镜头 1。有 image_refs 时必须写成「第一张图 / 第二张图」锁定前面附上的人物／场景／道具图像素，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止时间轴，禁止把后面的镜头画进去，禁止把 video_prompt 原样复制过来。3D Chibi 项目的 image_prompt 必须写头身比约 1:2、盲盒风三维、光滑树脂，禁止电影质感真人。
-opening_frame 由你判断镜头 1 的第 0 帧要用哪些参考图。use_scene 只在镜头 1 的摄影机就在绑定场景图的空间里时为 true；镜头 1 在别的地方，或只是提到这个地方的外观时为 false。names 只列镜头 1 画面里看得见的角色和道具，用 image_refs 里的名字。`
+opening_frame 由你判断镜头 1 的第 0 帧要用哪些参考图。use_scene 只在镜头 1 的摄影机就在绑定场景图的空间里时为 true；镜头 1 在别的地方，或只是提到这个地方的外观时为 false。names 只列镜头 1 动作刚开始、下一位还没进画面时就看得见的角色和道具，用 image_refs 里的名字。「人物：」是整段出场名单，后一句才进门、跑来或开口的人不要列入。`
 
 async function loadShotPromptContext(storyboard: {
   id: number
@@ -232,7 +232,7 @@ export async function startVideoPromptBatch(
             content: [
               withContentLanguage(`请为分镜 #${sb.storyboardNumber}(ID:${sb.id})同时写视频提示词(video_prompt)和分镜静帧提示词(image_prompt)。视频模型:${videoLabel}。prompt_skill:${skill}。${lengthLine}
 ${skillHint}
-image_prompt 是这段影片的第 0 帧，只画下面的镜头 1。不要把镜头 2 及之后画进这张图。opening_frame 决定第 0 帧附上哪些参考图：use_scene 只在镜头 1 的摄影机就在绑定场景的空间里时为 true，镜头 1 在别的地方或只拍到该地的外观时为 false。names 只填镜头 1 看得见的角色和道具，用 image_refs 的名字。有附上的图才写「第一张图 / 第二张图」，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止换脸换景换包装。每一镜都是同一部短片：同一画风、色温、服装与发型，不要写成另一部电影。不要时间轴，不要旁白配音。若镜头 1 写手持镜头、自拍或对着镜头，那是机位：观众就是镜头。不要画相机、手机或她拿着设备。
+image_prompt 是这段影片的第 0 帧，只画下面的镜头 1 动作刚开始的瞬间。不要把镜头 2 及之后画进这张图，也不要把同一镜头后一句才进门、跑来或开口的人画进去。「人物：」是整段出场名单，不是这一帧都在场。opening_frame 决定第 0 帧附上哪些参考图：use_scene 只在镜头 1 的摄影机就在绑定场景的空间里时为 true，镜头 1 在别的地方或只拍到该地的外观时为 false。names 只填这一瞬间已经看得见的角色和道具，用 image_refs 的名字。有附上的图才写「第一张图 / 第二张图」，禁止只写 @角色名 或 <IMAGE_REF_N>，禁止换脸换景换包装。每一镜都是同一部短片：同一画风、色温、服装与发型，不要写成另一部电影。不要时间轴，不要旁白配音。若镜头 1 写手持镜头、自拍或对着镜头，那是机位：观众就是镜头。不要画相机、手机或她拿着设备。
 
 镜头 1（只画这一段）：
 ${firstStoryboardBeat(shot.description) || '（没有镜头 1）'}
@@ -267,12 +267,15 @@ image_refs：${shot.imageRefs.length ? shot.imageRefs.map(ref => `${ref.tag}=${r
           const payload = await payloadFromGenerateResult(result)
           const drafted = videoPromptFromPayload(payload)
           if (looksLikeVideoPrompt(drafted)) {
-            const spokenPrompt = rewriteNarratorLabels(drafted, narratorVoice)
+            const spokenPrompt = muteUnspokenCalls(rewriteNarratorLabels(stripUnsourcedNarration(drafted, shot.description), narratorVoice), shot.description)
             if (skill === 'xai') {
               const issues = xaiSpokenLineIssues(spokenPrompt, shot.description)
               const imageIssues = xaiBeatImageIssues(spokenPrompt, shot.imageRefs)
-              if (issues.repeated.length || issues.missing.length || imageIssues.length) {
+              if (issues.repeated.length || issues.missing.length || issues.invented.length || imageIssues.length) {
                 const notes = []
+                if (issues.invented.length) {
+                  notes.push('description 没有「角色名说：「…」」或旁白。聽到、彷彿、叫到的词不是对白，不要写进引号，整段写无对白。')
+                }
                 if (issues.repeated.length || issues.missing.length) {
                   const missing = issues.missing.length ? `没有写进时间轴的原句：${issues.missing.join(' / ')}。` : ''
                   notes.push(`${missing}每一句改成对白语言的口语，一句对一句写进它所屬的【镜头N】那一行里面。不要合并，不要漏，不要缩成更短的口号，不要写在时间轴外面。`)
