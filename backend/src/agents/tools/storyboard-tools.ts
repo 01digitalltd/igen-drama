@@ -18,7 +18,7 @@ import {
 import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
 import { logTaskProgress, logTaskSuccess, logTaskWarn } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
-import { buildShotImageRefs, formatEpisodeFloorStop, formatInnerShotOverflow, formatMixedScenes, formatSameSceneSplits, innerShotSecondsNeeded, innerShotsOverflow, sameSceneSplits, storyboardPlaceKeys, type BeatTimeBudget } from '../../services/storyboard-prompt.js'
+import { buildShotImageRefs, formatEpisodeFloorStop, formatInnerShotOverflow, formatMixedScenes, formatSameSceneSplits, beatBudgetForSkill, innerShotSecondsNeeded, innerShotsOverflow, sameSceneSplits, storyboardPlaceKeys, type BeatTimeBudget } from '../../services/storyboard-prompt.js'
 import { orderXaiImageRefs } from '../../services/xai-prompt.js'
 import { applyBrandLogoPlacement, dramaAdFields, loadDramaAdContext, logoPlacementFromMetadata, logoPlacementInstruction } from '../../services/brand-logo.js'
 import { formatMissingSourceFacts, missingSourceSpans, sourceFactClauses } from '../../services/source-clauses.js'
@@ -55,8 +55,7 @@ async function syncStoryboardProps(storyboardId: number, propIds: number[]) {
 }
 
 function beatBudgetFor(clip: { videoGeneration?: { prompt_skill?: string | null } } | null | undefined): BeatTimeBudget | undefined {
-  if (clip?.videoGeneration?.prompt_skill !== 'xai') return undefined
-  return { charsPerSecond: 2.5, tailSeconds: 1 }
+  return beatBudgetForSkill(clip?.videoGeneration?.prompt_skill)
 }
 
 async function getEpisodeSceneIds(episodeId: number) {

@@ -56,6 +56,11 @@ export type BeatTimeBudget = {
   tailSeconds?: number
 }
 
+export function beatBudgetForSkill(skill?: string | null): BeatTimeBudget | undefined {
+  if (skill !== 'xai') return undefined
+  return { charsPerSecond: 2.5, tailSeconds: 1 }
+}
+
 /** Seconds the cuts in one storyboard need. Several spoken lines each take their own time. */
 export function innerShotSecondsNeeded(description?: string | null, budget?: BeatTimeBudget): number {
   const charsPerSecond = budget?.charsPerSecond && budget.charsPerSecond > 0
@@ -99,6 +104,59 @@ export const STORYBOARD_STOP_MARKER = '停止拆分镜'
 export function formatEpisodeFloorStop(needed: number, target: number) {
   return `${STORYBOARD_STOP_MARKER}：这些镜头至少要 ${needed} 秒，本集目标只有 ${target} 秒。不要再调用 save_storyboards。把成片目标加长到至少 ${needed} 秒，或删掉对白直到下限不超过目标，然后重新生成分镜。`
 }
+
+export type ScriptDurationLine = {
+  speaker: string
+  text: string
+  seconds: number
+}
+
+/** One heading, or one 內景/外景 line, is one place. */
+export function scriptDurationSections(script: string): string[] {
+  const text = String(script || '').trim()
+  if (!text) return []
+  const parts = text.split(/\n(?=#{1,3}\s|(?:內景|内景|外景)\s*[·•｜|])/u)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  return parts.length ? parts : [text]
+}
+
+function shortSpokenText(text: string) {
+  const clean = text.replace(/\s+/g, '')
+  return clean.length > 36 ? `${clean.slice(0, 36)}…` : clean
+}
+
+/**
+ * Lower bound for playing the script, using the same per-line seconds as a save.
+ * A place with no spoken line still costs one shot minimum.
+ */
+export function estimateScriptDuration(
+  script: string,
+  opts?: { charsPerSecond?: number; tailSeconds?: number; shotMin?: number },
+): { neededSeconds: number; lines: ScriptDurationLine[] } {
+  const charsPerSecond = opts?.charsPerSecond && opts.charsPerSecond > 0
+    ? opts.charsPerSecond
+    : DIALOGUE_CHARS_PER_SECOND
+  const tail = Math.max(0, Math.round(Number(opts?.tailSeconds) || 0))
+  const shotMin = Math.max(MIN_SILENT_BEAT_SECONDS, Math.round(Number(opts?.shotMin) || MIN_SILENT_BEAT_SECONDS))
+  const lines: ScriptDurationLine[] = []
+  let neededSeconds = 0
+  for (const section of scriptDurationSections(script)) {
+    const spoken = extractSpokenLines(section)
+    if (!spoken.length) {
+      neededSeconds += shotMin
+      continue
+    }
+    for (const line of spoken) {
+      const seconds = spokenLineSeconds(line.text, charsPerSecond)
+      lines.push({ speaker: line.speaker, text: shortSpokenText(line.text), seconds })
+      neededSeconds += seconds
+    }
+    neededSeconds += tail
+  }
+  return { neededSeconds, lines }
+}
+
 export function storyboardActionSeconds(description?: string | null, budget?: BeatTimeBudget) {
   const needed = innerShotSecondsNeeded(description, budget)
   if (needed > 0) return needed

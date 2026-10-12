@@ -15,12 +15,20 @@ import { agentContextFromAd, loadDramaAdContext } from './brand-logo.js'
 import { applyHostVlogForm } from './vlog-form.js'
 import {
   STORYBOARD_SAVE_FOLLOW_UP,
+  durationStopFromToolResult,
   storyboardBreakerFailure,
   shouldRetryStoryboardBreaker,
   storyboardBreakerPrepareStep,
   storyboardGenerateDiagnostic,
   type AgentToolResult,
 } from './storyboard-breaker-job.js'
+import { loadEpisodeClipPolicy } from './episode-clip-policy.js'
+import {
+  beatBudgetForSkill,
+  estimateScriptDuration,
+  formatEpisodeFloorStop,
+  type ScriptDurationLine,
+} from './storyboard-prompt.js'
 
 async function countLiveStoryboards(episodeId: number) {
   const rows = await db.select().from(schema.storyboards)
@@ -37,6 +45,10 @@ export interface AgentJob {
   started_at: string
   finished_at?: string
   error?: string
+  errorCode?: string
+  neededSeconds?: number
+  targetSeconds?: number
+  durationLines?: ScriptDurationLine[]
   text?: string
   toolCalls?: Array<{ toolName: string | null; args: unknown }>
   toolResults?: Array<{ toolName: string | null; result: string }>
@@ -102,6 +114,10 @@ export function toPublicAgentJob(job: AgentJob) {
     started_at: job.started_at,
     finished_at: job.finished_at || null,
     error: job.error || null,
+    error_code: job.errorCode || null,
+    needed_seconds: job.neededSeconds ?? null,
+    target_seconds: job.targetSeconds ?? null,
+    duration_lines: job.durationLines || [],
     type: job.status === 'done' ? 'done' : job.status,
     text: job.text || '',
     toolCalls: job.toolCalls || [],
@@ -111,6 +127,42 @@ export function toPublicAgentJob(job: AgentJob) {
 
 function emitAgentJob(job: AgentJob) {
   publishEpisodeEvent(job.episodeId, { type: 'job', payload: toPublicAgentJob(job) })
+}
+
+function longestDurationLines(lines: ScriptDurationLine[], limit = 4) {
+  return [...lines].sort((left, right) => right.seconds - left.seconds || left.speaker.localeCompare(right.speaker)).slice(0, limit)
+}
+
+function applyDurationStop(
+  job: AgentJob,
+  stop: { needed: number; target: number; lines?: ScriptDurationLine[] },
+) {
+  job.status = 'error'
+  job.finished_at = new Date().toISOString()
+  job.errorCode = 'duration_short'
+  job.neededSeconds = stop.needed
+  job.targetSeconds = stop.target
+  job.durationLines = longestDurationLines(stop.lines || [])
+  if (!job.error || !job.error.includes('停止拆分镜')) {
+    job.error = formatEpisodeFloorStop(stop.needed, stop.target)
+  }
+}
+
+async function scriptDurationStop(episodeId: number) {
+  const clip = await loadEpisodeClipPolicy(episodeId)
+  const target = clip?.targetDurationSeconds
+  if (!clip || !target) return null
+  const [episode] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, episodeId))
+  const script = String(episode?.scriptContent || episode?.content || '').trim()
+  if (!script) return null
+  const budget = beatBudgetForSkill(clip.videoGeneration?.prompt_skill)
+  const estimate = estimateScriptDuration(script, {
+    charsPerSecond: budget?.charsPerSecond,
+    tailSeconds: budget?.tailSeconds,
+    shotMin: clip.bounds.min,
+  })
+  if (estimate.neededSeconds <= target) return null
+  return { needed: estimate.neededSeconds, target, lines: estimate.lines }
 }
 
 export function startAgentJob(params: {
@@ -152,6 +204,13 @@ export function startAgentJob(params: {
   const startTime = performance.now()
 
   ;(async () => {
+    if (agentType === 'storyboard_breaker') {
+      const stop = await scriptDurationStop(episodeId)
+      if (stop) {
+        applyDurationStop(job, stop)
+        return { durationStop: true }
+      }
+    }
     const ad = agentType === 'script_rewriter' || agentType === 'storyboard_breaker'
       ? await applyHostVlogForm(dramaId, episodeId)
       : await loadDramaAdContext(dramaId)
@@ -204,6 +263,16 @@ export function startAgentJob(params: {
     })
   })()
     .then(async (result: any) => {
+      if (result?.durationStop) {
+        const elapsed = ((performance.now() - startTime) / 1000).toFixed(1)
+        emitAgentJob(job)
+        logTaskError('Agent', agentType, {
+          elapsedSeconds: elapsed,
+          jobId: job.id,
+          error: job.error,
+        })
+        return
+      }
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(1)
       const toolCalls = result.toolCalls || []
       const toolResults = result.toolResults || []
@@ -229,6 +298,11 @@ export function startAgentJob(params: {
             job.status = 'error'
             const diagnostic = storyboardGenerateDiagnostic(result)
             job.error = diagnostic ? `${failure}（${diagnostic}）` : failure
+            const stop = (job.toolResults || [])
+              .map((row) => durationStopFromToolResult(row.result))
+              .filter((row): row is { needed: number; target: number } => Boolean(row))
+              .at(-1)
+            if (stop) applyDurationStop(job, stop)
           }
         } catch (err: any) {
           job.status = 'error'

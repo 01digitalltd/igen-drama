@@ -70,6 +70,24 @@ export function shouldRetryStoryboardBreaker(failure: string | null) {
   return !failure.includes(STORYBOARD_STOP_MARKER)
 }
 
+export function durationStopFromToolResult(raw: string): { needed: number; target: number } | null {
+  let parsed: Record<string, unknown> | null = null
+  try {
+    const value = JSON.parse(raw) as unknown
+    parsed = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null
+  } catch {
+    parsed = null
+  }
+  const error = typeof parsed?.error === 'string' ? parsed.error : ''
+  if (!error.includes(STORYBOARD_STOP_MARKER)) return null
+  const needed = Number(parsed?.needed_seconds)
+  const target = Number(parsed?.max_total_seconds)
+  if (!Number.isFinite(needed) || needed < 1) return null
+  return { needed, target: Number.isFinite(target) && target > 0 ? target : 0 }
+}
+
 /**
  * Step 0 must read context. Later steps must save until one save call exists,
  * so a text-only turn cannot end the job.

@@ -7,6 +7,7 @@ import {
   storyboardBreakerFailure,
   storyboardBreakerPrepareStep,
   storyboardGenerateDiagnostic,
+  durationStopFromToolResult,
 } from '../src/services/storyboard-breaker-job.ts'
 
 test('storyboard breaker reports a rejected save even when old shots remain', () => {
@@ -71,6 +72,17 @@ test('agent jobs mark storyboard_breaker error when no live shots were saved', (
   assert.match(jobs, /storyboard_breaker-retry/)
   assert.match(jobs, /STORYBOARD_SAVE_FOLLOW_UP/)
   assert.match(jobs, /storyboardBreakerPrepareStep/)
+  assert.match(jobs, /scriptDurationStop/)
+  assert.match(jobs, /durationStopFromToolResult/)
+})
+
+test('a stop tool result carries the seconds the dialog needs', () => {
+  assert.deepEqual(durationStopFromToolResult(JSON.stringify({
+    error: '停止拆分镜：这些镜头至少要 33 秒，本集目标只有 30 秒。',
+    needed_seconds: 33,
+    max_total_seconds: 30,
+  })), { needed: 33, target: 30 })
+  assert.equal(durationStopFromToolResult(JSON.stringify({ error: '镜头装不下' })), null)
 })
 
 test('storyboard save follow-up requires save_storyboards before ending', () => {

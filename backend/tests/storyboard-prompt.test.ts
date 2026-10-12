@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs, rewriteSeedancePromptRefs, innerShotsOverflow, formatInnerShotOverflow, formatEpisodeFloorStop, storyboardPlaceKeys, sameSceneSplits, formatSameSceneSplits, formatMixedScenes } from '../src/services/storyboard-prompt.ts'
+import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs, rewriteSeedancePromptRefs, innerShotsOverflow, formatInnerShotOverflow, formatEpisodeFloorStop, storyboardPlaceKeys, sameSceneSplits, formatSameSceneSplits, formatMixedScenes, estimateScriptDuration, beatBudgetForSkill } from '../src/services/storyboard-prompt.ts'
 
 test('prefers dedicated video_prompt over storyboard description', () => {
   assert.equal(
@@ -202,4 +202,19 @@ test('an episode that cannot hold its speech stops instead of asking for another
   assert.match(message, /目标只有 30 秒/)
   assert.match(message, /不要再调用 save_storyboards/)
   assert.doesNotMatch(message, /重新调用/)
+})
+
+test('estimates the script before the model runs', () => {
+  const line = '今晚開始把這件事完整說完喔呀'
+  const spoken = [0, 1, 2, 3, 4].map((index) => `${index % 2 ? '乙' : '甲'}：（平靜）${line}。`).join('\n')
+  const script = `## 外景 · 場景甲\n甲站在門口。\n\n## 內景 · 場景乙\n${spoken}`
+  const estimate = estimateScriptDuration(script, { charsPerSecond: 2.5, tailSeconds: 1, shotMin: 4 })
+  assert.ok(estimate.neededSeconds > 30)
+  assert.equal(estimate.lines.length, 5)
+  assert.equal(estimate.lines[0]?.speaker, '甲')
+  assert.ok(estimate.lines.every((row) => row.seconds >= 3))
+  const short = estimateScriptDuration('甲：（微笑）好。', { charsPerSecond: 2.5, tailSeconds: 1, shotMin: 4 })
+  assert.ok(short.neededSeconds <= 30)
+  assert.equal(beatBudgetForSkill('xai')?.charsPerSecond, 2.5)
+  assert.equal(beatBudgetForSkill('seedance'), undefined)
 })
