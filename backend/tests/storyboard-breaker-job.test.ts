@@ -72,8 +72,8 @@ test('agent jobs mark storyboard_breaker error when no live shots were saved', (
   assert.match(jobs, /storyboard_breaker-retry/)
   assert.match(jobs, /STORYBOARD_SAVE_FOLLOW_UP/)
   assert.match(jobs, /storyboardBreakerPrepareStep/)
-  assert.match(jobs, /scriptDurationStop/)
-  assert.match(jobs, /durationStopFromToolResult/)
+  assert.match(jobs, /storyboardDurationOverage/)
+  assert.match(jobs, /duration_over/)
 })
 
 test('a stop tool result carries the seconds the dialog needs', () => {

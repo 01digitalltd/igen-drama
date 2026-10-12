@@ -18,7 +18,7 @@ import {
 import { loadEpisodeClipPolicy } from '../../services/episode-clip-policy.js'
 import { logTaskProgress, logTaskSuccess, logTaskWarn } from '../../utils/task-logger.js'
 import { getDramaId, getEpisodeId } from '../context.js'
-import { buildShotImageRefs, formatEpisodeFloorStop, formatInnerShotOverflow, formatMixedScenes, formatSameSceneSplits, beatBudgetForSkill, innerShotSecondsNeeded, innerShotsOverflow, sameSceneSplits, storyboardPlaceKeys, type BeatTimeBudget } from '../../services/storyboard-prompt.js'
+import { buildShotImageRefs, formatInnerShotOverflow, formatMixedScenes, formatSameSceneSplits, beatBudgetForSkill, innerShotSecondsNeeded, innerShotsOverflow, sameSceneSplits, storyboardPlaceKeys, type BeatTimeBudget } from '../../services/storyboard-prompt.js'
 import { orderXaiImageRefs } from '../../services/xai-prompt.js'
 import { applyBrandLogoPlacement, dramaAdFields, loadDramaAdContext, logoPlacementFromMetadata, logoPlacementInstruction } from '../../services/brand-logo.js'
 import { formatMissingSourceFacts, missingSourceSpans, sourceFactClauses } from '../../services/source-clauses.js'
@@ -312,7 +312,7 @@ const storyboardFields = z.object({
 
 const saveStoryboards = createTool({
   id: 'save_storyboards',
-  description: 'Save storyboards for this episode. Call in batches of at most 8 storyboards: the first batch must set replace_existing: true (clears all old storyboards for the episode, then writes), every following batch omits replace_existing (appends). When video_generation.target_duration_seconds is set, do not submit more than estimated_shot_count.max shots and keep the sum of duration ≤ max_total_seconds; extra shots are rejected. Rows are upserted by shot_number, so overlapping batches and retries never create duplicates.',
+  description: 'Save storyboards for this episode. Call in batches of at most 8 storyboards: the first batch must set replace_existing: true (clears all old storyboards for the episode, then writes), every following batch omits replace_existing (appends). When video_generation.target_duration_seconds is set, do not submit more than estimated_shot_count.max shots; extra shots are rejected. The sum of duration may exceed that target. Rows are upserted by shot_number, so overlapping batches and retries never create duplicates.',
   inputSchema: z.object({
     replace_existing: z.boolean().optional(),
     storyboards: z.array(storyboardFields),
@@ -337,7 +337,7 @@ const saveStoryboards = createTool({
     })
     if (replace_existing === true && maxShots && uniqueIncoming > maxShots) {
       const suggested = clip?.videoGeneration?.suggested_shot_duration
-      const message = `本集目标 ${targetSeconds} 秒，最多 ${maxShots} 个分镜（建议每段 ${suggested} 秒）。本次提交了 ${uniqueIncoming} 个。请减到不超过 ${maxShots} 个分镜，但不要把多个有对白的镜头塞回同一段。每个镜头都要在该段时长里演完。然后重新调用 save_storyboards，第一批 replace_existing: true。总 duration 之和不得超过 ${targetSeconds} 秒。`
+      const message = `本集目标 ${targetSeconds} 秒，最多 ${maxShots} 个分镜（建议每段 ${suggested} 秒）。本次提交了 ${uniqueIncoming} 个。请减到不超过 ${maxShots} 个分镜，但不要把多个有对白的镜头塞回同一段。每个镜头都要在该段时长里演完。然后重新调用 save_storyboards，第一批 replace_existing: true。`
       logTaskWarn('StoryboardTool', 'save-over-budget', {
         episodeId,
         submitted: uniqueIncoming,
@@ -374,29 +374,6 @@ const saveStoryboards = createTool({
           count: 0,
           rejected: filtered.rejected.map(sb => sb.shot_number),
         }
-      }
-    }
-
-    if (bounds && targetSeconds) {
-      const existingLive = replace_existing === true
-        ? []
-        : (await db.select().from(schema.storyboards).where(eq(schema.storyboards.episodeId, episodeId)))
-          .filter(sb => !sb.deletedAt && !pending.some(item => item.shot_number === sb.storyboardNumber))
-      const planned = [
-        ...existingLive.map(sb => ({
-          needed: innerShotSecondsNeeded(sb.description, beatBudgetFor(clip)),
-        })),
-        ...pending.map(sb => ({
-          needed: innerShotSecondsNeeded(sb.description, beatBudgetFor(clip)),
-        })),
-      ]
-      const floorSum = planned.reduce((sum, item) => (
-        sum + Math.min(bounds.max, Math.max(bounds.min, item.needed || bounds.min))
-      ), 0)
-      if (floorSum > targetSeconds) {
-        const message = formatEpisodeFloorStop(floorSum, targetSeconds)
-        logTaskWarn('StoryboardTool', 'save-beat-budget', { episodeId, floorSum, targetSeconds })
-        return { error: message, max_total_seconds: targetSeconds, needed_seconds: floorSum }
       }
     }
 
