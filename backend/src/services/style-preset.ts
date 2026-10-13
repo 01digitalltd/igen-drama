@@ -235,6 +235,14 @@ export function appendVisualStyleDirective(
   return base ? `${tag}\n\n${base}${lock}` : `${tag}${lock}`
 }
 
+/** xAI is already live-action. Drop a pasted still-image style lock from the clip prompt. */
+export function stripXaiVisualStyleTag(prompt: string) {
+  return String(prompt || '')
+    .replace(/\[VISUAL_STYLE:[^\]]*\]\s*/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 /** 查询项目绑定的风格预设英文提示词片段；查不到返回 '' */
 export async function getDramaStylePrompt(dramaId: number | null | undefined): Promise<string> {
   const { prompt } = await loadDramaVisualStyle(dramaId)

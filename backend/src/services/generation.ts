@@ -16,7 +16,7 @@ import type { AIConfig } from './adapters/types'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn, redactUrl } from '../utils/task-logger.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
-import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, appendAssetRestyleDirective, appendImageStyleDirective } from './style-preset.js'
+import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, stripXaiVisualStyleTag, appendAssetRestyleDirective, appendImageStyleDirective } from './style-preset.js'
 import { appendVoLanguageDirective, getDramaDialogueLanguage, storyboardImageTextInstruction } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels, stripUnsourcedNarration } from './vo-voice.js'
 import { assertSeedanceAllowedForStyle, canFallbackMiniMaxToSeedance, expectedVideoProvider, isRealisticDramaStyle, isSeedanceVideoConfig, isXaiVideoConfig, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE, MINIMAX_H3_MISSING_MESSAGE, XAI_VIDEO_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
@@ -282,7 +282,7 @@ async function resolveXaiVideoConfig() {
   const config = await getActiveConfig('video', { providers: ['xai'] })
   const configId = await getActiveConfigId('video', { providers: ['xai'] })
   if (!config) return null
-  return { config, configId, model: config.model || 'grok-imagine-video-1.5' }
+  return { config, configId, model: config.model || 'grok-imagine-video-1.5-lite' }
 }
 
 async function resolveSeedanceFallbackConfig() {
@@ -472,7 +472,9 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
   }
   prompt = appendVoLanguageDirective(prompt, spoken)
   prompt = appendVoVoiceDirective(prompt, narratorVoice)
-  prompt = appendVisualStyleDirective(prompt, visual.value, visual.prompt)
+  if (!isXaiVideoConfig(config.provider, model)) {
+    prompt = appendVisualStyleDirective(prompt, visual.value, visual.prompt)
+  }
 
   const clientAudios = Array.isArray(params.referenceAudioUrls)
     ? params.referenceAudioUrls.map((item) => String(item || '').trim()).filter(Boolean)
@@ -879,8 +881,7 @@ async function processTask(id: number, config: AIConfig) {
         const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
         if (sb) prompt = resolveStoryboardVideoPrompt(sb)
       }
-      const visual = await loadDramaVisualStyle(await resolveVideoDramaId(record))
-      prompt = appendVisualStyleDirective(prompt, visual.value, visual.prompt)
+      prompt = stripXaiVisualStyleTag(prompt)
       if (record.storyboardId) {
         const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, record.storyboardId))
         const dramaId = await resolveVideoDramaId(record)

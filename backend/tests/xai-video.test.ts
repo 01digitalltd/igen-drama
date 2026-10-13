@@ -6,7 +6,7 @@ const config = {
   provider: 'xai',
   baseUrl: 'https://api.x.ai/v1',
   apiKey: 'test-key',
-  model: 'grok-imagine-video-1.5',
+  model: 'grok-imagine-video-1.5-lite',
 }
 
 const adapter = new XaiVideoAdapter()
@@ -28,7 +28,7 @@ test('xAI reference-to-video request uses preset voices and 720p', () => {
 
   assert.equal(request.url, 'https://api.x.ai/v1/videos/generations')
   assert.equal(request.headers.Authorization, 'Bearer test-key')
-  assert.equal(request.body.model, 'grok-imagine-video-1.5')
+  assert.equal(request.body.model, 'grok-imagine-video-1.5-lite')
   assert.equal(request.body.duration, 12)
   assert.equal(request.body.resolution, '720p')
   assert.equal(request.body.aspect_ratio, '16:9')

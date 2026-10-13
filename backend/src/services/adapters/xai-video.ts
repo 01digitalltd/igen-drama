@@ -17,7 +17,7 @@ import type {
 } from './types'
 import { joinProviderUrl } from './url'
 
-const DEFAULT_MODEL = 'grok-imagine-video-1.5'
+const DEFAULT_MODEL = 'grok-imagine-video-1.5-lite'
 const DEFAULT_BASE = 'https://api.x.ai/v1'
 export const XAI_MAX_REFERENCE_IMAGES = 7
 export const XAI_MAX_REFERENCE_VOICES = 3

@@ -4,7 +4,7 @@ import { canUseReferenceAudio, extractSpokenLines } from '../src/services/tts/vo
 import { appendXaiVoiceDirective, selectXaiReferenceVoices, xaiVoiceIdForSpeaker } from '../src/services/tts/xai-voices.ts'
 
 test('xAI does not attach MiniMax wavs', () => {
-  assert.equal(canUseReferenceAudio('xai', 'grok-imagine-video-1.5'), false)
+  assert.equal(canUseReferenceAudio('xai', 'grok-imagine-video-1.5-lite'), false)
   assert.equal(canUseReferenceAudio('minimax', 'MiniMax-H3'), true)
 })
 

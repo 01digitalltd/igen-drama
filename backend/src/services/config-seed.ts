@@ -417,7 +417,7 @@ async function ensureXaiVideoConfig() {
 
   const apiKey = (process.env.XAI_API_KEY || '').trim()
   const baseUrl = (process.env.XAI_VIDEO_BASE_URL || 'https://api.x.ai/v1').replace(/\/+$/, '')
-  const model = (process.env.XAI_VIDEO_MODEL || 'grok-imagine-video-1.5').trim()
+  const model = (process.env.XAI_VIDEO_MODEL || 'grok-imagine-video-1.5-lite').trim()
 
   if (existing) {
     if (!apiKey || existing.id == null) return
@@ -425,8 +425,8 @@ async function ensureXaiVideoConfig() {
     if (existing.apiKey !== apiKey) updates.apiKey = apiKey
     if (existing.baseUrl !== baseUrl) updates.baseUrl = baseUrl
     const current = parseConfigModels(existing.model)
-    if (current[0] !== model) {
-      updates.model = JSON.stringify([model, ...current.filter((item) => item !== model)])
+    if (current.length !== 1 || current[0] !== model) {
+      updates.model = JSON.stringify([model])
     }
     if (!Object.keys(updates).length) return
     updates.updatedAt = now()

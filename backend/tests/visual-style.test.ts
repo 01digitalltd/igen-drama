@@ -5,6 +5,7 @@ import {
   appendAssetRestyleDirective,
   appendImageStyleDirective,
   appendVisualStyleDirective,
+  stripXaiVisualStyleTag,
   imageStyleLock,
   stripImageStyleWrappers,
   videoVisualStyleText,
@@ -50,6 +51,18 @@ test('realistic style does not add a restyle lock', () => {
   const text = appendVisualStyleDirective('0-3秒：@小明转身。', 'realistic', 'photorealistic live-action')
   assert.match(text, /\[VISUAL_STYLE: realistic/)
   assert.doesNotMatch(text, /\[STYLE_LOCK\]/)
+})
+
+test('xAI clips drop a pasted realistic style lock', () => {
+  const locked = appendVisualStyleDirective(
+    '[0-3s] 甲轉身。',
+    'realistic',
+    'photorealistic live-action cinematic still, 35mm film look',
+  )
+  const sent = stripXaiVisualStyleTag(locked)
+  assert.equal(sent, '[0-3s] 甲轉身。')
+  assert.doesNotMatch(sent, /VISUAL_STYLE/)
+  assert.doesNotMatch(sent, /35mm film look/)
 })
 
 test('uploaded asset stills get a analyze-then-restyle prompt', () => {
