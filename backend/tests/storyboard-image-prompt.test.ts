@@ -170,6 +170,8 @@ test('a role that names someone else does not enter shot 1 frame 0', () => {
   assert.match(prompt, /角色设定（美玲）/)
   assert.match(prompt, /朗然美肌護膚品/)
   assert.match(prompt, /只画第一眼/)
+  assert.match(prompt, /构图要有张力/)
+  assert.match(prompt, /做了一半/)
   assert.match(prompt, /溫馨、柔和/)
   assert.doesNotMatch(prompt, /志明/)
   assert.doesNotMatch(prompt, /小寶/)
