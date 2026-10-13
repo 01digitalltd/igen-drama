@@ -58,7 +58,9 @@ export type BeatTimeBudget = {
 
 export function beatBudgetForSkill(skill?: string | null): BeatTimeBudget | undefined {
   if (skill !== 'xai') return undefined
-  return { charsPerSecond: 2.5, tailSeconds: 1 }
+  // Conversational pace. A slower rate padded every line and split one quote
+  // into extra storyboards with a pause between them.
+  return { charsPerSecond: DIALOGUE_CHARS_PER_SECOND, tailSeconds: 0 }
 }
 
 /** Seconds the cuts in one storyboard need. Several spoken lines each take their own time. */

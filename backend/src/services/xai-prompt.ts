@@ -55,10 +55,9 @@ export function rewriteXaiPrompt(
 }
 
 const XAI_DURATION_MAX = 15
-const XAI_SPEECH_TAIL_SECONDS = 1
-const XAI_CJK_CHARS_PER_SECOND = 2.5
-const XAI_EN_WORDS_PER_SECOND = 1.7
-const XAI_SPEECH_TAG = '[XAI_SPEECH: Speak every quoted line exactly, in order, in full, once. Do not repeat a line in a later beat. Do not replace a line with a shorter slogan, and do not add a line that is not quoted. Do not add an off-screen narrator or voice-over unless a narrator line is already written. A word someone only hears, remembers, or imagines is not a line. Finish the last word at least one second before the clip ends.]'
+const XAI_CJK_CHARS_PER_SECOND = 4.5
+const XAI_EN_WORDS_PER_SECOND = 2.5
+const XAI_SPEECH_TAG = '[XAI_SPEECH: Speak every quoted line exactly, in order, in full, once, at a conversational pace. Do not pause between sentences of the same speaker. Do not repeat a line in a later beat. Do not replace a line with a shorter slogan, and do not add a line that is not quoted. Do not add an off-screen narrator or voice-over unless a narrator line is already written. A word someone only hears, remembers, or imagines is not a line. Do not add a silent hold after the line.]'
 const XAI_SILENT_TAG = '[XAI_SPEECH: This shot has no dialogue. Do not speak any word. A word someone only hears, remembers, or imagines is not a line. Keep every mouth closed except for breathing.]'
 const HEARD_CALL = /(?:彷彿|仿佛|好像|似乎|像是)?(?:聽到|听到|聽見|听见)[^。\n]{0,24}?(?:叫|喊)(?:著|着)?[^。，,！？!?\n]{1,8}/g
 const INVENTED_QUOTE = /[@＠]?[\u4e00-\u9fffA-Za-z0-9._\s-]{0,24}?(?:说|說|says)\s*[：:]?\s*[「“"][^」”"\n]{1,200}[」”"]|[「“"][^」”"\n]{1,80}[」”"]/giu
@@ -259,7 +258,7 @@ export function xaiTimelineEndSeconds(_description: string, duration: number, ma
   return Math.min(cap, Math.max(1, Math.round(Number(duration) || 8)))
 }
 
-/** Seconds Grok needs to speak this line. Acted speech is slower than a TTS estimate. */
+/** Seconds Grok needs to speak this line at a conversational pace. */
 export function xaiSpeechSeconds(line: string) {
   const chunks = spokenChunks(line)
   if (!chunks.length) return 0
@@ -374,14 +373,21 @@ export function fitXaiSpokenClip(prompt: string, requested?: number | null, max 
   if (looseSpeech > 0 && lengths.length) {
     lengths[lengths.length - 1] += Math.ceil(looseSpeech)
   }
-  const lastSpeech = segments.reduce((found, segment, index) => (segment.speech > 0 || (looseSpeech > 0 && index === segments.length - 1) ? index : found), -1)
-  const tail = lastSpeech === segments.length - 1 ? XAI_SPEECH_TAIL_SECONDS : 0
-  const contentBudget = Math.max(segments.length, asked - tail)
+  const contentBudget = Math.max(segments.length, asked)
   const sum = lengths.reduce((total, item) => total + item, 0)
   if (sum > contentBudget) {
     lengths = shrinkToBudget(lengths, speech, contentBudget)
   } else if (sum < contentBudget) {
-    lengths[lengths.length - 1] += contentBudget - sum
+    const spare = contentBudget - sum
+    let quiet = -1
+    for (let index = lengths.length - 1; index >= 0; index--) {
+      if (speech[index] <= 0) {
+        quiet = index
+        break
+      }
+    }
+    if (quiet >= 0) lengths[quiet] += spare
+    else lengths[lengths.length - 1] += spare
   }
   let cursor = 0
   const nextLines = lines.slice()
@@ -392,9 +398,6 @@ export function fitXaiSpokenClip(prompt: string, requested?: number | null, max 
     const marker = segment.bracket ? `[${start}-${end}s]` : `${start}-${end}秒：`
     nextLines[segment.lineIndex] = `${marker} ${segment.body}`.trim()
   })
-  if (tail > 0 && cursor < asked) {
-    nextLines.push(`[${cursor}-${asked}s] Hold. The spoken line has already finished. No more speech.`)
-  }
   const body = nextLines.join('\n').trim()
   return { prompt: withSpeechTag(body, segmentSpeech + looseSpeech > 0), duration: asked }
 }

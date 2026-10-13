@@ -235,7 +235,8 @@ test('estimates the script before the model runs', () => {
   assert.ok(estimate.lines.every((row) => row.seconds >= 3))
   const short = estimateScriptDuration('甲：（微笑）好。', { charsPerSecond: 2.5, tailSeconds: 1, shotMin: 4 })
   assert.ok(short.neededSeconds <= 30)
-  assert.equal(beatBudgetForSkill('xai')?.charsPerSecond, 2.5)
+  assert.equal(beatBudgetForSkill('xai')?.charsPerSecond, 4.5)
+  assert.equal(beatBudgetForSkill('xai')?.tailSeconds, 0)
   assert.equal(beatBudgetForSkill('seedance'), undefined)
 })
 
