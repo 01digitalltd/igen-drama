@@ -2,17 +2,22 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { XaiVideoAdapter, XAI_MODERATION_BLOCK_ZH_HANT } from '../src/services/adapters/xai-video.ts'
 
-const config = {
+const fullModel = {
   provider: 'xai',
   baseUrl: 'https://api.x.ai/v1',
   apiKey: 'test-key',
+  model: 'grok-imagine-video-1.5',
+}
+
+const liteModel = {
+  ...fullModel,
   model: 'grok-imagine-video-1.5-lite',
 }
 
 const adapter = new XaiVideoAdapter()
 
-test('xAI reference-to-video request uses preset voices and 720p', () => {
-  const request = adapter.buildGenerateRequest(config, {
+test('xAI reference-to-video request uses preset voices and 480p', () => {
+  const request = adapter.buildGenerateRequest(fullModel, {
     id: 1,
     prompt: '<IMAGE_0> says hello',
     duration: 12,
@@ -28,9 +33,9 @@ test('xAI reference-to-video request uses preset voices and 720p', () => {
 
   assert.equal(request.url, 'https://api.x.ai/v1/videos/generations')
   assert.equal(request.headers.Authorization, 'Bearer test-key')
-  assert.equal(request.body.model, 'grok-imagine-video-1.5-lite')
+  assert.equal(request.body.model, 'grok-imagine-video-1.5')
   assert.equal(request.body.duration, 12)
-  assert.equal(request.body.resolution, '720p')
+  assert.equal(request.body.resolution, '480p')
   assert.equal(request.body.aspect_ratio, '16:9')
   assert.deepEqual(request.body.reference_images, [
     { url: 'https://cdn.example/a.png' },
@@ -45,7 +50,7 @@ test('xAI reference-to-video request uses preset voices and 720p', () => {
 })
 
 test('xAI pins a storyboard still as the opening frame without dropping asset refs', () => {
-  const request = adapter.buildGenerateRequest(config, {
+  const request = adapter.buildGenerateRequest(fullModel, {
     id: 3,
     prompt: '<IMAGE_0> is the storyboard still. <IMAGE_1> is the host.',
     imageUrl: 'https://cdn.example/storyboard.png',
@@ -57,8 +62,24 @@ test('xAI pins a storyboard still as the opening frame without dropping asset re
   assert.deepEqual(request.body.reference_images, [{ url: 'https://cdn.example/host.png' }])
 })
 
+test('xAI lite sends one opening image and drops reference images', () => {
+  const request = adapter.buildGenerateRequest(liteModel, {
+    id: 4,
+    prompt: '<IMAGE_0> sits beside <IMAGE_1>.',
+    imageUrl: 'https://cdn.example/storyboard.png',
+    referenceImageUrls: JSON.stringify(['https://cdn.example/host.png']),
+    xaiReferenceAudios: JSON.stringify([{ voiceId: 'ara', speaker: '旁白', kind: 'narrator' }]),
+    duration: 8,
+    aspectRatio: '16:9',
+  })
+  assert.equal(request.body.model, 'grok-imagine-video-1.5-lite')
+  assert.deepEqual(request.body.image, { url: 'https://cdn.example/storyboard.png' })
+  assert.equal(request.body.reference_images, undefined)
+  assert.equal(request.body.reference_audios, undefined)
+})
+
 test('xAI clamps duration and unknown aspect ratios', () => {
-  const request = adapter.buildGenerateRequest(config, {
+  const request = adapter.buildGenerateRequest(liteModel, {
     id: 2,
     prompt: 'walk',
     duration: 30,

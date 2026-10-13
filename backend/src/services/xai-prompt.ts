@@ -65,6 +65,26 @@ const INVENTED_QUOTE = /[@＠]?[\u4e00-\u9fffA-Za-z0-9._\s-]{0,24}?(?:说|說|sa
 const XAI_STILL_TAG = '[XAI_STILL: <IMAGE_0> is shot 1 of this clip and the exact opening instant. Keep its framing, people, food, props, and setting. Later beats in the timeline move away from this picture. Do not redraw those later beats into the opening frame.]'
 
 /**
+ * Lite animates one attached still. Numbered reference tokens and voice-id
+ * locks are for the full model and are removed before the request.
+ */
+export function prepareXaiLitePrompt(prompt: string) {
+  const note = 'The attached image is the exact opening frame. Animate forward from it. Keep its people, place, and props.'
+  let text = String(prompt || '')
+    .replace(/\n?\[XAI_STILL:[^\]]*\]/gu, '')
+    .replace(/\n?\[XAI_VOICES:[^\]]*\]/gu, '')
+    .replace(/<IMAGE_\d+>/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/ ([，。！？])/g, '$1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  if (!text.includes('exact opening frame')) {
+    text = text ? `${text}\n${note}` : note
+  }
+  return text
+}
+
+/**
  * Pinning a still makes it `<IMAGE_0>`. Asset refs move to `<IMAGE_1>` and up.
  * Idempotent once the still tag is present.
  */

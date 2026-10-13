@@ -59,7 +59,7 @@ test('generation duration follows prompt timeline and clamps to the model', () =
     9,
   )
   assert.equal(
-    resolveVideoGenerationDuration({ prompt, shotDuration: 7, provider: 'xai', model: 'grok-imagine-video-1.5-lite' }),
+    resolveVideoGenerationDuration({ prompt, shotDuration: 7, provider: 'xai', model: 'grok-imagine-video-1.5' }),
     7,
   )
 })

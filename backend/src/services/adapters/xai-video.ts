@@ -2,10 +2,10 @@
  * xAI Grok Imagine video — POST /v1/videos/generations → { request_id }
  * Poll: GET /v1/videos/{request_id}
  *
- * Realistic dramas use reference-to-video: character/scene/prop stills in
- * reference_images (max 7) and preset voice_id clips in reference_audios
- * (max 3). When imageUrl is set, it pins the storyboard still as the opening
- * frame and occupies `<IMAGE_0>`. Custom audio files are not sent.
+ * The full grok-imagine-video-1.5 model uses reference-to-video: character,
+ * scene, and prop stills in reference_images, plus preset voice_id clips.
+ * grok-imagine-video-1.5-lite only accepts one opening image in `image`.
+ * Custom audio files are not sent.
  */
 import type {
   VideoProviderAdapter,
@@ -17,8 +17,14 @@ import type {
 } from './types'
 import { joinProviderUrl } from './url'
 
-const DEFAULT_MODEL = 'grok-imagine-video-1.5-lite'
+const DEFAULT_MODEL = 'grok-imagine-video-1.5'
 const DEFAULT_BASE = 'https://api.x.ai/v1'
+
+/** Lite is image-to-video only. reference_images and reference_audios belong to the full model. */
+export function xaiModelSupportsReferences(model?: string | null) {
+  const value = String(model || DEFAULT_MODEL).trim().toLowerCase()
+  return value.includes('grok-imagine') && !value.includes('lite')
+}
 export const XAI_MAX_REFERENCE_IMAGES = 7
 export const XAI_MAX_REFERENCE_VOICES = 3
 const ASPECT_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'])
@@ -77,9 +83,12 @@ export class XaiVideoAdapter implements VideoProviderAdapter {
 
   buildGenerateRequest(config: AIConfig, record: VideoGenerationRecord): ProviderRequest {
     const model = record.model || config.model || DEFAULT_MODEL
+    const allowRefs = xaiModelSupportsReferences(model)
     const prompt = (record.prompt || '').trim()
-    const refImages = parseUrlArray(record.referenceImageUrls).slice(0, XAI_MAX_REFERENCE_IMAGES)
-    const voices = parseXaiVoiceRefs(record.xaiReferenceAudios)
+    const refImages = allowRefs
+      ? parseUrlArray(record.referenceImageUrls).slice(0, XAI_MAX_REFERENCE_IMAGES)
+      : []
+    const voices = allowRefs ? parseXaiVoiceRefs(record.xaiReferenceAudios) : []
     const pinnedStill = String(record.imageUrl || '').trim()
     if (!prompt && !refImages.length && !pinnedStill) {
       throw new Error('xAI 參考圖生成需要提示詞或至少一張參考圖')
@@ -89,7 +98,7 @@ export class XaiVideoAdapter implements VideoProviderAdapter {
       model,
       duration: normalizeXaiDuration(record.duration),
       aspect_ratio: normalizeXaiAspectRatio(record.aspectRatio),
-      resolution: '720p',
+      resolution: '480p',
     }
     if (prompt) body.prompt = prompt
     if (pinnedStill) body.image = { url: pinnedStill }

@@ -12,6 +12,7 @@ import { isS3Enabled, toVendorFetchableUrl } from '../utils/s3-media.js'
 import { extractVideoPoster } from '../utils/video-poster.js'
 import { probeStoredDurationSeconds } from '../utils/ffmpeg.js'
 import { getImageAdapter, getVideoAdapter } from './adapters/registry'
+import { xaiModelSupportsReferences } from './adapters/xai-video.js'
 import type { AIConfig } from './adapters/types'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn, redactUrl } from '../utils/task-logger.js'
 import { toSnakeCase } from '../utils/transform.js'
@@ -27,7 +28,7 @@ import {
   overlayOrangeGridOnRef,
 } from './character-grid.js'
 import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, composeStoryboardImagePrompt, openingFrameRefs, parseOpeningFrameChoice, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
-import { fitXaiSpokenClip, muteUnspokenCalls, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt } from './xai-prompt.js'
+import { fitXaiSpokenClip, muteUnspokenCalls, orderXaiImageRefs, pinXaiStoryboardStill, prepareXaiLitePrompt, rewriteXaiPrompt } from './xai-prompt.js'
 import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import { appendBrandLogoDirective, brandLogoPropIfNeeded } from './brand-logo.js'
 import { isBrandLogoProp } from '../utils/project-category.js'
@@ -282,7 +283,7 @@ async function resolveXaiVideoConfig() {
   const config = await getActiveConfig('video', { providers: ['xai'] })
   const configId = await getActiveConfigId('video', { providers: ['xai'] })
   if (!config) return null
-  return { config, configId, model: config.model || 'grok-imagine-video-1.5-lite' }
+  return { config, configId, model: config.model || 'grok-imagine-video-1.5' }
 }
 
 async function resolveSeedanceFallbackConfig() {
@@ -554,7 +555,7 @@ async function generateVideoUniq(params: GenerateVideoParams): Promise<number> {
     aspectRatio: params.aspectRatio || '16:9',
     // 保留高分辨率档位透传（MiniMax 768P/2K），火山等适配器内部自行归并
     resolution: isXaiVideoConfig(config.provider, model)
-      ? '720p'
+      ? '480p'
       : (['480p', '720p', '1080p', '2K'].includes(params.resolution || '') ? params.resolution : '720p'),
     episodeId: params.episodeId,
     configId: configId || undefined,
@@ -894,32 +895,43 @@ async function processTask(id: number, config: AIConfig) {
           ? params.xaiReferenceAudios
           : JSON.stringify(params.xaiReferenceAudios || []),
       )
-      prompt = appendXaiVoiceDirective(prompt, voices.map((voice) => ({
-        voiceId: voice.voiceId,
-        speaker: voice.speaker || '',
-        kind: voice.kind === 'character' ? 'character' : 'narrator',
-      })))
+      const allowRefs = xaiModelSupportsReferences(record.model || config.model)
+      if (allowRefs) {
+        prompt = appendXaiVoiceDirective(prompt, voices.map((voice) => ({
+          voiceId: voice.voiceId,
+          speaker: voice.speaker || '',
+          kind: voice.kind === 'character' ? 'character' : 'narrator',
+        })))
+      }
       const fitted = fitXaiSpokenClip(prompt, Number(params.duration) || 8)
       prompt = fitted.prompt
       params.duration = fitted.duration
       const pinnedStill = record.storyboardId
         ? await normalizeVideoReferenceUrl(await storyboardComposedStillUrl(record.storyboardId))
         : null
-      if (pinnedStill) prompt = pinXaiStoryboardStill(prompt)
+      if (allowRefs) {
+        if (pinnedStill) prompt = pinXaiStoryboardStill(prompt)
+      } else {
+        prompt = prepareXaiLitePrompt(prompt)
+      }
       prompt = applyHandheldViewpoint(prompt, await storyboardDescriptionText(record.storyboardId))
-      if (!publicRefs.length && !pinnedStill) {
-        throw new Error('xAI 真人影片需要至少一張角色、場景或道具參考圖，或這鏡的分鏡圖')
+      if (allowRefs) {
+        if (!publicRefs.length && !pinnedStill) {
+          throw new Error('xAI 真人影片需要至少一張角色、場景或道具參考圖，或這鏡的分鏡圖')
+        }
+      } else if (!pinnedStill) {
+        throw new Error('grok-imagine-video-1.5-lite 不能附多張參考圖，請先生成這鏡的分鏡圖，用它當開頭畫面')
       }
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
         prompt,
         imageUrl: pinnedStill,
-        referenceImageUrls: publicRefs.length ? JSON.stringify(publicRefs.map((ref) => ref.url)) : null,
-        xaiReferenceAudios: voices.length ? JSON.stringify(voices) : null,
+        referenceImageUrls: allowRefs && publicRefs.length ? JSON.stringify(publicRefs.map((ref) => ref.url)) : null,
+        xaiReferenceAudios: allowRefs && voices.length ? JSON.stringify(voices) : null,
         duration: params.duration,
         aspectRatio: params.aspectRatio,
-        resolution: '720p',
+        resolution: '480p',
       }))
     } else {
       const adapter = getVideoAdapter(config.provider)

@@ -14,7 +14,7 @@ export const SEEDANCE_BLOCKED_FOR_REALISTIC_MESSAGE =
   '写实真人风格不能使用 Seedance 视频模型，请改用 xAI Grok'
 
 export const XAI_VIDEO_MISSING_MESSAGE =
-  '未启用 xAI Grok 视频服务，请先设置 XAI_API_KEY 并启用 grok-imagine-video-1.5-lite'
+  '未启用 xAI Grok 视频服务，请先设置 XAI_API_KEY 并启用 grok-imagine-video-1.5'
 
 export function isXaiVideoConfig(provider?: string | null, model?: string | null) {
   const p = String(provider || '').toLowerCase()

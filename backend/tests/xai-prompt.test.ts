@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildShotImageRefs } from '../src/services/storyboard-prompt.ts'
-import { fitXaiSpokenClip, muteUnspokenCalls, orderXaiImageRefs, pinXaiStoryboardStill, rewriteXaiPrompt, xaiBeatImageIssues, xaiSpokenLineIssues, xaiTimelineEndSeconds } from '../src/services/xai-prompt.ts'
+import { fitXaiSpokenClip, muteUnspokenCalls, orderXaiImageRefs, pinXaiStoryboardStill, prepareXaiLitePrompt, rewriteXaiPrompt, xaiBeatImageIssues, xaiSpokenLineIssues, xaiTimelineEndSeconds } from '../src/services/xai-prompt.ts'
 
 test('xAI reference order is character, scene, then prop', () => {
   const source = buildShotImageRefs({
@@ -165,6 +165,13 @@ test('a trailing spoken line stays inside the storyboard duration', () => {
   assert.doesNotMatch(fitted.prompt, /\[4-11s\]/)
   const ends = [...fitted.prompt.matchAll(/\[(\d+)-(\d+)s\]/g)].map((item) => Number(item[2]))
   assert.equal(Math.max(...ends), 8)
+})
+
+test('lite prompts drop numbered image tokens and keep the opening still', () => {
+  const text = prepareXaiLitePrompt('[0-4s] <IMAGE_0> tastes the noodles from <IMAGE_1>.\n[XAI_VOICES: 甲 uses reference voice 1 (ara).]')
+  assert.doesNotMatch(text, /IMAGE_|XAI_VOICES/)
+  assert.match(text, /tastes the noodles/)
+  assert.match(text, /exact opening frame/)
 })
 
 test('pinning the storyboard still shifts asset tokens and keeps IMAGE_0 for the still', () => {
