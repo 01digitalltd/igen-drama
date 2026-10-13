@@ -6,6 +6,7 @@ import { db, schema } from '../db/index.js'
 import { eq } from '../db/query.js'
 import { now } from '../utils/response.js'
 import { officialProviders, type ServiceType } from './ai.js'
+import { APIMART_ASSET_IMAGE_MODEL, isApimartGptImageModel } from './image-model-policy.js'
 import { expandGeminiOmniVideoModels, parseConfigModels } from './video-clip-policy.js'
 
 interface SeedSpec {
@@ -64,6 +65,7 @@ export async function seedAiConfigsFromEnv() {
   await ensureMinimaxVideoConfig()
   await ensureSeedanceVideoConfig()
   await ensureXaiVideoConfig()
+  await ensureApimartImageConfig()
 }
 
 type SeedConfigRow = {
@@ -457,4 +459,70 @@ async function ensureXaiVideoConfig() {
     updatedAt: ts,
   })
   console.log(`[config-seed] inserted video config (xai / ${model})`)
+}
+
+/**
+ * Realistic character, scene, prop, and storyboard stills use APIMart gpt-image-2.
+ * Lower priority and not default, so other visual styles stay on the active
+ * Gemini image config. Skipped when APIMART_API_KEY is empty.
+ */
+async function ensureApimartImageConfig() {
+  const images = ((await db.select().from(schema.aiServiceConfigs)
+    .where(eq(schema.aiServiceConfigs.serviceType, 'image'))) as Array<{
+      id?: number
+      provider?: string | null
+      isActive?: unknown
+      isDefault?: unknown
+      priority?: number | null
+      apiKey?: string | null
+      baseUrl?: string | null
+      model?: unknown
+    }>)
+  const existing = images.find((row) => row.provider === 'openai' && row.isActive)
+    || images.find((row) => row.provider === 'openai')
+
+  const apiKey = (process.env.APIMART_API_KEY || '').trim()
+  const baseUrl = (process.env.APIMART_API_BASE_URL || 'https://api.apimart.ai').replace(/\/+$/, '')
+  const model = (process.env.APIMART_GPT_IMAGE_MODEL || APIMART_ASSET_IMAGE_MODEL).trim()
+  const nextModel = isApimartGptImageModel(model) ? model : APIMART_ASSET_IMAGE_MODEL
+
+  if (existing) {
+    if (!apiKey || existing.id == null) return
+    const updates: Record<string, unknown> = {}
+    if (!existing.isActive) updates.isActive = true
+    if (existing.isDefault) updates.isDefault = false
+    if (Number(existing.priority) !== 60) updates.priority = 60
+    if (existing.apiKey !== apiKey) updates.apiKey = apiKey
+    if (existing.baseUrl !== baseUrl) updates.baseUrl = baseUrl
+    const current = parseConfigModels(existing.model)
+    if (current.length !== 1 || current[0] !== nextModel) updates.model = JSON.stringify([nextModel])
+    if (!Object.keys(updates).length) return
+    updates.updatedAt = now()
+    await db.update(schema.aiServiceConfigs)
+      .set(updates)
+      .where(eq(schema.aiServiceConfigs.id, existing.id))
+    console.log('[config-seed] updated image config (openai / apimart)')
+    return
+  }
+
+  if (!apiKey) {
+    console.warn('[config-seed] skip apimart image: set APIMART_API_KEY')
+    return
+  }
+
+  const ts = now()
+  await db.insert(schema.aiServiceConfigs).values({
+    serviceType: 'image',
+    provider: 'openai',
+    name: 'platform-image-apimart',
+    baseUrl,
+    apiKey,
+    model: JSON.stringify([nextModel]),
+    priority: 60,
+    isDefault: false,
+    isActive: true,
+    createdAt: ts,
+    updatedAt: ts,
+  })
+  console.log(`[config-seed] inserted image config (openai / ${model})`)
 }

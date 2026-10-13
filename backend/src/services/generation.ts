@@ -20,6 +20,7 @@ import { publishEpisodeEvent } from './episode-events.js'
 import { getDramaStyleValue, loadDramaVisualStyle, appendVisualStyleDirective, stripXaiVisualStyleTag, appendAssetRestyleDirective, appendImageStyleDirective } from './style-preset.js'
 import { appendVoLanguageDirective, getDramaDialogueLanguage, storyboardImageTextInstruction } from './dialogue-language.js'
 import { appendVoVoiceDirective, getDramaVoVoice, rewriteNarratorLabels, stripUnsourcedNarration } from './vo-voice.js'
+import { APIMART_ASSET_IMAGE_MISSING_MESSAGE, apimartAssetImageModel, isRealisticAssetImageJob } from './image-model-policy.js'
 import { assertSeedanceAllowedForStyle, canFallbackMiniMaxToSeedance, expectedVideoProvider, isRealisticDramaStyle, isSeedanceVideoConfig, isXaiVideoConfig, MINIMAX_BALANCE_NO_SEEDANCE_MESSAGE, MINIMAX_H3_MISSING_MESSAGE, XAI_VIDEO_MISSING_MESSAGE, videoModelFitsProvider } from './video-model-policy.js'
 import { stripCharacterFaceGridPrompt } from './face-grid.js'
 import {
@@ -186,12 +187,34 @@ export async function generateImage(params: GenerateImageParams): Promise<number
     ...params,
     prompt: appendImageStyleDirective(params.prompt, visual.value, visual.prompt, kind),
   }
-  // 指定配置（集锁定）可能已停用/删除/厂商收敛，失效时回退到当前启用配置，避免生成被旧引用卡死
-  let config = params.configId ? await getConfigById(params.configId) : null
-  let configId = params.configId ?? null
-  if (!config) {
-    config = await getActiveConfig('image')
-    configId = await getActiveConfigId('image')
+  // Realistic assets and storyboard stills ignore the episode image lock
+  // and use APIMart gpt-image-2. Other styles keep the locked Gemini config.
+  const realisticAsset = isRealisticAssetImageJob({
+    style: visual.value,
+    storyboardId: params.storyboardId,
+    characterId: params.characterId,
+    sceneId: params.sceneId,
+    propId: params.propId,
+  })
+  let config: Awaited<ReturnType<typeof getConfigById>> = null
+  let configId: number | null = null
+  let model = ''
+  if (realisticAsset) {
+    const apimart = await resolveApimartImageConfig()
+    if (!apimart) throw new Error(APIMART_ASSET_IMAGE_MISSING_MESSAGE)
+    config = apimart.config
+    configId = apimart.configId
+    model = apimart.model
+  } else {
+    // 指定配置（集锁定）可能已停用/删除/厂商收敛，失效时回退到当前启用配置，避免生成被旧引用卡死
+    config = params.configId ? await getConfigById(params.configId) : null
+    configId = params.configId ?? null
+    if (!config) {
+      config = await getActiveConfig('image')
+      configId = await getActiveConfigId('image')
+    }
+    if (!config) throw new Error('未配置图片模型，请先到「设置」页添加并启用 AI 服务')
+    model = params.model || config.model
   }
   if (!config) throw new Error('未配置图片模型，请先到「设置」页添加并启用 AI 服务')
 
@@ -204,7 +227,7 @@ export async function generateImage(params: GenerateImageParams): Promise<number
     characterId: params.characterId,
     propId: params.propId,
     prompt: params.prompt,
-    model: params.model || config.model,
+    model,
   }, {
     size,
     frameType: params.frameType,
@@ -220,7 +243,7 @@ export async function generateImage(params: GenerateImageParams): Promise<number
     sceneId: params.sceneId,
     characterId: params.characterId,
     frameType: params.frameType,
-    model: params.model || config.model,
+    model,
     referenceCount: Array.isArray(params.referenceImages) ? params.referenceImages.length : 0,
   })
   logTaskPayload('ImageTask', 'enqueue params', {
@@ -277,6 +300,13 @@ async function resolveVideoServiceConfig(opts: {
   const requested = String(opts.model || '').trim()
   const model = videoModelFitsProvider(config.provider, requested) ? (requested || config.model) : config.model
   return { config, configId, model }
+}
+
+async function resolveApimartImageConfig() {
+  const config = await getActiveConfig('image', { providers: ['openai'] })
+  const configId = await getActiveConfigId('image', { providers: ['openai'] })
+  if (!config) return null
+  return { config, configId, model: apimartAssetImageModel(config.model) }
 }
 
 async function resolveXaiVideoConfig() {
@@ -807,14 +837,15 @@ async function processTask(id: number, config: AIConfig) {
         ? [...boundStills.slice(0, assetBudget), continuity]
         : boundStills.slice(0, assetBudget)
       const assetKind = record.characterId ? 'character' as const : record.sceneId ? 'scene' as const : record.propId ? 'prop' as const : null
+      const publicUrl = String(config.provider || '').toLowerCase() === 'openai'
       const storyboardStill = Boolean(record.storyboardId) && !record.characterId && !record.sceneId && !record.propId
       const stillSource = storyboardStill ? await storyboardStillSource(record.storyboardId) : null
       const openingFrame = Boolean(stillSource?.description.trim())
       const openingChoice = openingFrame ? parseOpeningFrameChoice(record.prompt) : null
       const frameRefs = openingFrame ? openingFrameRefs(stillSource?.description, stillsForLock, openingChoice) : stillsForLock
       const labeledRefs = assetKind
-        ? await labeledAssetReferenceImages(clientRefs, assetKind)
-        : await labeledStoryboardReferenceImages(frameRefs, clientRefs, { openingFrame })
+        ? await labeledAssetReferenceImages(clientRefs, assetKind, { publicUrl })
+        : await labeledStoryboardReferenceImages(frameRefs, clientRefs, { openingFrame, publicUrl })
       logTaskProgress(label, 'reference-images', {
         id,
         bound: boundStills.length,
@@ -1611,7 +1642,10 @@ async function handleVideoComplete(record: SysTaskRecord, videoUrl: string, dura
 
 // ─── 参考素材归一化 ───────────────────────────────────────────────
 
-async function normalizeReferenceImages(refs: string[] | null | undefined): Promise<string[]> {
+async function normalizeReferenceImages(
+  refs: string[] | null | undefined,
+  opts?: { publicUrl?: boolean },
+): Promise<string[]> {
   if (!Array.isArray(refs) || !refs.length) return []
 
   const deduped = Array.from(
@@ -1623,6 +1657,7 @@ async function normalizeReferenceImages(refs: string[] | null | undefined): Prom
   )
 
   const normalized = await Promise.all(deduped.map(async (value) => {
+    if (opts?.publicUrl) return openAiPublicImageUrl(value)
     if (value.startsWith('data:image/')) return value
     const localPath = toLocalStaticPath(value)
     if (localPath) {
@@ -1643,14 +1678,33 @@ async function normalizeReferenceImages(refs: string[] | null | undefined): Prom
   return normalized.filter((item): item is string => !!item).slice(0, 6)
 }
 
+/** GPT-Image-2.5 image_urls accept a public HTTP(S) URL only, not a data URL. */
+async function openAiPublicImageUrl(value: string): Promise<string | null> {
+  const raw = String(value || '').trim()
+  if (!raw || raw.startsWith('data:')) return null
+  if (/^https?:\/\//i.test(raw)) {
+    if (!isS3Enabled()) return raw
+    const fetched = await toVendorFetchableUrl(raw)
+    return /^https?:\/\//i.test(fetched) ? fetched : null
+  }
+  const local = toLocalStaticPath(raw)
+  const relative = local || ((raw.startsWith('static/') || raw.startsWith('/static/')) ? raw.replace(/^\//, '') : '')
+  if (!relative) return null
+  const base = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '')
+  if (!base) return null
+  const path = relative.startsWith('/') ? relative : `/${relative}`
+  return `${base}${path}`
+}
+
 async function labeledAssetReferenceImages(
   clientRefs: string[],
   kind: 'character' | 'scene' | 'prop',
+  opts?: { publicUrl?: boolean },
 ) {
   const out: { url: string; caption: string }[] = []
   const seen = new Set<string>()
   for (const extra of clientRefs) {
-    const [url] = await normalizeReferenceImages([String(extra || '')])
+    const [url] = await normalizeReferenceImages([String(extra || '')], opts)
     if (!url || seen.has(url) || out.length >= 6) continue
     seen.add(url)
     out.push({
@@ -1668,12 +1722,12 @@ async function labeledAssetReferenceImages(
 async function labeledStoryboardReferenceImages(
   boundStills: ShotImageRef[],
   clientRefs: string[],
-  opts?: { openingFrame?: boolean },
+  opts?: { openingFrame?: boolean; publicUrl?: boolean },
 ) {
   const out: { url: string; caption: string }[] = []
   const seen = new Set<string>()
   const push = async (raw: string, caption: string) => {
-    const [url] = await normalizeReferenceImages([raw])
+    const [url] = await normalizeReferenceImages([raw], opts)
     if (!url || seen.has(url) || out.length >= 6) return
     seen.add(url)
     out.push({ url, caption })

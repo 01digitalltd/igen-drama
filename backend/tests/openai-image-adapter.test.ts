@@ -16,6 +16,64 @@ const openai = {
   model: 'gpt-image-2',
 }
 
+test('APIMart gpt-image-2.5-sunburst uses the same aspect request', () => {
+  const req = adapter.buildGenerateRequest({
+    ...apimart,
+    model: 'gpt-image-2.5-sunburst',
+  }, {
+    id: 1,
+    model: 'gpt-image-2.5-sunburst',
+    prompt: 'a person',
+    size: '1920x1080',
+  })
+  assert.equal(req.body.model, 'gpt-image-2.5-sunburst')
+  assert.equal(req.body.size, '16:9')
+  assert.equal(req.body.n, 1)
+  assert.equal(req.body.quality, 'auto')
+  assert.equal(req.body.resolution, '1k')
+  assert.equal(req.body.image_urls, undefined)
+})
+
+test('APIMart gpt-image-2.5 edit keeps public image_urls and omits size', () => {
+  const req = adapter.buildGenerateRequest({
+    ...apimart,
+    model: 'gpt-image-2.5-sunburst',
+  }, {
+    id: 1,
+    model: 'gpt-image-2.5-sunburst',
+    prompt: '保留脸和服装',
+    size: '1920x1080',
+    referenceImages: JSON.stringify([
+      'https://cdn.example/face.jpg',
+      'data:image/jpeg;base64,aaa',
+    ]),
+  })
+  assert.equal(req.body.size, undefined)
+  assert.equal(req.body.n, 1)
+  assert.equal(req.body.quality, 'auto')
+  assert.equal(req.body.resolution, '1k')
+  assert.deepEqual(req.body.image_urls, ['https://cdn.example/face.jpg'])
+})
+
+test('APIMart gpt-image-2.5 reads a task id array and a nested image url', () => {
+  const submitted = adapter.parseGenerateResponse({
+    code: 200,
+    data: [{ status: 'submitted', task_id: 'task_01K' }],
+  })
+  assert.equal(submitted.isAsync, true)
+  assert.equal(submitted.taskId, 'task_01K')
+
+  const done = adapter.parsePollResponse({
+    code: 200,
+    data: {
+      status: 'completed',
+      result: { images: [{ url: ['https://upload.apimart.ai/f/image/example.png'] }] },
+    },
+  })
+  assert.equal(done.status, 'completed')
+  assert.equal(done.imageUrl, 'https://upload.apimart.ai/f/image/example.png')
+})
+
 test('APIMart gpt-image-2 submits aspect size to /v1/images/generations', () => {
   const req = adapter.buildGenerateRequest(apimart, {
     id: 1,

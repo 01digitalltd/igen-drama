@@ -13,7 +13,10 @@ import type {
 } from './types'
 import { joinProviderUrl } from './url'
 
-const APIMART_ASPECTS = new Set(['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'])
+const APIMART_ASPECTS = new Set([
+  '1:1', '3:2', '2:3', '4:3', '3:4', '5:4', '4:5', '16:9', '9:16',
+  '2:1', '1:2', '21:9', '9:21', '3:1', '1:3',
+])
 
 function isApimartHost(baseUrl: string): boolean {
   try {
@@ -24,7 +27,15 @@ function isApimartHost(baseUrl: string): boolean {
 }
 
 function isGptImage2Model(model: string): boolean {
-  return model === 'gpt-image-2' || model.startsWith('gpt-image-2-')
+  return /^gpt-image-2(?:[.-]|$)/.test(model)
+}
+
+function isGptImage25Model(model: string): boolean {
+  return /^gpt-image-2\.5(?:[.-]|$)/.test(model)
+}
+
+function httpImageUrls(urls: string[]): string[] {
+  return urls.filter((url) => /^https?:\/\//i.test(url)).slice(0, 16)
 }
 
 function unwrapTaskPayload(result: any): any {
@@ -101,6 +112,7 @@ export class OpenAIImageAdapter implements ImageProviderAdapter {
     const model = record.model || config.model || 'gpt-image-2'
     const isGptImage = model.startsWith('gpt-image-')
     const isGptImage2 = isGptImage2Model(model)
+    const isGptImage25 = isGptImage25Model(model)
     const apimart = isApimartHost(config.baseUrl)
     const size = apimart && isGptImage2
       ? mapPixelSizeToAspect(record.size)
@@ -110,17 +122,25 @@ export class OpenAIImageAdapter implements ImageProviderAdapter {
           ? this.normalizeGptImageSize(record.size)
           : record.size || '1024x1024'
 
+    const rawUrls = parseOpenAiReferenceImages(record.referenceImages)
+    const imageUrls = apimart && isGptImage25 ? httpImageUrls(rawUrls) : rawUrls
     const body: any = {
       model,
       prompt: record.prompt,
-      size,
+    }
+    // GPT-Image-2.5 sizes an edit from the first reference image plus resolution.
+    if (!(apimart && isGptImage25 && imageUrls.length)) {
+      body.size = size
     }
 
-    if (!apimart) {
+    if (!apimart || (apimart && isGptImage25)) {
       body.n = 1
     }
 
-    if (apimart && isGptImage2) {
+    if (apimart && isGptImage25) {
+      body.quality = 'auto'
+      body.resolution = '1k'
+    } else if (apimart && isGptImage2) {
       body.quality = 'high'
       body.resolution = '2k'
     }
@@ -129,7 +149,6 @@ export class OpenAIImageAdapter implements ImageProviderAdapter {
       body.response_format = 'url'
     }
 
-    const imageUrls = parseOpenAiReferenceImages(record.referenceImages)
     if (imageUrls.length) {
       body.image_urls = imageUrls
     }
