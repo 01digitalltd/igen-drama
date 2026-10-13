@@ -37,6 +37,7 @@ test('asset image model stays in the gpt-image-2 family', () => {
 test('image generation routes realistic assets and storyboard stills to APIMart', () => {
   const generation = readFileSync(new URL('../src/services/generation.ts', import.meta.url), 'utf8')
   const seed = readFileSync(new URL('../src/services/config-seed.ts', import.meta.url), 'utf8')
+  assert.match(generation, /apimartSizeForAspectRatio/)
   assert.match(generation, /isRealisticAssetImageJob/)
   assert.match(generation, /resolveApimartImageConfig/)
   assert.match(generation, /APIMART_ASSET_IMAGE_MISSING_MESSAGE/)

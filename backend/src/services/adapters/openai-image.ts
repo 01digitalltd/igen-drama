@@ -127,10 +127,8 @@ export class OpenAIImageAdapter implements ImageProviderAdapter {
     const body: any = {
       model,
       prompt: record.prompt,
-    }
-    // GPT-Image-2.5 sizes an edit from the first reference image plus resolution.
-    if (!(apimart && isGptImage25 && imageUrls.length)) {
-      body.size = size
+      // The script aspect ratio stays on the request. Reference images do not replace it.
+      size,
     }
 
     if (!apimart || (apimart && isGptImage25)) {

@@ -1,3 +1,16 @@
+const APIMART_ASPECTS = new Set([
+  '1:1', '3:2', '2:3', '4:3', '3:4', '5:4', '4:5', '16:9', '9:16',
+  '2:1', '1:2', '21:9', '9:21', '3:1', '1:3',
+])
+
+/** APIMart size is the script aspect ratio itself, not a pixel size derived from it. */
+export function apimartSizeForAspectRatio(aspectRatio?: string | null): string {
+  const ratio = String(aspectRatio || '').trim()
+  if (ratio === '1.91:1') return '16:9'
+  if (APIMART_ASPECTS.has(ratio)) return ratio
+  return '16:9'
+}
+
 /** Map drama aspect_ratio to pixel size for storyboard still generation. */
 export function imageSizeForAspectRatio(aspectRatio?: string | null): string {
   const ratio = String(aspectRatio || '').trim()

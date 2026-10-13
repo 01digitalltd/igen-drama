@@ -34,7 +34,7 @@ test('APIMart gpt-image-2.5-sunburst uses the same aspect request', () => {
   assert.equal(req.body.image_urls, undefined)
 })
 
-test('APIMart gpt-image-2.5 edit keeps public image_urls and omits size', () => {
+test('APIMart gpt-image-2.5 edit keeps public image_urls and the script aspect', () => {
   const req = adapter.buildGenerateRequest({
     ...apimart,
     model: 'gpt-image-2.5-sunburst',
@@ -42,13 +42,13 @@ test('APIMart gpt-image-2.5 edit keeps public image_urls and omits size', () => 
     id: 1,
     model: 'gpt-image-2.5-sunburst',
     prompt: '保留脸和服装',
-    size: '1920x1080',
+    size: '9:16',
     referenceImages: JSON.stringify([
       'https://cdn.example/face.jpg',
       'data:image/jpeg;base64,aaa',
     ]),
   })
-  assert.equal(req.body.size, undefined)
+  assert.equal(req.body.size, '9:16')
   assert.equal(req.body.n, 1)
   assert.equal(req.body.quality, 'auto')
   assert.equal(req.body.resolution, '1k')

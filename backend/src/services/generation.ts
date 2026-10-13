@@ -58,7 +58,7 @@ import {
 } from './tts/vo-speech.js'
 import { appendXaiVoiceDirective, selectXaiReferenceVoices, type XaiVoiceRef } from './tts/xai-voices.js'
 import { parseXaiVoiceRefs } from './adapters/xai-video.js'
-import { imageSizeForAspectRatio } from './image-size.js'
+import { apimartSizeForAspectRatio, imageSizeForAspectRatio } from './image-size.js'
 
 type TaskType = 'image' | 'video'
 
@@ -161,21 +161,32 @@ async function attachAssetStillForRestyle(params: GenerateImageParams): Promise<
   }
 }
 
-async function resolveStoryboardImageSize(params: GenerateImageParams): Promise<string> {
-  const explicit = String(params.size || '').trim()
-  if (explicit) return explicit
-  // Asset routes keep their own size; only storyboard stills follow drama.aspect_ratio.
-  if (!params.storyboardId) return '1920x1080'
+async function loadImageDrama(params: GenerateImageParams) {
   let dramaId = Number(params.dramaId || 0)
-  if (!Number.isInteger(dramaId) || dramaId <= 0) {
+  if ((!Number.isInteger(dramaId) || dramaId <= 0) && params.storyboardId) {
     const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, params.storyboardId))
     if (sb) {
       const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId))
       dramaId = Number(ep?.dramaId || 0)
     }
   }
-  if (!Number.isInteger(dramaId) || dramaId <= 0) return '1920x1080'
+  if (!Number.isInteger(dramaId) || dramaId <= 0) return null
   const [drama] = await db.select().from(schema.dramas).where(eq(schema.dramas.id, dramaId))
+  return drama || null
+}
+
+async function resolveStoryboardImageSize(params: GenerateImageParams, realisticAsset: boolean): Promise<string> {
+  // Realistic storyboard stills send the script aspect ratio. A client pixel
+  // size must not replace that setting, and reference images must not either.
+  if (realisticAsset && params.storyboardId) {
+    const drama = await loadImageDrama(params)
+    return apimartSizeForAspectRatio(drama?.aspectRatio)
+  }
+  const explicit = String(params.size || '').trim()
+  if (explicit) return explicit
+  // Asset routes keep their own size; other storyboard stills use pixel size.
+  if (!params.storyboardId) return '1920x1080'
+  const drama = await loadImageDrama(params)
   return imageSizeForAspectRatio(drama?.aspectRatio)
 }
 
@@ -218,7 +229,7 @@ export async function generateImage(params: GenerateImageParams): Promise<number
   }
   if (!config) throw new Error('未配置图片模型，请先到「设置」页添加并启用 AI 服务')
 
-  const size = await resolveStoryboardImageSize(params)
+  const size = await resolveStoryboardImageSize(params, realisticAsset)
 
   const id = await createTask('image', config, {
     storyboardId: params.storyboardId,
