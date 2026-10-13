@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildShotImageRefs } from '../src/services/storyboard-prompt.ts'
-import { fitXaiSpokenClip, muteUnspokenCalls, orderXaiImageRefs, pinXaiStoryboardStill, prepareXaiLitePrompt, rewriteXaiPrompt, xaiBeatImageIssues, xaiSpokenLineIssues, xaiTimelineEndSeconds } from '../src/services/xai-prompt.ts'
+import { fitXaiSpokenClip, muteUnspokenCalls, orderXaiImageRefs, pinXaiEndingStill, pinXaiStoryboardStill, prepareXaiLitePrompt, rewriteXaiPrompt, xaiBeatImageIssues, xaiSpokenLineIssues, xaiTimelineEndSeconds } from '../src/services/xai-prompt.ts'
 
 test('xAI reference order is character, scene, then prop', () => {
   const source = buildShotImageRefs({
@@ -179,6 +179,9 @@ test('pinning the storyboard still shifts asset tokens and keeps IMAGE_0 for the
   assert.match(pinned, /<IMAGE_1> tastes the noodles from <IMAGE_2>/)
   assert.match(pinned, /<IMAGE_0> is shot 1 of this clip and the exact opening instant/)
   assert.equal(pinXaiStoryboardStill(pinned), pinned)
+  const ended = pinXaiEndingStill(pinned)
+  assert.match(ended, /final instant/)
+  assert.equal(pinXaiEndingStill(ended), ended)
 })
 
 test('xAI keeps a spoken clip at the storyboard duration', () => {

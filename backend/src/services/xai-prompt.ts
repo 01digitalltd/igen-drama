@@ -84,6 +84,15 @@ export function prepareXaiLitePrompt(prompt: string) {
   return text
 }
 
+const XAI_END_TAG = '[XAI_END: The pinned last frame is only the final instant. Arrive on it as this clip ends. Keep playing this storyboard until then.]'
+
+/** Tell the model the separate last_frame image is the ending, not another beat. */
+export function pinXaiEndingStill(prompt: string) {
+  const source = String(prompt || '').trim()
+  if (!source || source.includes('[XAI_END:')) return source
+  return `${source}\n${XAI_END_TAG}`
+}
+
 /**
  * Pinning a still makes it `<IMAGE_0>`. Asset refs move to `<IMAGE_1>` and up.
  * Idempotent once the still tag is present.

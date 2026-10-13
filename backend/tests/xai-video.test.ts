@@ -60,6 +60,22 @@ test('xAI pins a storyboard still as the opening frame without dropping asset re
   })
   assert.deepEqual(request.body.image, { url: 'https://cdn.example/storyboard.png' })
   assert.deepEqual(request.body.reference_images, [{ url: 'https://cdn.example/host.png' }])
+  assert.equal(request.body.last_frame, undefined)
+})
+
+test('xAI pins the next same-scene still as the last frame', () => {
+  const request = adapter.buildGenerateRequest(fullModel, {
+    id: 5,
+    prompt: '<IMAGE_0> turns toward the door.',
+    imageUrl: 'https://cdn.example/storyboard.png',
+    lastFrameUrl: 'https://cdn.example/next.png',
+    referenceImageUrls: JSON.stringify(['https://cdn.example/host.png']),
+    duration: 8,
+    aspectRatio: '16:9',
+  })
+  assert.deepEqual(request.body.image, { url: 'https://cdn.example/storyboard.png' })
+  assert.deepEqual(request.body.last_frame, { url: 'https://cdn.example/next.png' })
+  assert.deepEqual(request.body.reference_images, [{ url: 'https://cdn.example/host.png' }])
 })
 
 test('xAI lite sends one opening image and drops reference images', () => {
@@ -69,6 +85,7 @@ test('xAI lite sends one opening image and drops reference images', () => {
     imageUrl: 'https://cdn.example/storyboard.png',
     referenceImageUrls: JSON.stringify(['https://cdn.example/host.png']),
     xaiReferenceAudios: JSON.stringify([{ voiceId: 'ara', speaker: '旁白', kind: 'narrator' }]),
+    lastFrameUrl: 'https://cdn.example/next.png',
     duration: 8,
     aspectRatio: '16:9',
   })
@@ -76,6 +93,7 @@ test('xAI lite sends one opening image and drops reference images', () => {
   assert.deepEqual(request.body.image, { url: 'https://cdn.example/storyboard.png' })
   assert.equal(request.body.reference_images, undefined)
   assert.equal(request.body.reference_audios, undefined)
+  assert.equal(request.body.last_frame, undefined)
 })
 
 test('xAI clamps duration and unknown aspect ratios', () => {

@@ -90,6 +90,7 @@ export class XaiVideoAdapter implements VideoProviderAdapter {
       : []
     const voices = allowRefs ? parseXaiVoiceRefs(record.xaiReferenceAudios) : []
     const pinnedStill = String(record.imageUrl || '').trim()
+    const lastFrame = allowRefs ? String(record.lastFrameUrl || '').trim() : ''
     if (!prompt && !refImages.length && !pinnedStill) {
       throw new Error('xAI 參考圖生成需要提示詞或至少一張參考圖')
     }
@@ -102,6 +103,7 @@ export class XaiVideoAdapter implements VideoProviderAdapter {
     }
     if (prompt) body.prompt = prompt
     if (pinnedStill) body.image = { url: pinnedStill }
+    if (lastFrame && lastFrame !== pinnedStill) body.last_frame = { url: lastFrame }
     if (refImages.length) {
       body.reference_images = refImages.map((url) => ({ url }))
     }

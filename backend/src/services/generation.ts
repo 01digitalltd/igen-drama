@@ -27,8 +27,8 @@ import {
   isCharacterMediaRef,
   overlayOrangeGridOnRef,
 } from './character-grid.js'
-import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, composeStoryboardImagePrompt, openingFrameRefs, parseOpeningFrameChoice, geminiStillCaption, geminiImageOrdinal, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
-import { fitXaiSpokenClip, muteUnspokenCalls, orderXaiImageRefs, pinXaiStoryboardStill, prepareXaiLitePrompt, rewriteXaiPrompt } from './xai-prompt.js'
+import { resolveStoryboardVideoPrompt, resolveVideoGenerationDuration, parseVideoPromptDurationSeconds, rewriteSeedancePromptRefs, buildShotImageRefs, lockStoryboardStillPrompt, composeStoryboardImagePrompt, openingFrameRefs, parseOpeningFrameChoice, geminiStillCaption, geminiImageOrdinal, pickNextSameSceneStill, pickPreviousStoryboardStill, type ShotImageRef } from './storyboard-prompt.js'
+import { fitXaiSpokenClip, muteUnspokenCalls, orderXaiImageRefs, pinXaiEndingStill, pinXaiStoryboardStill, prepareXaiLitePrompt, rewriteXaiPrompt } from './xai-prompt.js'
 import { applyHandheldViewpoint } from './handheld-viewpoint.js'
 import { appendBrandLogoDirective, brandLogoPropIfNeeded } from './brand-logo.js'
 import { isBrandLogoProp } from '../utils/project-category.js'
@@ -909,8 +909,13 @@ async function processTask(id: number, config: AIConfig) {
       const pinnedStill = record.storyboardId
         ? await normalizeVideoReferenceUrl(await storyboardComposedStillUrl(record.storyboardId))
         : null
+      const endingStill = allowRefs && record.storyboardId
+        ? await normalizeVideoReferenceUrl(await nextSameSceneStillUrl(record.storyboardId))
+        : ''
+      const pinnedEnding = endingStill && endingStill !== pinnedStill ? endingStill : ''
       if (allowRefs) {
         if (pinnedStill) prompt = pinXaiStoryboardStill(prompt)
+        if (pinnedEnding) prompt = pinXaiEndingStill(prompt)
       } else {
         prompt = prepareXaiLitePrompt(prompt)
       }
@@ -927,6 +932,7 @@ async function processTask(id: number, config: AIConfig) {
         model: record.model,
         prompt,
         imageUrl: pinnedStill,
+        lastFrameUrl: pinnedEnding || null,
         referenceImageUrls: allowRefs && publicRefs.length ? JSON.stringify(publicRefs.map((ref) => ref.url)) : null,
         xaiReferenceAudios: allowRefs && voices.length ? JSON.stringify(voices) : null,
         duration: params.duration,
@@ -1761,6 +1767,17 @@ async function storyboardComposedStillUrl(storyboardId: unknown) {
   if (!Number.isInteger(id) || id <= 0) return ''
   const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id))
   return String(sb?.composedImage || sb?.firstFrameImage || '').trim()
+}
+
+async function nextSameSceneStillUrl(storyboardId: unknown) {
+  const id = Number(storyboardId)
+  if (!Number.isInteger(id) || id <= 0) return ''
+  const [current] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id))
+  if (!current) return ''
+  const rows = await db.select().from(schema.storyboards)
+    .where(eq(schema.storyboards.episodeId, current.episodeId))
+  const next = pickNextSameSceneStill(current, rows)
+  return String(next?.composedImage || next?.firstFrameImage || '').trim()
 }
 
 async function storyboardBoundStills(storyboardId: unknown) {

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs, rewriteSeedancePromptRefs, innerShotsOverflow, formatInnerShotOverflow, formatEpisodeFloorStop, storyboardPlaceKeys, sameSceneSplits, formatSameSceneSplits, formatMixedScenes, estimateScriptDuration, beatBudgetForSkill } from '../src/services/storyboard-prompt.ts'
+import { resolveStoryboardVideoPrompt, parseVideoPromptDurationSeconds, resolveVideoGenerationDuration, buildShotImageRefs, rewriteSeedancePromptRefs, innerShotsOverflow, formatInnerShotOverflow, formatEpisodeFloorStop, storyboardPlaceKeys, sameSceneSplits, formatSameSceneSplits, formatMixedScenes, estimateScriptDuration, beatBudgetForSkill, pickNextSameSceneStill } from '../src/services/storyboard-prompt.ts'
 
 test('prefers dedicated video_prompt over storyboard description', () => {
   assert.equal(
@@ -217,4 +217,21 @@ test('estimates the script before the model runs', () => {
   assert.ok(short.neededSeconds <= 30)
   assert.equal(beatBudgetForSkill('xai')?.charsPerSecond, 2.5)
   assert.equal(beatBudgetForSkill('seedance'), undefined)
+})
+
+test('the next storyboard still is pinned only when it is the same scene', () => {
+  const current = { id: 1, storyboardNumber: 1, sceneId: 10, location: '甲地', composedImage: 'a.png' }
+  const same = { id: 2, storyboardNumber: 2, sceneId: 10, location: '甲地', composedImage: 'b.png' }
+  const other = { id: 3, storyboardNumber: 3, sceneId: 11, location: '乙地', composedImage: 'c.png' }
+  const laterSame = { id: 4, storyboardNumber: 4, sceneId: 10, location: '甲地', composedImage: 'd.png' }
+  assert.equal(pickNextSameSceneStill(current, [current, same, other, laterSame])?.id, 2)
+  assert.equal(pickNextSameSceneStill(same, [current, same, other, laterSame]), null)
+  assert.equal(pickNextSameSceneStill(
+    { ...current, sceneId: null, location: '甲地' },
+    [{ ...current, sceneId: null }, { ...same, sceneId: null, composedImage: '' }, other],
+  ), null)
+  assert.equal(pickNextSameSceneStill(
+    { ...current, sceneId: null, location: '甲地' },
+    [{ ...current, sceneId: null }, { ...same, sceneId: null }],
+  )?.id, 2)
 })

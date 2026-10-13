@@ -434,6 +434,47 @@ export function pickPreviousStoryboardStill<T extends {
   return [...withStill].sort((a, b) => (Number(a.storyboardNumber) || 0) - (Number(b.storyboardNumber) || 0))[0] || null
 }
 
+function positiveSceneId(value: unknown) {
+  const id = Number(value)
+  return Number.isInteger(id) && id > 0 ? id : 0
+}
+
+/** Same scene_id, or the same location text when neither row has a scene id. */
+export function sameStoryboardScene(
+  left: { sceneId?: number | null; location?: string | null },
+  right: { sceneId?: number | null; location?: string | null },
+) {
+  const leftId = positiveSceneId(left.sceneId)
+  const rightId = positiveSceneId(right.sceneId)
+  if (leftId && rightId) return leftId === rightId
+  if (leftId || rightId) return false
+  const leftPlace = String(left.location || '').trim().toLowerCase()
+  const rightPlace = String(right.location || '').trim().toLowerCase()
+  return Boolean(leftPlace) && leftPlace === rightPlace
+}
+
+/**
+ * The storyboard that plays immediately after this one, when it stays in the
+ * same scene and already has a composed still. A later same-scene board does
+ * not jump over a scene change in between.
+ */
+export function pickNextSameSceneStill<T extends {
+  id: number
+  storyboardNumber?: number | null
+  deletedAt?: unknown
+  sceneId?: number | null
+  location?: string | null
+  composedImage?: string | null
+  firstFrameImage?: string | null
+}>(current: T, rows: T[]): T | null {
+  const currentNo = Number(current.storyboardNumber) || 0
+  const next = rows
+    .filter((row) => row.id !== current.id && !row.deletedAt && (Number(row.storyboardNumber) || 0) > currentNo)
+    .sort((a, b) => (Number(a.storyboardNumber) || 0) - (Number(b.storyboardNumber) || 0) || a.id - b.id)[0]
+  if (!next || !sameStoryboardScene(current, next)) return null
+  return String(next.composedImage || next.firstFrameImage || '').trim() ? next : null
+}
+
 /** Prefix so Gemini maps attached parts[0..] to 第一张图 / 第二张图. */
 export function lockStoryboardStillPrompt(prompt: string, refs: ShotImageRef[], styleValue?: string | null) {
   const body = String(prompt || '').trim()
