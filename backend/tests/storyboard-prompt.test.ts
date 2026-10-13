@@ -141,6 +141,26 @@ test('a scene longer than the cap is split instead of kept together', () => {
   ], 15).length, 0)
 })
 
+test('one long spoken line cannot stay at the three-second minimum', () => {
+  const line = '吃完這一頓我真的很滿足。這家我一定會再來。地址就在影片下面。記得轉發給朋友。下次見。'
+  const description = `【鏡頭1】場景：座位。人物：甲。動作：中景、手持鏡頭。甲說：「${line}」`
+  const xai = { charsPerSecond: 2.5, tailSeconds: 1 }
+  const hit = innerShotsOverflow(description, 3, xai)
+  assert.ok(hit)
+  assert.equal(hit?.spoken, 1)
+  assert.ok((hit?.needed || 0) > 15)
+  const message = formatInnerShotOverflow([{ shotNumber: 1, duration: 3, ...hit! }], 15)
+  assert.match(message, /已经超过 15 秒/)
+  assert.match(message, /按句号、问号或惊叹号拆开/)
+  const shorter = '【鏡頭1】人物：甲。甲說：「今晚就從這張桌子開始說完這件事。」'
+  const grow = innerShotsOverflow(shorter, 3, xai)
+  assert.ok(grow)
+  assert.ok((grow?.needed || 0) <= 15)
+  const growMessage = formatInnerShotOverflow([{ shotNumber: 2, duration: 3, ...grow! }], 15)
+  assert.match(growMessage, /把这段 duration 改成 \d+ 秒/)
+  assert.doesNotMatch(growMessage, /按句号、问号或惊叹号拆开/)
+})
+
 test('two spoken cuts fit in nine seconds and one unmarked shot is not split', () => {
   const two = '【镜头1】阿仪说：「今晚开始。」\n【镜头2】陈生说：「这些给你。」'
   assert.equal(innerShotsOverflow(two, 9), null)

@@ -73,7 +73,9 @@ export function innerShotSecondsNeeded(description?: string | null, budget?: Bea
     : 0
   const fromLines = lines.length >= 2
     ? lines.reduce((sum, line) => sum + spokenLineSeconds(line.text, charsPerSecond), 0)
-    : 0
+    : lines.length === 1
+      ? spokenLineSeconds(lines[0].text, charsPerSecond)
+      : 0
   const needed = Math.max(fromBeats, fromLines)
   if (!needed || !lines.length) return needed
   return needed + Math.max(0, Math.round(Number(budget?.tailSeconds) || 0))
@@ -215,7 +217,8 @@ export function formatSameSceneSplits(
 
 /**
  * Reject a storyboard whose cuts cannot play inside its duration.
- * One short line in an unmarked description is left alone.
+ * One short line that fits the labeled seconds is left alone.
+ * One long line still has to be long enough to speak.
  */
 export function innerShotsOverflow(
   description: string | null | undefined,
@@ -228,7 +231,11 @@ export function innerShotsOverflow(
   if (needed <= seconds) return null
   const beats = storyboardBeats(description)
   const lines = extractSpokenLines(String(description || ''))
-  const cuts = Math.max(beats.length >= 2 ? beats.length : 0, lines.length >= 2 ? lines.length : 0)
+  const cuts = Math.max(
+    beats.length >= 2 ? beats.length : 0,
+    lines.length >= 2 ? lines.length : 0,
+    lines.length >= 1 ? 1 : 0,
+  )
   return { beats: cuts, spoken: lines.length, needed }
 }
 
@@ -246,9 +253,12 @@ export function formatInnerShotOverflow(
     return `#${row.shotNumber} 只有 ${row.duration} 秒，却有 ${row.beats} 个镜头${spoken}，至少要 ${row.needed} 秒。${cap}`
   }).join('；')
   const anyOver = rows.some((row) => Boolean(durationMax && row.needed > durationMax))
-  const rule = anyOver
-    ? `超过 ${ceiling} 的分镜才拆开，不要为了同一场景硬放在一段。还放得下的分镜只改 duration。`
-    : `只把上面的 duration 改成写明的秒数。`
+  const oneLineOver = rows.some((row) => row.beats <= 1 && row.spoken <= 1 && Boolean(durationMax && row.needed > durationMax))
+  const rule = oneLineOver
+    ? `这句对白超过 ${ceiling}。按句号、问号或惊叹号拆开，后面的句子放到下一个分镜，不要整句留在这一段。`
+    : anyOver
+      ? `超过 ${ceiling} 的分镜才拆开，不要为了同一场景硬放在一段。还放得下的分镜只改 duration。`
+      : `只把上面的 duration 改成写明的秒数。`
   return `镜头装不下：${detail}。${rule}没对白的镜头至少 ${MIN_SILENT_BEAT_SECONDS} 秒，有对白的镜头至少 ${MIN_SPOKEN_BEAT_SECONDS} 秒并够把那句说完。总时长仍不得超过目标秒数。然后重新调用 save_storyboards，第一批 replace_existing: true。`
 }
 
