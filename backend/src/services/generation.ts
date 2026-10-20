@@ -10,6 +10,7 @@ import { downloadFile, generateImageThumb, readImageAsCompressedDataUrl, saveBas
 import { toLocalStaticPath } from '../utils/media-path.js'
 import { isS3Enabled, toVendorFetchableUrl } from '../utils/s3-media.js'
 import { extractVideoPoster } from '../utils/video-poster.js'
+import { publishShotToMediaLibrary } from './media-library-video.js'
 import { probeStoredDurationSeconds } from '../utils/ffmpeg.js'
 import { getImageAdapter, getVideoAdapter } from './adapters/registry'
 import { xaiModelSupportsReferences } from './adapters/xai-video.js'
@@ -1617,7 +1618,7 @@ async function handleVideoCompleteBase64(
 ) {
   if (cancelledTaskIds.has(record.id)) return
   const localPath = await saveBase64Video(base64Data, mimeType, 'videos')
-  await extractVideoPoster(localPath)
+  const posterPath = await extractVideoPoster(localPath)
   await db.update(schema.sysTask)
     .set({ localPath, status: 'completed', completedAt: now(), updatedAt: now() })
     .where(eq(schema.sysTask.id, record.id))
@@ -1628,6 +1629,7 @@ async function handleVideoCompleteBase64(
     await db.update(schema.storyboards)
       .set({ videoUrl: localPath, duration: duration || undefined, updatedAt: now() })
       .where(eq(schema.storyboards.id, record.storyboardId))
+    await publishShotToMediaLibrary(record.storyboardId, localPath, posterPath, duration)
   }
   await emitTaskEvent(record.id)
 }
@@ -1636,7 +1638,7 @@ async function handleVideoComplete(record: SysTaskRecord, videoUrl: string, dura
   if (cancelledTaskIds.has(record.id)) return
   const localPath = await downloadFile(videoUrl, 'videos')
   // 海报帧供列表/封面展示，避免前端为显示首帧缓冲整个视频
-  await extractVideoPoster(localPath)
+  const posterPath = await extractVideoPoster(localPath)
   await db.update(schema.sysTask)
     .set({ resultUrl: videoUrl, localPath, status: 'completed', completedAt: now(), updatedAt: now() })
     .where(eq(schema.sysTask.id, record.id))
@@ -1647,6 +1649,7 @@ async function handleVideoComplete(record: SysTaskRecord, videoUrl: string, dura
     await db.update(schema.storyboards)
       .set({ videoUrl: localPath, duration: duration || undefined, updatedAt: now() })
       .where(eq(schema.storyboards.id, record.storyboardId))
+    await publishShotToMediaLibrary(record.storyboardId, localPath, posterPath, duration)
   }
   await emitTaskEvent(record.id)
 }

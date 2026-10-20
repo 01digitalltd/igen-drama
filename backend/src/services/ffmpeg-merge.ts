@@ -13,6 +13,7 @@ import { ffmpeg, checkFfmpegSuite } from '../utils/ffmpeg.js'
 import { ensureScratchDir, materializeLocalFile, persistLocalFile } from '../utils/storage.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { publishEpisodeEvent } from './episode-events.js'
+import { publishMergeToMediaLibrary } from './media-library-video.js'
 
 /**
  * 拼接一集的镜头视频。
@@ -180,7 +181,7 @@ async function doMerge(mergeId: number, episodeId: number, videos: string[]) {
 
     const duration = await getVideoDuration(outputPath)
     const mergedStored = await persistLocalFile(outputPath, 'merged')
-    await extractVideoPoster(mergedStored)
+    const posterStored = await extractVideoPoster(mergedStored)
 
     await db.update(schema.videoMerges)
       .set({ status: 'completed', mergedUrl: mergedStored, duration, completedAt: now() })
@@ -189,6 +190,7 @@ async function doMerge(mergeId: number, episodeId: number, videos: string[]) {
     await db.update(schema.episodes)
       .set({ videoUrl: mergedStored, updatedAt: now() })
       .where(eq(schema.episodes.id, episodeId))
+    await publishMergeToMediaLibrary(episodeId, mergedStored, posterStored, duration)
 
     try { fs.unlinkSync(outputPath) } catch {}
 

@@ -19,6 +19,7 @@ import stylePresets from './routes/stylePresets.js'
 import prompts from './routes/prompts.js'
 import agent from './routes/agent.js'
 import merge from './routes/merge.js'
+import mediaLibrary from './routes/media-library.js'
 import { registerEpisodeWebSocket } from './routes/episode-ws.js'
 import skills from './routes/skills.js'
 import props from './routes/props.js'
@@ -63,6 +64,7 @@ api.route('/style-presets', stylePresets)
 api.route('/prompts', prompts)
 api.route('/agent', agent)
 api.route('/merge', merge)
+api.route('/media-library', mediaLibrary)
 api.route('/skills', skills)
 api.route('/props', props)
 

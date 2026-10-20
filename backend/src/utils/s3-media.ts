@@ -3,7 +3,7 @@
  * Playback uses unsigned CloudFront URLs (browser has signed cookies).
  * BytePlus/Seedance fetch uses long-lived S3 presigned GET URLs.
  */
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const KEY_PREFIX = 'drama'
@@ -99,6 +99,32 @@ export function parseMediaUrlToKey(value: string): string | null {
     return null
   }
   return null
+}
+
+export async function copyObject(sourceKey: string, destKey: string): Promise<string> {
+  const source = String(sourceKey || '').replace(/^\/+/, '')
+  const dest = String(destKey || '').replace(/^\/+/, '')
+  if (!source || !dest) throw new Error('S3 copy requires source and dest keys')
+  const encodedSource = source.split('/').map((part) => encodeURIComponent(part)).join('/')
+  await s3().send(
+    new CopyObjectCommand({
+      Bucket: s3Bucket(),
+      Key: dest,
+      CopySource: `${s3Bucket()}/${encodedSource}`,
+    }),
+  )
+  return deliveryUrlForKey(dest)
+}
+
+export async function deleteObject(key: string): Promise<void> {
+  const clean = String(key || '').replace(/^\/+/, '')
+  if (!clean || !isS3Enabled()) return
+  await s3().send(
+    new DeleteObjectCommand({
+      Bucket: s3Bucket(),
+      Key: clean,
+    }),
+  )
 }
 
 export async function putObject(key: string, body: Buffer, contentType: string): Promise<string> {
