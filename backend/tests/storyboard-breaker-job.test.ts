@@ -109,8 +109,19 @@ test('storyboard breaker forces a read, then a save, then stops forcing after a 
 
 test('a stop error does not start another storyboard generate', () => {
   assert.equal(shouldRetryStoryboardBreaker(null), false)
-  assert.equal(shouldRetryStoryboardBreaker('镜头装不下'), true)
+  assert.equal(shouldRetryStoryboardBreaker('镜头装不下'), false)
+  assert.equal(shouldRetryStoryboardBreaker('拆分鏡沒有寫入任何鏡頭，請再試一次。'), true)
   assert.equal(shouldRetryStoryboardBreaker('停止拆分镜：这些镜头至少要 33 秒'), false)
+})
+
+test('three rejected saves stop the storyboard breaker', () => {
+  const rejected = {
+    toolResults: [{ toolName: 'saveStoryboards', result: '{"error":"镜头装不下"}' }],
+  }
+  assert.deepEqual(storyboardBreakerPrepareStep({
+    stepNumber: 4,
+    steps: [rejected, rejected, rejected],
+  }), { toolChoice: 'none' })
 })
 
 test('storyboard generate diagnostic keeps the finish reason', () => {

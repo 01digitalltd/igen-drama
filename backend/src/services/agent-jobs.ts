@@ -81,9 +81,29 @@ function normalizeGenerateToolResults(result: any): AgentToolResult[] {
   }))
 }
 
+const STORYBOARD_BREAK_TIMEOUT_MS = 8 * 60 * 1000
+
 const storyboardGenerateOptions = {
-  maxSteps: 20,
+  maxSteps: 8,
   prepareStep: storyboardBreakerPrepareStep,
+}
+
+function withDeadline<T>(work: Promise<T>, deadlineMs: number, message: string): Promise<T> {
+  const remaining = deadlineMs - Date.now()
+  if (remaining <= 0) return Promise.reject(new Error(message))
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), remaining)
+    work.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      },
+    )
+  })
 }
 
 function newJobId() {
@@ -187,9 +207,18 @@ export function startAgentJob(params: {
     const generateOptions = agentType === 'storyboard_breaker'
       ? { ...storyboardGenerateOptions, requestContext }
       : { maxSteps: 20, requestContext }
-    let result = flattenGenerateResult(await agent.generate(
-      [{ role: 'user', content: userMessage }],
-      generateOptions,
+    const breakDeadline = Date.now() + STORYBOARD_BREAK_TIMEOUT_MS
+    const breakTimeout = '拆分鏡逾時，請再試一次。'
+    const generateStoryboard = (messages: Array<{ role: 'user' | 'assistant'; content: string }>) =>
+      withDeadline(
+        agent.generate(messages, generateOptions),
+        breakDeadline,
+        breakTimeout,
+      )
+    let result = flattenGenerateResult(await (
+      agentType === 'storyboard_breaker'
+        ? generateStoryboard([{ role: 'user', content: userMessage }])
+        : agent.generate([{ role: 'user', content: userMessage }], generateOptions)
     ))
     if (agentType !== 'storyboard_breaker') return result
     const preview = storyboardBreakerFailure({
@@ -204,14 +233,11 @@ export function startAgentJob(params: {
       text: String(result?.text || '').slice(0, 400),
       diagnostic: storyboardGenerateDiagnostic(result),
     })
-    const retry = flattenGenerateResult(await agent.generate(
-      [
-        { role: 'user', content: userMessage },
-        { role: 'assistant', content: '已读取分镜上下文，但还没有调用 save_storyboards。' },
-        { role: 'user', content: withContentLanguage(STORYBOARD_SAVE_FOLLOW_UP, params.locale) },
-      ],
-      generateOptions,
-    ))
+    const retry = flattenGenerateResult(await generateStoryboard([
+      { role: 'user', content: userMessage },
+      { role: 'assistant', content: '已读取分镜上下文，但还没有调用 save_storyboards。' },
+      { role: 'user', content: withContentLanguage(STORYBOARD_SAVE_FOLLOW_UP, params.locale) },
+    ]))
     return flattenGenerateResult({
       ...retry,
       text: retry?.text || result?.text || '',

@@ -65,9 +65,20 @@ function stepText(step: unknown) {
   }
 }
 
+/** A second generate is only for a run that never called save. A rejected save already spent its steps. */
 export function shouldRetryStoryboardBreaker(failure: string | null) {
   if (!failure) return false
-  return !failure.includes(STORYBOARD_STOP_MARKER)
+  if (failure.includes(STORYBOARD_STOP_MARKER)) return false
+  return failure.includes('沒有寫入') || failure.includes('沒有改寫')
+}
+
+const STORYBOARD_FAILED_SAVE_LIMIT = 3
+
+function failedSaveCount(steps: Array<{ toolCalls?: unknown[]; toolResults?: unknown[] }> | undefined) {
+  return (steps || []).filter((step) => {
+    const text = stepText(step)
+    return /save[_]?storyboard/i.test(text) && /\\?"error\\?"\s*:/.test(text)
+  }).length
 }
 
 export function durationStopFromToolResult(raw: string): { needed: number; target: number } | null {
@@ -98,6 +109,9 @@ export function storyboardBreakerPrepareStep(args: {
   steps?: Array<{ toolCalls?: unknown[]; toolResults?: unknown[] }>
 }) {
   if ((args.steps || []).some((step) => stepText(step).includes(STORYBOARD_STOP_MARKER))) {
+    return { toolChoice: 'none' as const }
+  }
+  if (failedSaveCount(args.steps) >= STORYBOARD_FAILED_SAVE_LIMIT) {
     return { toolChoice: 'none' as const }
   }
   if ((args.steps || []).some((step) => stepCalledSave(step))) {
