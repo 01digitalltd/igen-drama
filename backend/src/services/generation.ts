@@ -11,6 +11,7 @@ import { toLocalStaticPath } from '../utils/media-path.js'
 import { isS3Enabled, toVendorFetchableUrl } from '../utils/s3-media.js'
 import { extractVideoPoster } from '../utils/video-poster.js'
 import { publishShotToMediaLibrary } from './media-library-video.js'
+import { billCompletedDramaTask } from './token-billing.js'
 import { probeStoredDurationSeconds } from '../utils/ffmpeg.js'
 import { getImageAdapter, getVideoAdapter } from './adapters/registry'
 import { xaiModelSupportsReferences } from './adapters/xai-video.js'
@@ -1573,6 +1574,7 @@ async function handleImageComplete(record: SysTaskRecord, imageUrl: string) {
 
   logTaskSuccess('ImageTask', 'downloaded', { id: record.id, provider: record.provider, localPath })
   await emitTaskEvent(record.id)
+  await billCompletedDramaTask(record)
 }
 
 async function handleImageCompleteBase64(record: SysTaskRecord, base64Data: string, mimeType: string) {
@@ -1587,6 +1589,7 @@ async function handleImageCompleteBase64(record: SysTaskRecord, base64Data: stri
 
   logTaskSuccess('ImageTask', 'saved-base64', { id: record.id, provider: record.provider, mimeType, localPath })
   await emitTaskEvent(record.id)
+  await billCompletedDramaTask(record)
 }
 
 // 图片完成后回写业务表：分镜(按 frameType)、角色、场景、道具
@@ -1632,6 +1635,7 @@ async function handleVideoCompleteBase64(
     await publishShotToMediaLibrary(record.storyboardId, localPath, posterPath, duration)
   }
   await emitTaskEvent(record.id)
+  await billCompletedDramaTask(record)
 }
 
 async function handleVideoComplete(record: SysTaskRecord, videoUrl: string, duration: number | null | undefined) {
@@ -1652,6 +1656,7 @@ async function handleVideoComplete(record: SysTaskRecord, videoUrl: string, dura
     await publishShotToMediaLibrary(record.storyboardId, localPath, posterPath, duration)
   }
   await emitTaskEvent(record.id)
+  await billCompletedDramaTask(record)
 }
 
 // ─── 参考素材归一化 ───────────────────────────────────────────────
