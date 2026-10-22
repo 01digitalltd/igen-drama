@@ -38,7 +38,7 @@ steps:
           TAG="${_TAG}"
         fi
         echo "Resolved image tag: BRANCH_NAME=${BRANCH_NAME} → TAG=$$TAG (manual _TAG=${_TAG})"
-        docker build \
+        docker build --pull \
           --build-arg NPM_REGISTRY=https://registry.npmjs.org \
           --build-arg APT_MIRROR=deb.debian.org \
           -t "$${IMAGE}:$${TAG}" \

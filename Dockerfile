@@ -4,7 +4,8 @@
 #   pip: 清华 pypi(Stage 2 预置 /etc/pip.conf,装 python 包时自动生效)
 
 # ── Stage 1: Build frontend ──────────────────────────────────
-FROM node:20-slim AS frontend-build
+# Node 26.12.1 on Bookworm. Default node:26-slim is Trixie and would break the apt mirror sed below.
+FROM node:26.12.1-bookworm-slim AS frontend-build
 
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 RUN npm config set registry "$NPM_REGISTRY"
@@ -16,7 +17,7 @@ COPY frontend/ ./
 RUN npm run generate
 
 # ── Stage 2: Build backend native modules ────────────────────
-FROM node:20-slim AS backend-build
+FROM node:26.12.1-bookworm-slim AS backend-build
 
 ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
 ARG NPM_REGISTRY=https://registry.npmmirror.com
@@ -51,12 +52,13 @@ COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev
 
 # ── Stage 3: Production image (lean) ────────────────────────
-FROM node:20-slim
+FROM node:26.12.1-bookworm-slim
 
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 # tsx 直接运行 TS 源码;ffmpeg 用 npm 包 ffmpeg-static/ffprobe-static 内置二进制,无需系统安装
-RUN npm config set registry "$NPM_REGISTRY" && npm i -g tsx
+# tsx >= 4.21.1 uses module.registerHooks() on Node 26 (DEP0205).
+RUN npm config set registry "$NPM_REGISTRY" && npm i -g tsx@4.21.1
 
 WORKDIR /app
 
