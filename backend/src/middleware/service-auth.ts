@@ -1,5 +1,13 @@
+import { timingSafeEqual } from 'node:crypto'
 import type { MiddlewareHandler } from 'hono'
 import { unauthorized } from '../utils/response.js'
+
+function timingSafeEqualString(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided, 'utf8')
+  const b = Buffer.from(expected, 'utf8')
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) return false
+  return timingSafeEqual(a, b)
+}
 
 export const OWNER_USER_HEADER = 'x-drama-owner-user-id'
 export const OWNER_TENANT_HEADER = 'x-drama-owner-tenant-id'
@@ -26,7 +34,7 @@ export const serviceAuth: MiddlewareHandler = async (c, next) => {
   }
 
   const provided = (c.req.header(SERVICE_KEY_HEADER) || '').trim()
-  if (!provided || provided !== expected) {
+  if (!timingSafeEqualString(provided, expected)) {
     return unauthorized(c, 'invalid service key')
   }
 
